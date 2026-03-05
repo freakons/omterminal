@@ -1627,21 +1627,19 @@ document.addEventListener('keydown',e=>{
   if(e.key==='/'&&document.activeElement!==document.getElementById('sin')&&document.activeElement!==document.getElementById('emailIn')){e.preventDefault();document.getElementById('sin').focus();}
 });
 
-/* ═══ LIVE NEWS — GNews API (free, works in production) ═══ */
-const GNEWS_KEY='fac6eeb66fda535ca4b7c800ca1ce928'; // GNews.io — 100 req/day, works on deployed sites
+/* ═══ LIVE NEWS — via /api/news (key stays server-side) ═══ */
 async function fetchLive(){
-  if(!GNEWS_KEY)return;
   try{
-    const res=await fetch(`https://gnews.io/api/v4/search?q=artificial+intelligence&lang=en&sortby=publishedAt&max=20&apikey=${GNEWS_KEY}`);
+    const res=await fetch('/api/news?q=artificial+intelligence&max=20');
+    if(!res.ok)throw new Error(res.status);
     const data=await res.json();
     if(data.articles?.length){
       data.articles.forEach((a,i)=>{
-        const rawTitle=String(a.title||'');
-        const item={id:1000+i,cat:detectCat(rawTitle+' '+(a.description||'')),title:rawTitle,body:String(a.description||''),full:String(a.content||a.description||''),sowhat:'Live article — analysis generating…',source:String(a.source?.name||'News'),sourceUrl:safeUrl(a.url||'#'),date:new Date(a.publishedAt).toLocaleDateString('en-US',{month:'short',day:'numeric'}),verified:false,featured:false,_live:true};
+        const item={id:1000+i,cat:a.cat||detectCat(a.title+' '+a.body),title:a.title,body:a.body,full:a.full,sowhat:'Live article — analysis generating…',source:a.source,sourceUrl:safeUrl(a.sourceUrl||'#'),date:new Date(a.publishedAt).toLocaleDateString('en-US',{month:'short',day:'numeric'}),verified:false,featured:false,_live:true};
         if(!NEWS.find(n=>n.title===item.title))NEWS.unshift(item);
       });
     }
-  }catch(e){console.warn('GNews offline, using seed data.');}
+  }catch(e){console.warn('News API unavailable, using seed data.');}
   renderFeed();
 }
 function detectCat(t){
