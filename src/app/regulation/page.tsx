@@ -1,5 +1,4 @@
 import { fetchRegulations } from '@/services/data';
-import { cacheConfig } from '@/config/cache';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { RegulationCard } from '@/components/pages/RegulationCard';
 import { RegulationFilters } from './filters';

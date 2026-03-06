@@ -1,5 +1,4 @@
 import { fetchArticles, fetchFeaturedArticle } from '@/services/data';
-import { cacheConfig } from '@/config/cache';
 import { NewsCard } from '@/components/pages/NewsCard';
 import { FeaturedCard } from '@/components/pages/FeaturedCard';
 import { StatCard } from '@/components/ui/StatCard';

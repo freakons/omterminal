@@ -1,5 +1,4 @@
 import { siteConfig } from '@/config/site';
-import { cacheConfig } from '@/config/cache';
 import { PageHeader } from '@/components/ui/PageHeader';
 
 import type { Metadata } from 'next';

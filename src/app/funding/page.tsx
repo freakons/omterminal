@@ -1,5 +1,4 @@
 import { fetchFundingRounds } from '@/services/data';
-import { cacheConfig } from '@/config/cache';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { StatCard } from '@/components/ui/StatCard';
 

@@ -1,5 +1,4 @@
 import { fetchModels } from '@/services/data';
-import { cacheConfig } from '@/config/cache';
 import { PageHeader } from '@/components/ui/PageHeader';
 
 import type { Metadata } from 'next';
