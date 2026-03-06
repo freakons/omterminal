@@ -1,6 +1,6 @@
 import { fetchArticles, fetchFeaturedArticle } from '@/services/data';
-import { NewsCard } from '@/components/pages/NewsCard';
-import { FeaturedCard } from '@/components/pages/FeaturedCard';
+import { NewsCard } from '@/components/cards/NewsCard';
+import { FeaturedCard } from '@/components/cards/FeaturedCard';
 import { StatCard } from '@/components/ui/StatCard';
 import { IntelligenceFilters } from './filters';
 

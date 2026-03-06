@@ -1,6 +1,6 @@
 import { fetchRegulations } from '@/services/data';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { RegulationCard } from '@/components/pages/RegulationCard';
+import { RegulationCard } from '@/components/cards/RegulationCard';
 import { RegulationFilters } from './filters';
 
 import type { Metadata } from 'next';
