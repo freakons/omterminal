@@ -1,3 +1,10 @@
+// Layout components — three-panel intelligence layout
+export { AppLayout } from './AppLayout';
+export { Sidebar } from './Sidebar';
+export { MainPanel } from './MainPanel';
+export { ContextPanel } from './ContextPanel';
+export { CommandBar } from './CommandBar';
+
 /**
  * Omterminal Layout Tokens
  * Shell dimensions used for the fixed sidebar, topbar, and ticker.
