@@ -1,11 +1,9 @@
--- ─────────────────────────────────────────────────────────────────────────────
--- Omterminal — Intelligence Database Schema
--- Compatible with PostgreSQL / Neon serverless
--- ─────────────────────────────────────────────────────────────────────────────
+import { NextRequest, NextResponse } from 'next/server';
+import { neon } from '@neondatabase/serverless';
 
--- ── Articles ──────────────────────────────────────────────────────────────────
--- Stores raw and normalised articles ingested from RSS / news sources.
+export const runtime = 'nodejs';
 
+const SCHEMA = `
 CREATE TABLE IF NOT EXISTS articles (
   id           TEXT        PRIMARY KEY,
   title        TEXT        NOT NULL,
@@ -15,14 +13,9 @@ CREATE TABLE IF NOT EXISTS articles (
   category     TEXT        NOT NULL,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-
 CREATE INDEX IF NOT EXISTS idx_articles_published_at ON articles (published_at DESC);
 CREATE INDEX IF NOT EXISTS idx_articles_category     ON articles (category);
 CREATE INDEX IF NOT EXISTS idx_articles_source       ON articles (source);
-
--- ── Events ────────────────────────────────────────────────────────────────────
--- Structured intelligence events extracted from articles.
--- Each event references the article it was derived from.
 
 CREATE TABLE IF NOT EXISTS events (
   id                TEXT        PRIMARY KEY,
@@ -38,15 +31,10 @@ CREATE TABLE IF NOT EXISTS events (
   payload           JSONB,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-
 CREATE INDEX IF NOT EXISTS idx_events_type              ON events (type);
 CREATE INDEX IF NOT EXISTS idx_events_company           ON events (company);
 CREATE INDEX IF NOT EXISTS idx_events_timestamp         ON events (timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_events_source_article_id ON events (source_article_id);
-
--- ── Signals ───────────────────────────────────────────────────────────────────
--- Higher-order intelligence signals synthesised from multiple events.
--- Reserved for future use by the signals engine.
 
 CREATE TABLE IF NOT EXISTS signals (
   id                 TEXT          PRIMARY KEY,
@@ -66,19 +54,40 @@ CREATE TABLE IF NOT EXISTS signals (
   created_at         TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
   updated_at         TIMESTAMPTZ
 );
-
 CREATE INDEX IF NOT EXISTS idx_signals_signal_type ON signals (signal_type);
 CREATE INDEX IF NOT EXISTS idx_signals_direction   ON signals (direction);
 CREATE INDEX IF NOT EXISTS idx_signals_created_at  ON signals (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_signals_confidence  ON signals (confidence_score DESC);
-
--- ── Access Requests ────────────────────────────────────────────────────────────
--- Stores emails from the "Request Access" waitlist form.
 
 CREATE TABLE IF NOT EXISTS access_requests (
   id         SERIAL      PRIMARY KEY,
   email      TEXT        NOT NULL UNIQUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-
 CREATE INDEX IF NOT EXISTS idx_access_requests_created_at ON access_requests (created_at DESC);
+`;
+
+export async function POST(req: NextRequest) {
+  const secret = req.headers.get('x-cron-secret');
+  if (secret !== process.env.CRON_SECRET) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) {
+    return NextResponse.json({ error: 'DATABASE_URL not configured' }, { status: 500 });
+  }
+
+  try {
+    const sql = neon(dbUrl);
+    await sql(SCHEMA);
+    return NextResponse.json({ ok: true, message: 'Migration complete' });
+  } catch (err) {
+    console.error('[migrate] error:', err);
+    return NextResponse.json({ error: String(err) }, { status: 500 });
+  }
+}
+
+export async function GET(req: NextRequest) {
+  return POST(req);
+}
