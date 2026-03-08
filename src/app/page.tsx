@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { siteConfig } from '@/config/site';
+import RequestAccessButton from '@/components/RequestAccessButton';
 
 /** Static generation with ISR — revalidate every hour */
 export const revalidate = 3600;
@@ -19,7 +20,7 @@ export default function HomePage() {
           curated for decision-makers. Not a feed. An intelligence terminal.
         </p>
         <div className="hero-ctas">
-          <button className="cta-primary">Request Access &rarr;</button>
+          <RequestAccessButton />
           <Link href="/intelligence" className="cta-secondary">
             Browse Intelligence
           </Link>
