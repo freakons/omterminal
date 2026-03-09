@@ -1,6 +1,7 @@
 import { TrendResult } from '@/trends/types';
 import { Insight } from './types';
 import { generateAIInsight } from './aiGenerator';
+import { generateTrendInsight } from '@/services/intelligence/insightSummaries';
 
 const MIN_SIGNAL_COUNT = 3;
 
@@ -26,9 +27,15 @@ export async function generateInsights(trends: TrendResult[]): Promise<Insight[]
 
       let summary = ruleBasedSummary;
       try {
-        summary = await generateAIInsight(trend);
+        trend.summary = await generateTrendInsight(trend);
+        summary = trend.summary;
       } catch (err) {
         console.warn(`[insights/generator] AI insight failed for "${trend.topic}", using rule-based summary:`, err);
+        try {
+          summary = await generateAIInsight(trend);
+        } catch (fallbackErr) {
+          console.warn(`[insights/generator] fallback AI insight also failed for "${trend.topic}":`, fallbackErr);
+        }
       }
 
       return {
