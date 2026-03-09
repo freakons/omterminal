@@ -4,7 +4,7 @@ import { clusterTopics } from './cluster';
 
 const MIN_OCCURRENCES = 3;
 
-export function aggregateTrends(signals: TrendSignal[]): TrendResult[] {
+export async function aggregateTrends(signals: TrendSignal[]): Promise<TrendResult[]> {
   // entity name → { count, score, categories, related entities }
   const entityFreq = new Map<string, { count: number; score: number; categories: string[]; related: Set<string> }>();
 
@@ -56,7 +56,7 @@ export function aggregateTrends(signals: TrendSignal[]): TrendResult[] {
 
   // cluster similar topics and merge each cluster into its canonical entry
   const topicIndex = new Map(trends.map((t) => [t.topic, t]));
-  const clusters = clusterTopics(trends.map((t) => t.topic));
+  const clusters = await clusterTopics(trends.map((t) => t.topic));
   const merged: TrendResult[] = [];
 
   for (const cluster of clusters) {
