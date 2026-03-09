@@ -9,13 +9,14 @@ interface TrendRow {
   entities: string[] | null;
   summary: string;
   confidence: number;
+  score: number | null;
 }
 
 export async function GET() {
   console.log('[api] API request: trends');
 
   const rows = await dbQuery<TrendRow>`
-    SELECT topic, category, signal_count, entities, summary, confidence
+    SELECT topic, category, signal_count, entities, summary, confidence, score
     FROM trends
     ORDER BY confidence DESC
     LIMIT 20
@@ -28,6 +29,7 @@ export async function GET() {
     entities:     Array.isArray(row.entities) ? row.entities : [],
     summary:      row.summary,
     confidence:   row.confidence,
+    score:        row.score ?? 0,
   }));
 
   return NextResponse.json({ trends });
