@@ -18,6 +18,9 @@
     "keywords": [],
     "author": "",
     "license": "ISC",
+    "engines": {
+        "node": "18.x"
+    },
     "dependencies": {
         "@neondatabase/serverless": "^0.9.5",
         "@types/node": "^25.3.5",
