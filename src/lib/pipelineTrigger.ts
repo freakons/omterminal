@@ -91,12 +91,14 @@ async function runPipeline(): Promise<void> {
     const { getRecentEvents }          = await import('@/services/storage/eventStore');
     const { generateSignalsFromEvents } = await import('@/services/signals/signalEngine');
     const { saveSignals }              = await import('@/services/storage/signalStore');
+    const { recordPipelineRun }        = await import('@/lib/pipelineHealth');
 
     const { ingested }     = await ingestGNews();
     const events           = await getRecentEvents(500);
     const signals          = generateSignalsFromEvents(events);
     const signalsSaved     = await saveSignals(signals);
 
+    recordPipelineRun(signalsSaved);
     console.log(
       `[pipeline] self-heal complete — ingested=${ingested} events=${events.length} signals=${signalsSaved}`,
     );
