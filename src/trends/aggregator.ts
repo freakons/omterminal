@@ -1,19 +1,23 @@
 import { TrendSignal, TrendResult } from './types';
+import { scoreSignal } from './scoring';
+import { clusterTopics } from './cluster';
+import { clusterTopicsSemantic } from './semanticCluster';
 
 const MIN_OCCURRENCES = 3;
 
-export function aggregateTrends(signals: TrendSignal[]): TrendResult[] {
-  // entity name → { count, categories, related entities }
-  const entityFreq = new Map<string, { count: number; categories: string[]; related: Set<string> }>();
+export async function aggregateTrends(signals: TrendSignal[]): Promise<TrendResult[]> {
+  // entity name → { count, score, categories, related entities }
+  const entityFreq = new Map<string, { count: number; score: number; categories: string[]; related: Set<string> }>();
 
   for (const signal of signals) {
     const names = signal.entities.map((e) => e.name);
     for (const name of names) {
       if (!entityFreq.has(name)) {
-        entityFreq.set(name, { count: 0, categories: [], related: new Set() });
+        entityFreq.set(name, { count: 0, score: 0, categories: [], related: new Set() });
       }
       const entry = entityFreq.get(name)!;
       entry.count++;
+      entry.score += scoreSignal(signal);
       entry.categories.push(signal.category);
       // track co-occurring entities
       for (const other of names) {
@@ -24,7 +28,7 @@ export function aggregateTrends(signals: TrendSignal[]): TrendResult[] {
 
   const trends: TrendResult[] = [];
 
-  for (const [entity, { count, categories, related }] of entityFreq) {
+  for (const [entity, { count, score, categories, related }] of entityFreq) {
     if (count < MIN_OCCURRENCES) continue;
 
     // most common category among this entity's signals
@@ -44,12 +48,47 @@ export function aggregateTrends(signals: TrendSignal[]): TrendResult[] {
       topic: entity,
       category: dominantCategory,
       signal_count: count,
+      score,
       entities: relatedEntities,
       summary: `Multiple signals mention ${entity} across ${categoryLabel} activity.`,
       confidence: Math.min(100, count * 20),
     });
   }
 
+  // cluster similar topics and merge each cluster into its canonical entry
+  // use semantic (embedding-based) clustering when API key is available
+  const topicIndex = new Map(trends.map((t) => [t.topic, t]));
+  const topicNames = trends.map((t) => t.topic);
+  const clusters: string[][] = process.env.OPENAI_API_KEY
+    ? (await clusterTopicsSemantic(topicNames)).map((c) => c.members)
+    : await clusterTopics(topicNames);
+  const merged: TrendResult[] = [];
+
+  for (const cluster of clusters) {
+    const canonical = topicIndex.get(cluster[0])!;
+    if (cluster.length === 1) {
+      merged.push(canonical);
+      continue;
+    }
+    // fold every non-canonical member into the canonical entry
+    let combinedSignalCount = canonical.signal_count;
+    let combinedScore = canonical.score;
+    const combinedEntities = new Set(canonical.entities);
+    for (const member of cluster.slice(1)) {
+      const t = topicIndex.get(member)!;
+      combinedSignalCount += t.signal_count;
+      combinedScore += t.score;
+      t.entities.forEach((e) => combinedEntities.add(e));
+    }
+    merged.push({
+      ...canonical,
+      signal_count: combinedSignalCount,
+      score:        combinedScore,
+      entities:     [...combinedEntities].filter((e) => e !== canonical.topic).slice(0, 5),
+      confidence:   Math.min(100, combinedSignalCount * 20),
+    });
+  }
+
   // highest confidence first
-  return trends.sort((a, b) => b.confidence - a.confidence);
+  return merged.sort((a, b) => b.confidence - a.confidence);
 }

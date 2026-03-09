@@ -126,7 +126,7 @@ export async function runTrendAnalysis(): Promise<void> {
   const signals = await loadRecentSignals();
   console.log(`[trends/runner] loaded ${signals.length} signal(s) for analysis`);
 
-  const trends = aggregateTrends(signals);
+  const trends = await aggregateTrends(signals);
 
   if (trends.length === 0) {
     console.log('[trends/runner] no trends detected (insufficient signal volume)');
