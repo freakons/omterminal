@@ -21,6 +21,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { validateEnvironment } from '@/lib/env';
 import { createRequestId, logWithRequestId } from '@/lib/requestId';
 import { getCache, setCache } from '@/lib/memoryCache';
+import { getEdgeSignals, setEdgeSignals } from '@/lib/edgeCache';
 import { getRecentEvents } from '@/services/storage/eventStore';
 import { generateSignalsFromEvents } from '@/services/signals/signalEngine';
 import { saveSignals, getRecentSignals } from '@/services/storage/signalStore';
@@ -51,6 +52,11 @@ export async function GET(req: NextRequest) {
   if (!isAuthRequest) {
     const limit = Math.min(parseInt(searchParams.get('limit') ?? '50', 10), 200);
 
+    const edgeCached = await getEdgeSignals();
+    if (edgeCached) {
+      return Response.json(edgeCached);
+    }
+
     const cached = getCache('signals', 5000);
     if (cached) {
       return Response.json(cached);
@@ -61,6 +67,7 @@ export async function GET(req: NextRequest) {
 
       if (dbSignals.length > 0) {
         const payload = { ok: true, source: 'db', signals: dbSignals, count: dbSignals.length };
+        await setEdgeSignals(payload);
         setCache('signals', payload);
         logWithRequestId(reqId, 'signals', `source=db signals=${dbSignals.length} ms=${Date.now() - t0}`);
         return NextResponse.json(payload, { headers: CACHE_HEADERS });
