@@ -15,28 +15,34 @@ interface TrendRow {
   entities: string[] | null;
   summary: string;
   confidence: number;
+  importance_score: number | null;
+  velocity_score: number | null;
 }
 
 // ── Fallback mock trends (used when DB is unavailable) ────────────────────────
 
 const MOCK_TRENDS: TrendResult[] = [
   {
-    topic:        'OpenAI',
-    category:     'ai_model_release',
-    signal_count: 5,
-    score:        10,
-    entities:     ['GPT-5', 'Microsoft'],
-    summary:      'Multiple signals mention OpenAI across AI model release activity.',
-    confidence:   100,
+    topic:            'OpenAI',
+    category:         'ai_model_release',
+    signal_count:     5,
+    score:            10,
+    entities:         ['GPT-5', 'Microsoft'],
+    summary:          'Multiple signals mention OpenAI across AI model release activity.',
+    confidence:       100,
+    importance_score: 10,
+    velocity_score:   0,
   },
   {
-    topic:        'Anthropic',
-    category:     'funding',
-    signal_count: 3,
-    score:        6,
-    entities:     ['Claude', 'Google'],
-    summary:      'Multiple signals mention Anthropic across funding activity.',
-    confidence:   60,
+    topic:            'Anthropic',
+    category:         'funding',
+    signal_count:     3,
+    score:            6,
+    entities:         ['Claude', 'Google'],
+    summary:          'Multiple signals mention Anthropic across funding activity.',
+    confidence:       60,
+    importance_score: 6,
+    velocity_score:   0,
   },
 ];
 
@@ -44,7 +50,7 @@ const MOCK_TRENDS: TrendResult[] = [
 
 async function loadTrends(): Promise<TrendResult[]> {
   const rows = await dbQuery<TrendRow>`
-    SELECT topic, category, signal_count, entities, summary, confidence
+    SELECT topic, category, signal_count, score, entities, summary, confidence, importance_score, velocity_score
     FROM trends
     ORDER BY confidence DESC
     LIMIT 100
@@ -56,13 +62,15 @@ async function loadTrends(): Promise<TrendResult[]> {
   }
 
   return rows.map((row): TrendResult => ({
-    topic:        row.topic,
-    category:     row.category,
-    signal_count: row.signal_count,
-    score:        row.score ?? 0,
-    entities:     Array.isArray(row.entities) ? row.entities : [],
-    summary:      row.summary,
-    confidence:   row.confidence,
+    topic:            row.topic,
+    category:         row.category,
+    signal_count:     row.signal_count,
+    score:            row.score            ?? 0,
+    entities:         Array.isArray(row.entities) ? row.entities : [],
+    summary:          row.summary,
+    confidence:       row.confidence,
+    importance_score: row.importance_score ?? row.score ?? 0,
+    velocity_score:   row.velocity_score   ?? 0,
   }));
 }
 

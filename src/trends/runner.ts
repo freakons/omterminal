@@ -11,6 +11,8 @@ interface SignalRow {
   entities: { type: string; name: string }[] | null;
   published_at: string | null;
   created_at: string;
+  intelligence_score: number | null;
+  trust_score: number | null;
 }
 
 // ── Fallback mock data (used when DB is unavailable) ──────────────────────────
@@ -70,7 +72,9 @@ async function loadRecentSignals(): Promise<TrendSignal[]> {
       source,
       entities,
       published_at,
-      created_at
+      created_at,
+      confidence   AS intelligence_score,
+      trust_score
     FROM signals
     WHERE created_at >= NOW() - INTERVAL '24 hours'
       AND status IN ('auto', 'published')
@@ -84,11 +88,13 @@ async function loadRecentSignals(): Promise<TrendSignal[]> {
   }
 
   return rows.map((row): TrendSignal => ({
-    title:       row.title,
-    category:    row.category ?? 'other',
-    source:      row.source ?? 'unknown',
-    entities:    Array.isArray(row.entities) ? row.entities : [],
-    published_at: row.published_at ?? row.created_at,
+    title:              row.title,
+    category:           row.category ?? 'other',
+    source:             row.source ?? 'unknown',
+    entities:           Array.isArray(row.entities) ? row.entities : [],
+    published_at:       row.published_at ?? row.created_at,
+    intelligence_score: row.intelligence_score ?? 50,
+    trust_score:        row.trust_score ?? 50,
   }));
 }
 
@@ -97,7 +103,7 @@ async function loadRecentSignals(): Promise<TrendSignal[]> {
 async function storeTrends(trends: TrendResult[]): Promise<void> {
   for (const trend of trends) {
     await dbQuery`
-      INSERT INTO trends (topic, category, signal_count, entities, summary, confidence, created_at)
+      INSERT INTO trends (topic, category, signal_count, entities, summary, confidence, score, importance_score, velocity_score, created_at)
       VALUES (
         ${trend.topic},
         ${trend.category},
@@ -105,15 +111,21 @@ async function storeTrends(trends: TrendResult[]): Promise<void> {
         ${JSON.stringify(trend.entities)},
         ${trend.summary},
         ${trend.confidence},
+        ${trend.score},
+        ${trend.importance_score},
+        ${trend.velocity_score},
         NOW()
       )
       ON CONFLICT (topic) DO UPDATE SET
-        category     = EXCLUDED.category,
-        signal_count = EXCLUDED.signal_count,
-        entities     = EXCLUDED.entities,
-        summary      = EXCLUDED.summary,
-        confidence   = EXCLUDED.confidence,
-        created_at   = EXCLUDED.created_at
+        category        = EXCLUDED.category,
+        signal_count    = EXCLUDED.signal_count,
+        entities        = EXCLUDED.entities,
+        summary         = EXCLUDED.summary,
+        confidence      = EXCLUDED.confidence,
+        score           = EXCLUDED.score,
+        importance_score = EXCLUDED.importance_score,
+        velocity_score  = EXCLUDED.velocity_score,
+        created_at      = EXCLUDED.created_at
     `;
   }
 }

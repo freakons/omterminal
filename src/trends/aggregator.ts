@@ -1,23 +1,50 @@
 import { TrendSignal, TrendResult } from './types';
-import { scoreSignal } from './scoring';
 import { clusterTopics } from './cluster';
 import { clusterTopicsSemantic } from './semanticCluster';
+import { computeSignalImportance, RankedSignal } from '@/intelligence/rankingEngine';
 
 const MIN_OCCURRENCES = 3;
 
-export async function aggregateTrends(signals: TrendSignal[]): Promise<TrendResult[]> {
-  // entity name → { count, score, categories, related entities }
-  const entityFreq = new Map<string, { count: number; score: number; categories: string[]; related: Set<string> }>();
+/** Convert a TrendSignal to the RankedSignal shape expected by the ranking engine. */
+function toRankedSignal(signal: TrendSignal): RankedSignal {
+  return {
+    intelligence_score: signal.intelligence_score ?? 50,
+    trust_score:        signal.trust_score        ?? 50,
+    source:             signal.source,
+    entity_count:       signal.entities.length,
+    created_at:         signal.published_at ?? new Date().toISOString(),
+    entities:           signal.entities.map((e) => e.name),
+  };
+}
 
-  for (const signal of signals) {
-    const names = signal.entities.map((e) => e.name);
+export async function aggregateTrends(signals: TrendSignal[]): Promise<TrendResult[]> {
+  // Pre-convert all signals once so the ranking engine can use them as velocity context.
+  const rankedSignals = signals.map(toRankedSignal);
+
+  // entity name → { count, importance_score sum, velocity_score sum, categories, related entities }
+  const entityFreq = new Map<string, {
+    count:           number;
+    importanceSum:   number;
+    velocitySum:     number;
+    categories:      string[];
+    related:         Set<string>;
+  }>();
+
+  for (let i = 0; i < signals.length; i++) {
+    const signal       = signals[i];
+    const rankedSignal = rankedSignals[i];
+    const names        = signal.entities.map((e) => e.name);
+
+    const { importance_score, velocity_score } = computeSignalImportance(rankedSignal, rankedSignals);
+
     for (const name of names) {
       if (!entityFreq.has(name)) {
-        entityFreq.set(name, { count: 0, score: 0, categories: [], related: new Set() });
+        entityFreq.set(name, { count: 0, importanceSum: 0, velocitySum: 0, categories: [], related: new Set() });
       }
       const entry = entityFreq.get(name)!;
       entry.count++;
-      entry.score += scoreSignal(signal);
+      entry.importanceSum += importance_score;
+      entry.velocitySum   += velocity_score;
       entry.categories.push(signal.category);
       // track co-occurring entities
       for (const other of names) {
@@ -28,7 +55,7 @@ export async function aggregateTrends(signals: TrendSignal[]): Promise<TrendResu
 
   const trends: TrendResult[] = [];
 
-  for (const [entity, { count, score, categories, related }] of entityFreq) {
+  for (const [entity, { count, importanceSum, velocitySum, categories, related }] of entityFreq) {
     if (count < MIN_OCCURRENCES) continue;
 
     // most common category among this entity's signals
@@ -44,14 +71,18 @@ export async function aggregateTrends(signals: TrendSignal[]): Promise<TrendResu
     // human-readable category label for summary
     const categoryLabel = dominantCategory.replace(/_/g, ' ');
 
+    const avgVelocity = velocitySum / count;
+
     trends.push({
-      topic: entity,
-      category: dominantCategory,
-      signal_count: count,
-      score,
-      entities: relatedEntities,
-      summary: `Multiple signals mention ${entity} across ${categoryLabel} activity.`,
-      confidence: Math.min(100, count * 20),
+      topic:            entity,
+      category:         dominantCategory,
+      signal_count:     count,
+      score:            importanceSum,          // Σ importance_score replaces old source-weight sum
+      importance_score: importanceSum,
+      velocity_score:   Math.round(avgVelocity * 100) / 100,
+      entities:         relatedEntities,
+      summary:          `Multiple signals mention ${entity} across ${categoryLabel} activity.`,
+      confidence:       Math.min(100, count * 20),
     });
   }
 
@@ -72,20 +103,28 @@ export async function aggregateTrends(signals: TrendSignal[]): Promise<TrendResu
     }
     // fold every non-canonical member into the canonical entry
     let combinedSignalCount = canonical.signal_count;
-    let combinedScore = canonical.score;
-    const combinedEntities = new Set(canonical.entities);
+    let combinedImportance  = canonical.importance_score;
+    let combinedVelocitySum = canonical.velocity_score * canonical.signal_count;
+    const combinedEntities  = new Set(canonical.entities);
+
     for (const member of cluster.slice(1)) {
       const t = topicIndex.get(member)!;
-      combinedSignalCount += t.signal_count;
-      combinedScore += t.score;
+      combinedSignalCount  += t.signal_count;
+      combinedImportance   += t.importance_score;
+      combinedVelocitySum  += t.velocity_score * t.signal_count;
       t.entities.forEach((e) => combinedEntities.add(e));
     }
+
+    const combinedAvgVelocity = combinedVelocitySum / combinedSignalCount;
+
     merged.push({
       ...canonical,
-      signal_count: combinedSignalCount,
-      score:        combinedScore,
-      entities:     [...combinedEntities].filter((e) => e !== canonical.topic).slice(0, 5),
-      confidence:   Math.min(100, combinedSignalCount * 20),
+      signal_count:     combinedSignalCount,
+      score:            combinedImportance,
+      importance_score: combinedImportance,
+      velocity_score:   Math.round(combinedAvgVelocity * 100) / 100,
+      entities:         [...combinedEntities].filter((e) => e !== canonical.topic).slice(0, 5),
+      confidence:       Math.min(100, combinedSignalCount * 20),
     });
   }
 
