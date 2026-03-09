@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { siteConfig } from '@/config/site';
 import RequestAccessButton from '@/components/RequestAccessButton';
+import { TrendRadar } from '@/components/TrendRadar';
 
 /** Static generation with ISR — revalidate every hour */
 export const revalidate = 3600;
@@ -32,6 +33,11 @@ export default function HomePage() {
           <div className="hm"><div className="hm-n">{siteConfig.stats.markets}</div><div className="hm-l">Global markets</div></div>
           <div className="hm"><div className="hm-n">2.4K</div><div className="hm-l">Professionals tracking AI</div></div>
         </div>
+      </div>
+
+      {/* Trend Radar */}
+      <div style={{ marginBottom: 32 }}>
+        <TrendRadar />
       </div>
 
       {/* Features */}
