@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { validateEnvironment } from '@/lib/env';
 import { ingestGNews } from '@/services/ingestion/gnewsFetcher';
 
 export const maxDuration = 10; // Vercel Hobby plan limit
@@ -27,6 +28,8 @@ export const maxDuration = 10; // Vercel Hobby plan limit
                              }
 
                              export async function GET(req: NextRequest) {
+                               validateEnvironment(['CRON_SECRET', 'GNEWS_API_KEY']);
+
                                if (!isAuthorized(req)) {
                                    return new NextResponse('Unauthorized', { status: 401 });
                                      }

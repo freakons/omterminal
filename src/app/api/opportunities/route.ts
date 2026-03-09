@@ -27,6 +27,7 @@
  */
 
 import { NextResponse }        from 'next/server';
+import { validateEnvironment } from '@/lib/env';
 import { getSignals }          from '@/db/queries';
 import { MOCK_SIGNALS }        from '@/data/mockSignals';
 import { computeSignalScore }  from '@/lib/signals/signalScore';
@@ -106,6 +107,8 @@ function toSignalInput(signal: Signal): SignalInput {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function GET() {
+  validateEnvironment(['DATABASE_URL']);
+
   // ── 1. Fetch latest signals ───────────────────────────────────────────────
   let raw: Signal[];
   try {

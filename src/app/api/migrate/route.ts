@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { validateEnvironment } from '@/lib/env';
 import { neon } from '@neondatabase/serverless';
 
 export const runtime = 'nodejs';
@@ -160,6 +161,8 @@ const TABLES_CREATED = [
 ];
 
 export async function POST(req: NextRequest) {
+  validateEnvironment(['DATABASE_URL', 'ADMIN_SECRET', 'CRON_SECRET']);
+
   const url = new URL(req.url);
 
   // Accept either ADMIN_SECRET (via ?key=) or CRON_SECRET (via ?secret= / x-cron-secret header)

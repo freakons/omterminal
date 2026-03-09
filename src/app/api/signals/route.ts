@@ -17,6 +17,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { validateEnvironment } from '@/lib/env';
 import { getRecentEvents } from '@/services/storage/eventStore';
 import { generateSignalsFromEvents } from '@/services/signals/signalEngine';
 import { saveSignals, getRecentSignals } from '@/services/storage/signalStore';
@@ -26,6 +27,8 @@ import { MOCK_SIGNALS } from '@/data/mockSignals';
 export const maxDuration = 10; // Vercel Hobby plan limit; upgrade to Pro for larger event lookbacks
 
 export async function GET(req: NextRequest) {
+  validateEnvironment(['DATABASE_URL', 'CRON_SECRET']);
+
   const { searchParams } = new URL(req.url);
   const cronSecret  = req.headers.get('x-vercel-cron-secret') || '';
   const querySecret = searchParams.get('secret') || '';

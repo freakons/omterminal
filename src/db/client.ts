@@ -20,6 +20,11 @@ let _sql: NeonQueryFunction<false, false> | null = null;
 function getClient(): NeonQueryFunction<false, false> | null {
   if (_sql) return _sql;
   if (!process.env.DATABASE_URL) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        'Missing DATABASE_URL environment variable. Database connection cannot be established.'
+      );
+    }
     console.warn('[db/client] DATABASE_URL is not set — database operations will be skipped.');
     return null;
   }
@@ -34,7 +39,8 @@ function getClient(): NeonQueryFunction<false, false> | null {
 /**
  * Execute a tagged-template SQL query and return typed rows.
  *
- * Returns an empty array when DATABASE_URL is absent (safe for build time).
+ * In production, throws if DATABASE_URL is not configured.
+ * In development, returns an empty array when DATABASE_URL is absent.
  *
  * @example
  * const events = await dbQuery<EventRow>`
