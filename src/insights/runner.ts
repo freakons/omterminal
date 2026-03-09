@@ -92,7 +92,7 @@ export async function runInsightGeneration(): Promise<void> {
   const trends = await loadTrends();
   console.log(`[insights/runner] loaded ${trends.length} trend(s)`);
 
-  const insights = generateInsights(trends);
+  const insights = await generateInsights(trends);
 
   if (insights.length === 0) {
     console.log('[insights/runner] no insights generated (no qualifying trends)');

@@ -1,5 +1,6 @@
 import { TrendResult } from '@/trends/types';
 import { Insight } from './types';
+import { generateAIInsight } from './aiGenerator';
 
 const MIN_SIGNAL_COUNT = 3;
 
@@ -16,15 +17,29 @@ function categoryLabel(category: string): string {
   return CATEGORY_LABELS[category] ?? category.replace(/_/g, ' ');
 }
 
-export function generateInsights(trends: TrendResult[]): Insight[] {
-  return trends
-    .filter((t) => t.signal_count >= MIN_SIGNAL_COUNT)
-    .map((trend): Insight => ({
-      title:      `${trend.topic} dominating ${categoryLabel(trend.category)}`,
-      summary:    `Multiple signals indicate ${trend.topic} activity across ${categoryLabel(trend.category)} with ${trend.signal_count} mentions in the last analysis window.`,
-      category:   trend.category,
-      topics:     [trend.topic, ...trend.entities].slice(0, 5),
-      confidence: trend.confidence,
-    }))
-    .sort((a, b) => b.confidence - a.confidence);
+export async function generateInsights(trends: TrendResult[]): Promise<Insight[]> {
+  const qualifying = trends.filter((t) => t.signal_count >= MIN_SIGNAL_COUNT);
+
+  const insights = await Promise.all(
+    qualifying.map(async (trend): Promise<Insight> => {
+      const ruleBasedSummary = `Multiple signals indicate ${trend.topic} activity across ${categoryLabel(trend.category)} with ${trend.signal_count} mentions in the last analysis window.`;
+
+      let summary = ruleBasedSummary;
+      try {
+        summary = await generateAIInsight(trend);
+      } catch (err) {
+        console.warn(`[insights/generator] AI insight failed for "${trend.topic}", using rule-based summary:`, err);
+      }
+
+      return {
+        title:      `${trend.topic} dominating ${categoryLabel(trend.category)}`,
+        summary,
+        category:   trend.category,
+        topics:     [trend.topic, ...trend.entities].slice(0, 5),
+        confidence: trend.confidence,
+      };
+    }),
+  );
+
+  return insights.sort((a, b) => b.confidence - a.confidence);
 }
