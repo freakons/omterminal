@@ -64,7 +64,11 @@ CREATE TABLE IF NOT EXISTS signals (
   recommendation     TEXT,
   human_verified     BOOLEAN       NOT NULL DEFAULT FALSE,
   created_at         TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
-  updated_at         TIMESTAMPTZ
+  updated_at         TIMESTAMPTZ,
+  status             TEXT          CHECK (status IN ('auto','published','review','internal','rejected')),
+  trust_score        INTEGER,
+  source             TEXT,
+  ai_model           TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_signals_signal_type ON signals (signal_type);

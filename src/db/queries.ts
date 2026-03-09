@@ -217,6 +217,7 @@ export async function getSignals(limit = 50): Promise<Signal[]> {
       date,
       created_at
     FROM signals
+    WHERE status IN ('auto', 'published')
     ORDER BY created_at DESC
     LIMIT ${safeLimit}
   `;

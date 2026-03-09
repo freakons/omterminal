@@ -74,6 +74,12 @@ const STATEMENTS = [
   `ALTER TABLE signals ADD COLUMN IF NOT EXISTS confidence  INTEGER`,
   `ALTER TABLE signals ADD COLUMN IF NOT EXISTS date        TEXT`,
 
+  // ── Extend signals with publishing / trust columns ────────────────────────
+  `ALTER TABLE signals ADD COLUMN IF NOT EXISTS status      TEXT CHECK (status IN ('auto','published','review','internal','rejected'))`,
+  `ALTER TABLE signals ADD COLUMN IF NOT EXISTS trust_score INTEGER`,
+  `ALTER TABLE signals ADD COLUMN IF NOT EXISTS source      TEXT`,
+  `ALTER TABLE signals ADD COLUMN IF NOT EXISTS ai_model    TEXT`,
+
   // ── Events (legacy structured events table) ───────────────────────────────
   `CREATE TABLE IF NOT EXISTS events (
     id                TEXT PRIMARY KEY,
