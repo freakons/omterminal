@@ -1,6 +1,7 @@
 import { TrendSignal, TrendResult } from './types';
 import { scoreSignal } from './scoring';
 import { clusterTopics } from './cluster';
+import { clusterTopicsSemantic } from './semanticCluster';
 
 const MIN_OCCURRENCES = 3;
 
@@ -55,8 +56,12 @@ export async function aggregateTrends(signals: TrendSignal[]): Promise<TrendResu
   }
 
   // cluster similar topics and merge each cluster into its canonical entry
+  // use semantic (embedding-based) clustering when API key is available
   const topicIndex = new Map(trends.map((t) => [t.topic, t]));
-  const clusters = await clusterTopics(trends.map((t) => t.topic));
+  const topicNames = trends.map((t) => t.topic);
+  const clusters: string[][] = process.env.OPENAI_API_KEY
+    ? (await clusterTopicsSemantic(topicNames)).map((c) => c.members)
+    : await clusterTopics(topicNames);
   const merged: TrendResult[] = [];
 
   for (const cluster of clusters) {
