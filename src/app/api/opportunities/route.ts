@@ -31,6 +31,7 @@ import { getSignals }          from '@/db/queries';
 import { MOCK_SIGNALS }        from '@/data/mockSignals';
 import { computeSignalScore }  from '@/lib/signals/signalScore';
 import { rankOpportunities }   from '@/lib/signals/opportunityRanker';
+import { computeMarketPulse }  from '@/lib/signals/marketPulse';
 import type { Signal }         from '@/data/mockSignals';
 import type { SignalInput, TrendDirection } from '@/lib/signals/signalScore';
 import type { SignalCandidate } from '@/lib/signals/opportunityRanker';
@@ -44,8 +45,6 @@ const FETCH_LIMIT          = 60;  // fetch slightly more than we rank to give sc
 const VOLUME_SPIKE_FLOOR   = 80;  // confidence >= 80 → treat as volume-spike signal
 const VELOCITY_MAX         = 100; // confidence scale denominator for velocity mapping
 
-// How much of the top-ranked signals must point one direction to call bias
-const BIAS_THRESHOLD = 0.60;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -101,30 +100,6 @@ function toSignalInput(signal: Signal): SignalInput {
   };
 }
 
-/**
- * Derive an overall market bias from the direction distribution of the
- * top-ranked signal candidates.
- *
- * Logic: if more than BIAS_THRESHOLD of ranked signals point UP → BULLISH,
- * if more than BIAS_THRESHOLD point DOWN → BEARISH, otherwise NEUTRAL.
- */
-function computeMarketBias(candidates: SignalCandidate[]): 'BULLISH' | 'BEARISH' | 'NEUTRAL' {
-  if (candidates.length === 0) return 'NEUTRAL';
-
-  let up = 0;
-  let down = 0;
-
-  for (const c of candidates) {
-    if (c.direction === 'UP')   up++;
-    if (c.direction === 'DOWN') down++;
-  }
-
-  const total = candidates.length;
-
-  if (up   / total > BIAS_THRESHOLD) return 'BULLISH';
-  if (down / total > BIAS_THRESHOLD) return 'BEARISH';
-  return 'NEUTRAL';
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Route handler
@@ -161,7 +136,7 @@ export async function GET() {
   // ── 4. Market bias ────────────────────────────────────────────────────────
   // Bias is computed over the ranked set (post-filter), not the raw pool,
   // so it reflects the quality-weighted view of the market.
-  const marketBias = computeMarketBias(ranked);
+  const { bias: marketBias } = computeMarketPulse(ranked);
 
   // ── 5. Respond ────────────────────────────────────────────────────────────
   return NextResponse.json({
