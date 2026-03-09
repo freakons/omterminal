@@ -9,7 +9,8 @@
         "start": "next start",
         "lint": "next lint",
         "typecheck": "tsc --noEmit",
-        "build:check": "npm run typecheck && next build"
+        "build:check": "npm run typecheck && next build",
+        "lint:check": "next lint"
     },
     "repository": {
         "type": "git",
