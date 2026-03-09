@@ -30,7 +30,11 @@ ALTER TABLE signals
   ADD COLUMN IF NOT EXISTS entity_name TEXT,
   ADD COLUMN IF NOT EXISTS summary TEXT,
   ADD COLUMN IF NOT EXISTS confidence INTEGER,
-  ADD COLUMN IF NOT EXISTS date TEXT;
+  ADD COLUMN IF NOT EXISTS date TEXT,
+  ADD COLUMN IF NOT EXISTS status TEXT CHECK (status IN ('auto','published','review','internal','rejected')),
+  ADD COLUMN IF NOT EXISTS trust_score INTEGER,
+  ADD COLUMN IF NOT EXISTS source TEXT,
+  ADD COLUMN IF NOT EXISTS ai_model TEXT;
 
 -- ── Existing events table (created by migrate route) ──────────────────────
 -- id TEXT PRIMARY KEY
