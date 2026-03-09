@@ -2,6 +2,7 @@ export const runtime = 'nodejs';
 import { NextRequest, NextResponse }                    from 'next/server';
 import { validateEnvironment }                           from '@/lib/env';
 import { createRequestId, logWithRequestId }             from '@/lib/requestId';
+import { runPipelineSafe }                               from '@/lib/pipelineTrigger';
 import { ingestGNews }                                  from '@/services/ingestion/gnewsFetcher';
 import { getRecentEvents }                              from '@/services/storage/eventStore';
 import { generateSignalsFromEvents }                    from '@/services/signals/signalEngine';
@@ -48,10 +49,11 @@ export async function POST(req: NextRequest) {
     `ingested=${ingested} events=${events.length} signals=${signalsGenerated}`,
   );
 
-  return NextResponse.json({
-    status:           'pipeline_triggered',
-    eventsProcessed:  ingested,
-    signalsGenerated,
+  await runPipelineSafe();
+
+  return Response.json({
+    status:  'ok',
+    message: 'pipeline executed',
   });
 }
 
