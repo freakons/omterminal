@@ -17,10 +17,11 @@
  *   warnMissingOptional(['GROK_API_KEY', 'OPENAI_API_KEY']);
  *
  * LLM provider selection (AI_PROVIDER env var):
- *   AI_PROVIDER=grok    → requires GROK_API_KEY
+ *   AI_PROVIDER=groq    → requires GROQ_API_KEY  (Groq — fast inference)
+ *   AI_PROVIDER=grok    → requires GROK_API_KEY  (xAI Grok)
  *   AI_PROVIDER=openai  → requires OPENAI_API_KEY
  *   AI_PROVIDER=ollama  → requires local Ollama at http://localhost:11434
- *   (unset)             → auto-detect: Ollama → Grok → OpenAI
+ *   (unset)             → auto-detect: Ollama → Groq → Grok → OpenAI
  *
  * Recommended API Key Setup
  * ─────────────────────────
@@ -29,8 +30,13 @@
  *     Expiry       : 6 months
  *     Variables    : UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN
  *
- *   Grok (xAI):
+ *   Groq:
  *     Display name : "Omterminal Intelligence Engine"
+ *     Expiry       : 6 months
+ *     Variable     : GROQ_API_KEY
+ *
+ *   Grok (xAI):
+ *     Display name : "Omterminal xAI Engine"
  *     Expiry       : 6 months
  *     Variable     : GROK_API_KEY
  *
@@ -54,6 +60,7 @@ export const CRITICAL_VARS = [
 export const OPTIONAL_VARS = [
   'UPSTASH_REDIS_REST_URL',   // Cache: Upstash Redis endpoint
   'UPSTASH_REDIS_REST_TOKEN', // Cache: Upstash Redis token
+  'GROQ_API_KEY',             // LLM: Groq provider (fast inference)
   'GROK_API_KEY',             // LLM: Grok provider (xAI)
   'OPENAI_API_KEY',           // LLM: OpenAI provider (fallback)
   'RESEND_KEY',               // Email: digest & waitlist
@@ -120,21 +127,23 @@ export function warnMissingOptional(vars: OptionalVar[] = [...OPTIONAL_VARS]): v
  *
  * Providers checked (in priority order):
  *   1. Ollama  — always available if running locally
- *   2. Grok    — requires GROK_API_KEY
- *   3. OpenAI  — requires OPENAI_API_KEY
+ *   2. Groq    — requires GROQ_API_KEY
+ *   3. Grok    — requires GROK_API_KEY
+ *   4. OpenAI  — requires OPENAI_API_KEY
  */
 export function checkLLMProvider(): void {
+  const hasGroq   = Boolean(process.env.GROQ_API_KEY);
   const hasGrok   = Boolean(process.env.GROK_API_KEY);
   const hasOpenAI = Boolean(process.env.OPENAI_API_KEY);
 
-  if (!hasGrok && !hasOpenAI) {
+  if (!hasGroq && !hasGrok && !hasOpenAI) {
     console.warn(
-      '[env] No LLM API key configured (GROK_API_KEY or OPENAI_API_KEY). ' +
+      '[env] No LLM API key configured (GROQ_API_KEY, GROK_API_KEY, or OPENAI_API_KEY). ' +
         'The pipeline will attempt to use a local Ollama instance. ' +
-        'Set AI_PROVIDER=grok with GROK_API_KEY for production use.',
+        'Set AI_PROVIDER=groq with GROQ_API_KEY for production use.',
     );
   } else {
     const active = process.env.AI_PROVIDER?.toLowerCase() ?? 'auto';
-    console.log(`[env] LLM provider: ${active} (grok=${hasGrok} openai=${hasOpenAI})`);
+    console.log(`[env] LLM provider: ${active} (groq=${hasGroq} grok=${hasGrok} openai=${hasOpenAI})`);
   }
 }
