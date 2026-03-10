@@ -29,11 +29,10 @@ export const runtime = 'nodejs';
  *   Add ?dry_run=true to validate auth + env without executing anything.
  *
  * Auth:
- *   - Vercel cron scheduler (user-agent: vercel-cron/*) — always trusted
- *   - x-vercel-cron-secret header == CRON_SECRET env
- *   - ?secret= query param == CRON_SECRET env
+ *   - x-vercel-cron-secret header == CRON_SECRET env (Vercel cron scheduler)
+ *   - ?secret= query param == CRON_SECRET env (manual trigger)
  *   - x-admin-secret header == ADMIN_SECRET env (marks trigger_type=admin)
- *   - No CRON_SECRET configured → open in local dev
+ *   - No CRON_SECRET configured → open in local dev only (NODE_ENV !== production)
  *
  * Observability:
  *   Every run (including skipped/dry-run) is recorded in pipeline_runs.
@@ -70,31 +69,38 @@ const TIMEOUT = {
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 function detectTriggerType(req: NextRequest): TriggerType {
-  const ua = req.headers.get('user-agent') ?? '';
-  if (ua.toLowerCase().includes('vercel-cron')) return 'cron';
+  // Admin secret header → admin trigger
+  const adminHeader = req.headers.get('x-admin-secret') ?? '';
+  if (adminHeader && adminHeader === (process.env.ADMIN_SECRET ?? '')) return 'admin';
 
-  const adminSecret = req.headers.get('x-admin-secret') ?? '';
-  if (adminSecret && adminSecret === (process.env.ADMIN_SECRET ?? '')) return 'admin';
+  // Vercel cron secret header → cron trigger
+  const cronSecret = process.env.CRON_SECRET ?? '';
+  const cronHeader = req.headers.get('x-vercel-cron-secret') ?? '';
+  if (cronSecret && cronHeader === cronSecret) return 'cron';
 
   return 'manual';
 }
 
 function isAuthorized(req: NextRequest): boolean {
-  const expected = process.env.CRON_SECRET ?? '';
-  if (!expected) return true; // Local dev — no secret configured
+  const cronSecret  = process.env.CRON_SECRET  ?? '';
+  const adminSecret = process.env.ADMIN_SECRET ?? '';
+  const isProd      = process.env.NODE_ENV === 'production';
 
-  const ua = req.headers.get('user-agent') ?? '';
-  if (ua.toLowerCase().includes('vercel-cron')) return true;
+  // In production, missing secrets must fail closed — never open the endpoint.
+  if (isProd && !cronSecret && !adminSecret) return false;
 
+  // In development with no secrets configured, allow for ergonomics.
+  if (!cronSecret && !adminSecret) return true;
+
+  // Do NOT trust User-Agent for authentication — it is trivially spoofable.
   const cronHeader  = req.headers.get('x-vercel-cron-secret') ?? '';
   const querySecret = new URL(req.url).searchParams.get('secret') ?? '';
   const adminHeader = req.headers.get('x-admin-secret') ?? '';
 
-  return (
-    cronHeader  === expected ||
-    querySecret === expected ||
-    adminHeader === (process.env.ADMIN_SECRET ?? '')
-  );
+  if (cronSecret  && (cronHeader === cronSecret || querySecret === cronSecret)) return true;
+  if (adminSecret && adminHeader === adminSecret) return true;
+
+  return false;
 }
 
 // ── Stage runner with timeout ─────────────────────────────────────────────────

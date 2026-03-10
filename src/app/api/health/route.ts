@@ -1,33 +1,31 @@
 export const runtime = 'nodejs';
 
 /**
- * Omterminal — System Health & Launch-Readiness Diagnostics
+ * Omterminal — Health Endpoint
  *
  * GET /api/health
  *
- * Returns a machine-readable JSON snapshot of operational readiness.
- * Suitable for:
- *   - Uptime monitors (status: ok = 200, degraded = 503)
- *   - Launch-readiness checks by operators
- *   - Debugging pipeline state
+ * Public (no auth):
+ *   Returns a minimal liveness/readiness response safe for uptime monitors.
+ *   { ok, status, timestamp }
  *
- * Diagnostics included:
- *   - Database connectivity
- *   - Redis connectivity + pipeline lock state
- *   - Schema readiness (critical tables present)
+ * Authenticated (x-admin-secret: <ADMIN_SECRET>):
+ *   Returns full operational diagnostics for operator use:
+ *   - Database connectivity and schema readiness
+ *   - Redis connectivity and pipeline lock state
  *   - Environment variable completeness
  *   - LLM provider availability
- *   - Last pipeline run (from DB)
- *   - Last successful pipeline run
- *   - Stale-data warning (>24 h since last success)
- *   - Canonical pipeline route status
+ *   - Last pipeline run / last successful run / stale-data warning
+ *
+ * Detailed internals (table names, lock state, env var presence, subsystem
+ * errors, provider details) are only returned to authenticated callers.
  */
 
-import { NextResponse }                    from 'next/server';
-import { dbQuery, tableExists }            from '@/db/client';
-import { pingRedis, isRedisConfigured }    from '@/lib/cache/redis';
-import { getPipelineLockStatus }           from '@/lib/pipeline/lock';
-import { getProvider, getActiveProviderName } from '@/lib/ai';
+import { NextRequest, NextResponse }            from 'next/server';
+import { dbQuery, tableExists }                 from '@/db/client';
+import { pingRedis, isRedisConfigured }         from '@/lib/cache/redis';
+import { getPipelineLockStatus }                from '@/lib/pipeline/lock';
+import { getProvider, getActiveProviderName }   from '@/lib/ai';
 
 // Tables that must exist for the platform to function
 const CRITICAL_TABLES = [
@@ -38,7 +36,7 @@ const CRITICAL_TABLES = [
   'pipeline_runs',
 ] as const;
 
-// Tables added by optional migrations (warn when absent)
+// Tables added by optional migrations
 const OPTIONAL_TABLES = [
   'regulations',
   'ai_models',
@@ -54,13 +52,19 @@ const OPTIONAL_ENV_VARS = [
   'RESEND_KEY',
 ] as const;
 
-// Stale-data threshold: warn if no successful run within this window
 const STALE_THRESHOLD_HOURS = parseInt(process.env.PIPELINE_STALE_HOURS ?? '24', 10);
 
-export async function GET() {
+function isAdminAuthenticated(req: NextRequest): boolean {
+  const adminSecret = process.env.ADMIN_SECRET ?? '';
+  if (!adminSecret) return false;
+  const provided = req.headers.get('x-admin-secret') ?? '';
+  return provided === adminSecret;
+}
+
+export async function GET(req: NextRequest) {
   const now = Date.now();
 
-  // ── 1. Database connectivity ──────────────────────────────────────────────
+  // ── 1. Database connectivity (needed for public status too) ───────────────
   let dbConnected = false;
   let dbError: string | undefined;
   try {
@@ -71,7 +75,26 @@ export async function GET() {
     dbError = err instanceof Error ? err.message : String(err);
   }
 
-  // ── 2. Redis connectivity + lock status ───────────────────────────────────
+  const isAdmin = isAdminAuthenticated(req);
+
+  // ── Public minimal response (unauthenticated) ─────────────────────────────
+  if (!isAdmin) {
+    return NextResponse.json(
+      {
+        ok:        dbConnected,
+        status:    dbConnected ? 'ok' : 'degraded',
+        timestamp: new Date().toISOString(),
+      },
+      {
+        status:  dbConnected ? 200 : 503,
+        headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' },
+      },
+    );
+  }
+
+  // ── Authenticated full diagnostics ────────────────────────────────────────
+
+  // 2. Redis connectivity + lock status
   const redisStatus  = await pingRedis();
   const redisEnabled = isRedisConfigured();
 
@@ -82,7 +105,7 @@ export async function GET() {
     // Non-critical
   }
 
-  // ── 3. Schema readiness ───────────────────────────────────────────────────
+  // 3. Schema readiness
   const criticalTableStatus: Record<string, boolean> = {};
   const optionalTableStatus: Record<string, boolean> = {};
 
@@ -98,12 +121,12 @@ export async function GET() {
   }
 
   const allCriticalTablesPresent = Object.values(criticalTableStatus).every(Boolean);
-  const missingCriticalTables   = Object.entries(criticalTableStatus)
+  const missingCriticalTables    = Object.entries(criticalTableStatus)
     .filter(([, v]) => !v).map(([k]) => k);
-  const missingOptionalTables   = Object.entries(optionalTableStatus)
+  const missingOptionalTables    = Object.entries(optionalTableStatus)
     .filter(([, v]) => !v).map(([k]) => k);
 
-  // ── 4. LLM provider ───────────────────────────────────────────────────────
+  // 4. LLM provider
   let llmError: string | undefined;
   try {
     await getProvider();
@@ -111,13 +134,13 @@ export async function GET() {
     llmError = err instanceof Error ? err.message : String(err);
   }
 
-  // ── 5. Environment readiness ──────────────────────────────────────────────
+  // 5. Environment readiness
   const missingCriticalEnv = CRITICAL_ENV_VARS.filter(v => !process.env[v]);
   const missingOptionalEnv = OPTIONAL_ENV_VARS.filter(v => !process.env[v]);
 
-  // ── 6. Last pipeline run (from DB) ────────────────────────────────────────
-  let lastRun:            Record<string, unknown> | null = null;
-  let lastSuccessfulRun:  Record<string, unknown> | null = null;
+  // 6. Last pipeline run
+  let lastRun:           Record<string, unknown> | null = null;
+  let lastSuccessfulRun: Record<string, unknown> | null = null;
   let isDataStale = false;
 
   if (dbConnected && criticalTableStatus['pipeline_runs']) {
@@ -133,11 +156,8 @@ export async function GET() {
         ORDER BY run_at DESC
         LIMIT 1
       `;
-      if (lastRows.length > 0) {
-        lastRun = lastRows[0] as Record<string, unknown>;
-      }
+      if (lastRows.length > 0) lastRun = lastRows[0] as Record<string, unknown>;
     } catch {
-      // trigger_type/correlation_id columns may not exist yet (pre-migration 005)
       try {
         const rows = await dbQuery<{
           id: number; run_at: string; stage: string; status: string;
@@ -164,36 +184,35 @@ export async function GET() {
       `;
       if (successRows.length > 0) {
         lastSuccessfulRun = successRows[0] as Record<string, unknown>;
-
-        const lastSuccessMs = new Date(successRows[0].run_at).getTime();
-        const hoursSinceLast = (now - lastSuccessMs) / 3_600_000;
-        isDataStale = hoursSinceLast > STALE_THRESHOLD_HOURS;
+        const lastSuccessMs   = new Date(successRows[0].run_at).getTime();
+        const hoursSinceLast  = (now - lastSuccessMs) / 3_600_000;
+        isDataStale           = hoursSinceLast > STALE_THRESHOLD_HOURS;
       } else {
-        isDataStale = true; // Never had a successful run
+        isDataStale = true;
       }
     } catch { /* no-op */ }
   }
 
-  // ── 7. Overall readiness assessment ──────────────────────────────────────
+  // 7. Overall readiness
   const ready = dbConnected && allCriticalTablesPresent && missingCriticalEnv.length === 0;
 
   const warnings: string[] = [];
-  if (isDataStale)              warnings.push(`No successful pipeline run in the last ${STALE_THRESHOLD_HOURS}h`);
+  if (isDataStale)                    warnings.push(`No successful pipeline run in the last ${STALE_THRESHOLD_HOURS}h`);
   if (missingOptionalTables.length > 0) warnings.push(`Optional tables absent: ${missingOptionalTables.join(', ')} — run /api/migrate`);
-  if (missingOptionalEnv.length > 0)    warnings.push(`Optional env vars not set: ${missingOptionalEnv.join(', ')}`);
-  if (lockStatus.locked)        warnings.push(`Pipeline lock is held by: ${lockStatus.lockedBy}`);
+  if (missingOptionalEnv.length > 0)  warnings.push(`Optional env vars not set: ${missingOptionalEnv.join(', ')}`);
+  if (lockStatus.locked)              warnings.push(`Pipeline lock is held by: ${lockStatus.lockedBy}`);
 
   const health = {
     ok:      ready,
     status:  ready ? 'ok' : 'degraded',
     ready,
-    timestamp: new Date().toISOString(),
+    timestamp:   new Date().toISOString(),
     environment: process.env.NODE_ENV ?? 'unknown',
-    version: '1.0.0',
+    version:     '1.0.0',
 
     database: {
-      connected:    dbConnected,
-      provider:     process.env.DB_PROVIDER ?? 'neon',
+      connected: dbConnected,
+      provider:  process.env.DB_PROVIDER ?? 'neon',
       ...(dbError ? { error: dbError } : {}),
     },
 
@@ -214,19 +233,19 @@ export async function GET() {
     },
 
     pipeline: {
-      canonical:    'POST /api/pipeline/run',
-      lock:         lockStatus,
+      canonical:           'POST /api/pipeline/run',
+      lock:                lockStatus,
       lastRun,
       lastSuccessfulRun,
-      dataStale:    isDataStale,
+      dataStale:           isDataStale,
       staleThresholdHours: STALE_THRESHOLD_HOURS,
     },
 
     llm: {
-      provider:  getActiveProviderName() ?? 'not_resolved',
-      hasGroq:   Boolean(process.env.GROQ_API_KEY),
-      hasGrok:   Boolean(process.env.GROK_API_KEY),
-      hasOpenAI: Boolean(process.env.OPENAI_API_KEY),
+      provider:      getActiveProviderName() ?? 'not_resolved',
+      hasGroq:       Boolean(process.env.GROQ_API_KEY),
+      hasGrok:       Boolean(process.env.GROK_API_KEY),
+      hasOpenAI:     Boolean(process.env.OPENAI_API_KEY),
       aiProviderEnv: process.env.AI_PROVIDER ?? '(auto)',
       ...(llmError ? { error: llmError } : {}),
     },
@@ -240,7 +259,7 @@ export async function GET() {
   };
 
   return NextResponse.json(health, {
-    status: ready ? 200 : 503,
+    status:  ready ? 200 : 503,
     headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' },
   });
 }
