@@ -206,9 +206,96 @@ const STATEMENTS = [
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
   `CREATE INDEX IF NOT EXISTS idx_pipeline_runs_created_at ON pipeline_runs (created_at DESC)`,
+
+  // ── Migration 003: Regulations ────────────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS regulations (
+    id          TEXT        PRIMARY KEY,
+    title       TEXT        NOT NULL,
+    type        TEXT        NOT NULL CHECK (type IN ('law', 'bill', 'exec', 'policy', 'report')),
+    country     TEXT        NOT NULL,
+    flag        TEXT        NOT NULL DEFAULT '',
+    status      TEXT        NOT NULL DEFAULT 'active'
+                  CHECK (status IN ('active', 'pending', 'passed')),
+    summary     TEXT        NOT NULL DEFAULT '',
+    date        TEXT        NOT NULL DEFAULT '',
+    impact      TEXT        NOT NULL DEFAULT '',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_regulations_status  ON regulations (status)`,
+  `CREATE INDEX IF NOT EXISTS idx_regulations_type    ON regulations (type)`,
+  `CREATE INDEX IF NOT EXISTS idx_regulations_country ON regulations (country)`,
+  `CREATE INDEX IF NOT EXISTS idx_regulations_created ON regulations (created_at DESC)`,
+
+  // ── Migration 003: AI Models ──────────────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS ai_models (
+    id              TEXT        PRIMARY KEY,
+    name            TEXT        NOT NULL,
+    company         TEXT        NOT NULL,
+    icon            TEXT        NOT NULL DEFAULT '',
+    release_date    TEXT        NOT NULL DEFAULT '',
+    type            TEXT        NOT NULL DEFAULT 'proprietary'
+                      CHECK (type IN ('proprietary', 'open-weight', 'open-source')),
+    context_window  TEXT        NOT NULL DEFAULT '',
+    key_capability  TEXT        NOT NULL DEFAULT '',
+    summary         TEXT        NOT NULL DEFAULT '',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_ai_models_company  ON ai_models (company)`,
+  `CREATE INDEX IF NOT EXISTS idx_ai_models_type     ON ai_models (type)`,
+  `CREATE INDEX IF NOT EXISTS idx_ai_models_created  ON ai_models (created_at DESC)`,
+
+  // ── Migration 003: Funding Rounds ─────────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS funding_rounds (
+    id          TEXT        PRIMARY KEY,
+    company     TEXT        NOT NULL,
+    icon        TEXT        NOT NULL DEFAULT '',
+    amount      TEXT        NOT NULL,
+    valuation   TEXT        NOT NULL DEFAULT '',
+    round       TEXT        NOT NULL,
+    date        TEXT        NOT NULL DEFAULT '',
+    investors   TEXT[]      NOT NULL DEFAULT '{}',
+    summary     TEXT        NOT NULL DEFAULT '',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_funding_rounds_company ON funding_rounds (company)`,
+  `CREATE INDEX IF NOT EXISTS idx_funding_rounds_round   ON funding_rounds (round)`,
+  `CREATE INDEX IF NOT EXISTS idx_funding_rounds_created ON funding_rounds (created_at DESC)`,
+
+  // ── Migration 004: funding amount normalisation ───────────────────────────
+  // Stores pre-parsed USD-million equivalent alongside the display text.
+  // Populated by the seed route/script after initial migration.
+  `ALTER TABLE funding_rounds
+     ADD COLUMN IF NOT EXISTS amount_usd_m NUMERIC(12, 2)`,
+  `CREATE INDEX IF NOT EXISTS idx_funding_rounds_amount_usd
+     ON funding_rounds (amount_usd_m DESC NULLS LAST)`,
 ];
 
-/** Table names that are created (or verified) by the migration. */
+/**
+ * Table names that are created (or verified) by this migration.
+ *
+ * ── Operator runbook ──────────────────────────────────────────────────────────
+ *
+ *  Step 1 — Apply schema (idempotent, safe to re-run):
+ *    POST /api/migrate?key=<ADMIN_SECRET>
+ *
+ *  Step 2 — Seed static data into regulations / ai_models / funding_rounds:
+ *    POST /api/seed?key=<ADMIN_SECRET>
+ *    (uses ON CONFLICT DO NOTHING — safe to re-run; only inserts missing rows)
+ *
+ *  Step 3 — Verify:
+ *    GET /api/health/db
+ *
+ *  Notes:
+ *  - Migration 004 adds the amount_usd_m column; the seed route populates it.
+ *  - Re-running /api/seed after new static data is added will insert new rows
+ *    but will NOT overwrite existing ones.  To force an update, delete the
+ *    target rows first and then re-seed.
+ *  - The ADMIN_SECRET query param must match process.env.ADMIN_SECRET.
+ * ──────────────────────────────────────────────────────────────────────────────
+ */
 const TABLES_CREATED = [
   'articles',
   'intelligence_events',
@@ -222,6 +309,12 @@ const TABLES_CREATED = [
   'trends',
   'insights',
   'pipeline_runs',
+  // migration 003
+  'regulations',
+  'ai_models',
+  'funding_rounds',
+  // migration 004 column additions (noted, not a new table)
+  'funding_rounds.amount_usd_m (column)',
 ];
 
 export async function POST(req: NextRequest) {

@@ -1,54 +1,104 @@
 /**
  * Data Service — Abstraction layer for data access.
  *
- * Current implementation: Static seed data from /lib/data modules.
- * Future implementation: Database queries via Supabase/PostgreSQL.
+ * Strategy: DB-first with static seed fallback.
  *
- * By abstracting data access here, switching from seed data to a real database
- * requires changes ONLY in this file — all components continue working unchanged.
+ * Each function tries the live database first via src/db/queries.ts.
+ * If the database returns an empty result, throws (e.g. missing DATABASE_URL
+ * at build time), or has any other error, it falls back to the static arrays
+ * in /lib/data — so all pages remain fully functional at all times.
  */
 
-import { NEWS, type Article, getArticlesByCategory, getFeaturedArticle } from '@/lib/data/news';
+import { NEWS, type Article, getArticlesByCategory } from '@/lib/data/news';
 import { REGULATIONS, type Regulation, getRegulationsByType } from '@/lib/data/regulations';
 import { MODELS, type AIModel } from '@/lib/data/models';
 import { FUNDING_ROUNDS, type FundingRound } from '@/lib/data/funding';
 import { TICKERS, type TickerItem } from '@/lib/data/ticker';
 
-// Re-export types for consumers
+import {
+  getArticles as dbGetArticles,
+  getFeaturedArticle as dbGetFeaturedArticle,
+  getRegulations as dbGetRegulations,
+  getModels as dbGetModels,
+  getFundingRounds as dbGetFundingRounds,
+} from '@/db/queries';
+
+// Re-export types for consumers — unchanged so all imports keep working
 export type { Article, Regulation, AIModel, FundingRound, TickerItem };
 
-/**
- * Data access functions.
- * When database is integrated, replace implementations below.
- * Interfaces stay the same — zero component changes needed.
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// Articles
+// ─────────────────────────────────────────────────────────────────────────────
 
 export async function fetchArticles(category?: string): Promise<Article[]> {
-  // Future: return db.query('SELECT * FROM articles WHERE cat = $1', [category]);
+  try {
+    const dbRows = await dbGetArticles(category, 100);
+    if (dbRows.length > 0) return dbRows;
+  } catch {
+    // DB unavailable — fall through to static
+  }
   return category && category !== 'all' ? getArticlesByCategory(category) : NEWS;
 }
 
 export async function fetchFeaturedArticle(): Promise<Article | undefined> {
-  // Future: return db.query('SELECT * FROM articles WHERE featured = true LIMIT 1');
-  return getFeaturedArticle();
+  try {
+    const dbArticle = await dbGetFeaturedArticle();
+    if (dbArticle) return dbArticle;
+  } catch {
+    // DB unavailable — fall through to static
+  }
+  return NEWS.find(a => a.featured);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Regulations
+// ─────────────────────────────────────────────────────────────────────────────
+
 export async function fetchRegulations(type?: string): Promise<Regulation[]> {
-  // Future: return db.query('SELECT * FROM regulations WHERE type = $1', [type]);
+  try {
+    const dbRows = await dbGetRegulations(type, 100);
+    if (dbRows.length > 0) return dbRows;
+  } catch {
+    // DB unavailable — fall through to static
+  }
   return type && type !== 'all' ? getRegulationsByType(type) : REGULATIONS;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// AI Models
+// ─────────────────────────────────────────────────────────────────────────────
+
 export async function fetchModels(): Promise<AIModel[]> {
-  // Future: return db.query('SELECT * FROM models ORDER BY release_date DESC');
+  try {
+    const dbRows = await dbGetModels(100);
+    if (dbRows.length > 0) return dbRows;
+  } catch {
+    // DB unavailable — fall through to static
+  }
   return MODELS;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Funding Rounds
+// ─────────────────────────────────────────────────────────────────────────────
+
 export async function fetchFundingRounds(): Promise<FundingRound[]> {
-  // Future: return db.query('SELECT * FROM funding_rounds ORDER BY date DESC');
+  try {
+    const dbRows = await dbGetFundingRounds(100);
+    if (dbRows.length > 0) return dbRows;
+  } catch {
+    // DB unavailable — fall through to static
+  }
   return FUNDING_ROUNDS;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Ticker items
+// ─────────────────────────────────────────────────────────────────────────────
+
 export async function fetchTickerItems(): Promise<TickerItem[]> {
-  // Future: return db.query('SELECT * FROM ticker_items ORDER BY created_at DESC LIMIT 10');
+  // Ticker items are derived from the latest articles/signals.
+  // Currently served from static seed; replace with a DB query once a
+  // `ticker_items` view or table is introduced.
   return TICKERS;
 }

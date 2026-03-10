@@ -1,4 +1,6 @@
 import { fetchFundingRounds } from '@/lib/dataService';
+import { getSiteStats } from '@/db/queries';
+import { parseFundingAmountUsdM, formatFundingTotal, sumFundingRounds } from '@/lib/parseFundingAmount';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { StatCard } from '@/components/ui/StatCard';
 
@@ -11,8 +13,28 @@ export const metadata: Metadata = {
 
 export const revalidate = 300;
 
+const STATS_FALLBACK = {
+  signals: 0, companies: 0, regulations: 0, sources: 0,
+  fundingRounds: 0, models: 0, totalFundingUsdM: 0,
+};
+
 export default async function FundingPage() {
-  const rounds = await fetchFundingRounds();
+  const [rounds, live] = await Promise.all([
+    fetchFundingRounds(),
+    getSiteStats().catch(() => STATS_FALLBACK),
+  ]);
+
+  // Total rounds: live DB count if available, else use the data array length
+  const totalRounds = live.fundingRounds > 0 ? live.fundingRounds : rounds.length;
+
+  // Mega rounds ($1B+): count from the displayed data using the parser
+  const megaRounds = rounds.filter(r => (parseFundingAmountUsdM(r.amount) ?? 0) >= 1_000).length;
+
+  // Total funding: DB aggregate if populated (migration 004 + seeded), else inline sum
+  const computedTotalM = live.totalFundingUsdM > 0
+    ? live.totalFundingUsdM
+    : (sumFundingRounds(rounds) ?? 0);
+  const totalFundingLabel = computedTotalM > 0 ? formatFundingTotal(computedTotalM) : 'N/A';
 
   return (
     <>
@@ -24,9 +46,9 @@ export default async function FundingPage() {
       />
 
       <div className="stats-row">
-        <StatCard value="$120B+" label="Total AI Funding 2026" delta="↑ Record year" color="var(--amber-l)" glowColor="rgba(217,119,6,0.4)" />
-        <StatCard value="6" label="Mega Rounds ($1B+)" delta="↑ +2 vs 2025" color="var(--indigo-l)" glowColor="rgba(79,70,229,0.4)" />
-        <StatCard value="$340B" label="Highest Valuation" delta="OpenAI" color="var(--emerald-l)" glowColor="rgba(5,150,105,0.4)" />
+        <StatCard value={totalFundingLabel} label="Total AI Funding" delta="Tracked rounds" color="var(--amber-l)" glowColor="rgba(217,119,6,0.4)" />
+        <StatCard value={String(megaRounds || totalRounds)} label={megaRounds > 0 ? 'Mega Rounds ($1B+)' : 'Rounds Tracked'} delta="Verified" color="var(--indigo-l)" glowColor="rgba(79,70,229,0.4)" />
+        <StatCard value={String(totalRounds)} label="Rounds Tracked" delta="All verified" color="var(--emerald-l)" glowColor="rgba(5,150,105,0.4)" />
       </div>
 
       <div className="news-grid">

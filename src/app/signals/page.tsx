@@ -1,4 +1,6 @@
 import type { Metadata } from 'next';
+import { getSignals } from '@/db/queries';
+import { MOCK_SIGNALS } from '@/data/mockSignals';
 import { SignalsBrowser } from './SignalsBrowser';
 
 export const metadata: Metadata = {
@@ -9,7 +11,17 @@ export const metadata: Metadata = {
 /** ISR: revalidate every 5 minutes */
 export const revalidate = 300;
 
-export default function SignalsPage() {
+export default async function SignalsPage() {
+  // Pre-fetch signals server-side; pass as initial prop to the client component.
+  // Falls back to mock in development when DB is empty, and to [] in production.
+  const dbSignals = await getSignals(200).catch(() => []);
+  const initialSignals =
+    dbSignals.length > 0
+      ? dbSignals
+      : process.env.NODE_ENV === 'production'
+        ? []
+        : MOCK_SIGNALS;
+
   return (
     <>
       <div className="ph">
@@ -18,7 +30,7 @@ export default function SignalsPage() {
           <p>INTELLIGENCE SIGNALS  ·  AI ECOSYSTEM  ·  REAL-TIME DETECTION</p>
         </div>
       </div>
-      <SignalsBrowser />
+      <SignalsBrowser initialSignals={initialSignals} />
     </>
   );
 }
