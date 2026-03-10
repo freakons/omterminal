@@ -1,9 +1,23 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { dbQuery, tableExists } from '@/db/client';
 
 export const runtime = 'nodejs';
 
-/** Optional env vars relevant to DB and setup — checked but not required. */
+/**
+ * GET /api/health/db
+ *
+ * Requires x-admin-secret header for access.
+ * Returns DB connectivity, connection path, schema status, and env presence.
+ */
+
+/** Derive the connection path type from the DATABASE_URL value. */
+function detectConnectionPath(): 'neon-http' | 'pg-pool' | 'unconfigured' {
+  const url = process.env.DATABASE_URL;
+  if (!url) return 'unconfigured';
+  if (url.includes('.neon.tech') || url.includes('neon.tech')) return 'neon-http';
+  return 'pg-pool';
+}
+
 const OPTIONAL_ENV_VARS = [
   'DB_PROVIDER',
   'UPSTASH_REDIS_REST_URL',
@@ -17,15 +31,14 @@ const OPTIONAL_ENV_VARS = [
   'DIGEST_FROM',
 ] as const;
 
-/** Derive the connection path type from the DATABASE_URL value. */
-function detectConnectionPath(): 'neon-http' | 'pg-pool' | 'unconfigured' {
-  const url = process.env.DATABASE_URL;
-  if (!url) return 'unconfigured';
-  if (url.includes('.neon.tech') || url.includes('neon.tech')) return 'neon-http';
-  return 'pg-pool';
-}
+export async function GET(req: NextRequest) {
+  const adminSecret = process.env.ADMIN_SECRET ?? '';
+  const provided    = req.headers.get('x-admin-secret') ?? '';
 
-export async function GET() {
+  if (!adminSecret || provided !== adminSecret) {
+    return NextResponse.json({ ok: false, status: 'unauthorized' }, { status: 401 });
+  }
+
   // ── DB connectivity ───────────────────────────────────────────────────────
   let dbConnected = false;
   let dbError: string | undefined;
@@ -37,7 +50,7 @@ export async function GET() {
     dbError = err instanceof Error ? err.message : String(err);
   }
 
-  // ── Schema existence (optional tables from migration 003) ─────────────────
+  // ── Schema existence ──────────────────────────────────────────────────────
   let schemaStatus: Record<string, boolean> = {
     regulations:    false,
     ai_models:      false,
@@ -58,21 +71,15 @@ export async function GET() {
   }
 
   const allTablesPresent = Object.values(schemaStatus).every(Boolean);
-
-  // ── Connection path + provider ────────────────────────────────────────────
-  const connectionPath = detectConnectionPath();
-  const dbProvider     = process.env.DB_PROVIDER || (connectionPath === 'neon-http' ? 'neon' : 'postgres');
-
-  // ── Missing optional env vars ─────────────────────────────────────────────
+  const connectionPath   = detectConnectionPath();
+  const dbProvider       = process.env.DB_PROVIDER || (connectionPath === 'neon-http' ? 'neon' : 'postgres');
   const missingOptionalEnv = OPTIONAL_ENV_VARS.filter(v => !process.env[v]);
-
-  // ── Response ──────────────────────────────────────────────────────────────
   const ok = dbConnected;
 
   const body = {
     ok,
-    status:         ok ? 'ok' : 'error',
-    timestamp:      new Date().toISOString(),
+    status:    ok ? 'ok' : 'error',
+    timestamp: new Date().toISOString(),
     database: {
       connected:      dbConnected,
       connectionPath,
@@ -81,21 +88,21 @@ export async function GET() {
     },
     schema: {
       allTablesPresent,
-      tables: schemaStatus,
+      tables:        schemaStatus,
       migrationHint: allTablesPresent
         ? null
         : 'Run POST /api/migrate?key=<ADMIN_SECRET> to create missing tables',
     },
     env: {
-      hasDatabaseUrl:       Boolean(process.env.DATABASE_URL),
-      hasAdminSecret:       Boolean(process.env.ADMIN_SECRET),
-      hasCronSecret:        Boolean(process.env.CRON_SECRET),
-      missingOptionalEnvs:  missingOptionalEnv,
+      hasDatabaseUrl:      Boolean(process.env.DATABASE_URL),
+      hasAdminSecret:      Boolean(process.env.ADMIN_SECRET),
+      hasCronSecret:       Boolean(process.env.CRON_SECRET),
+      missingOptionalEnvs: missingOptionalEnv,
     },
   };
 
   return NextResponse.json(body, {
-    status: ok ? 200 : 503,
+    status:  ok ? 200 : 503,
     headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' },
   });
 }

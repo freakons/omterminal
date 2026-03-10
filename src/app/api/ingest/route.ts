@@ -8,32 +8,47 @@ import { dbQuery } from '@/db/client';
 export const maxDuration = 10; // Vercel Hobby plan limit
 
 /**
- * Auth strategy:
- * 1. Vercel's own cron scheduler sends requests with User-Agent: vercel-cron/1.0
- *    These are always trusted (only Vercel infrastructure can set this).
- * 2. Manual triggers must pass ?secret=CRON_SECRET or x-cron-secret header.
+ * POST/GET /api/ingest
+ *
+ * Narrowly-scoped internal admin ingestion route.
+ * Only runs the GNews ingestion step — no orchestration, no downstream
+ * fire-and-forget triggers. Full pipeline orchestration lives exclusively
+ * in POST /api/pipeline/run.
+ *
+ * Auth:
+ *   - x-vercel-cron-secret header == CRON_SECRET env
+ *   - x-admin-secret header == ADMIN_SECRET env
+ *   - No secrets configured → open in local dev only (NODE_ENV !== production)
+ *
+ * NOTE: This route is intentionally NOT scheduled as a Vercel cron job.
+ * The canonical scheduled entrypoint is /api/pipeline/run.
  */
+
 function isAuthorized(req: NextRequest): boolean {
-  const expected = process.env.CRON_SECRET || '';
+  const cronSecret  = process.env.CRON_SECRET  ?? '';
+  const adminSecret = process.env.ADMIN_SECRET ?? '';
+  const isProd      = process.env.NODE_ENV === 'production';
 
-  // Vercel cron system sends this user-agent — trust it unconditionally
-  const userAgent = req.headers.get('user-agent') || '';
-  if (userAgent.includes('vercel-cron')) {
-    return true;
-  }
+  // In production, missing secrets must fail closed — never open the endpoint.
+  if (isProd && !cronSecret && !adminSecret) return false;
 
-  // Manual trigger: check query param or custom header
-  const querySecret = new URL(req.url).searchParams.get('secret') || '';
-  const headerSecret = req.headers.get('x-cron-secret') || '';
+  // In development with no secrets configured, allow for ergonomics.
+  if (!cronSecret && !adminSecret) return true;
 
-  if (!expected) return true; // No secret configured — allow all (local dev)
-  return querySecret === expected || headerSecret === expected;
+  // Do NOT trust User-Agent for authentication — it is trivially spoofable.
+  const cronHeader  = req.headers.get('x-vercel-cron-secret') ?? '';
+  const adminHeader = req.headers.get('x-admin-secret') ?? '';
+
+  if (cronSecret  && cronHeader  === cronSecret)  return true;
+  if (adminSecret && adminHeader === adminSecret) return true;
+
+  return false;
 }
 
 export async function GET(req: NextRequest) {
-  const t0 = Date.now();
+  const t0    = Date.now();
   const reqId = createRequestId();
-  validateEnvironment(['CRON_SECRET', 'GNEWS_API_KEY']);
+  validateEnvironment(['GNEWS_API_KEY']);
 
   if (!isAuthorized(req)) {
     return new NextResponse('Unauthorized', { status: 401 });
@@ -42,21 +57,7 @@ export async function GET(req: NextRequest) {
   try {
     const result = await ingestGNews();
 
-    const baseUrl = req.headers.get('x-forwarded-host')
-      ? `https://${req.headers.get('x-forwarded-host')}`
-      : 'https://www.omterminal.com';
-
-    const secret = process.env.CRON_SECRET || '';
-
-    // Trigger snapshot regeneration (fire-and-forget)
-    fetch(`${baseUrl}/api/snapshot?secret=${secret}`, { method: 'GET' })
-      .catch((err) => console.error('[ingest] snapshot trigger failed:', err));
-
-    // Trigger signals engine (fire-and-forget)
-    fetch(`${baseUrl}/api/signals?secret=${secret}`, { method: 'GET' })
-      .catch((err) => console.error('[ingest] signals trigger failed:', err));
-
-    // ── Post-ingest diagnostics ──────────────────────────────────────────────
+    // Post-ingest diagnostics (authenticated path only — never exposed publicly)
     let diagnostics: Record<string, unknown> = {};
     try {
       const eventsCount = await dbQuery<{ count: string }>`SELECT COUNT(*) AS count FROM events`;
