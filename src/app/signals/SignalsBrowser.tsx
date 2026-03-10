@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import MOCK_SIGNALS, { type Signal, type SignalCategory } from '@/data/mockSignals';
+import { type Signal, type SignalCategory } from '@/data/mockSignals';
 import { CommandBar } from '@/ui/layout/CommandBar';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -51,23 +51,20 @@ function formatDate(iso: string): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Data fetching
+// Data fetching — refreshes on the client after SSR initial load
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function fetchSignals(): Promise<Signal[]> {
+async function refreshSignals(current: Signal[]): Promise<Signal[]> {
   try {
-    const res = await fetch('/api/signals', { next: { revalidate: 60 } });
+    const res = await fetch('/api/signals', { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (Array.isArray(data.signals) && data.signals.length > 0) {
       return data.signals as Signal[];
     }
-    // In production, return empty to show explicit empty state instead of fake data
-    if (process.env.NODE_ENV === 'production') return [];
-    return MOCK_SIGNALS;
+    return current;
   } catch {
-    if (process.env.NODE_ENV === 'production') return [];
-    return MOCK_SIGNALS;
+    return current;
   }
 }
 
@@ -196,15 +193,19 @@ function SignalStats({ signals }: { signals: Signal[] }) {
 // Main browser component
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function SignalsBrowser() {
-  const [active, setActive] = useState<'all' | SignalCategory>('all');
-  const [signals, setSignals] = useState<Signal[]>(
-    process.env.NODE_ENV === 'production' ? [] : MOCK_SIGNALS,
-  );
+interface SignalsBrowserProps {
+  /** Pre-fetched signals from the server component (SSR). */
+  initialSignals: Signal[];
+}
 
-  // Fetch from API on mount; silently keep mock data if it fails
+export function SignalsBrowser({ initialSignals }: SignalsBrowserProps) {
+  const [active, setActive] = useState<'all' | SignalCategory>('all');
+  const [signals, setSignals] = useState<Signal[]>(initialSignals);
+
+  // Refresh from API on mount to pick up any signals added since SSR
   useEffect(() => {
-    fetchSignals().then(setSignals);
+    refreshSignals(initialSignals).then(setSignals);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const filtered = active === 'all'

@@ -1,12 +1,20 @@
 import Link from 'next/link';
 import { siteConfig } from '@/config/site';
+import { getSiteStats } from '@/db/queries';
 import RequestAccessButton from '@/components/RequestAccessButton';
 import { TrendRadar } from '@/components/TrendRadar';
 
-/** Static generation with ISR — revalidate every hour */
+/** ISR: revalidate every hour */
 export const revalidate = 3600;
 
-export default function HomePage() {
+export default async function HomePage() {
+  // Compute live stats; gracefully fall back to siteConfig hardcoded values on any error
+  const fallbackStats = { signals: 0, companies: 0, regulations: 0, sources: 0, fundingRounds: 0 };
+  const live = await getSiteStats().catch(() => fallbackStats);
+  const signals     = live.signals     > 0 ? live.signals     : siteConfig.stats.signals;
+  const companies   = live.companies   > 0 ? live.companies   : siteConfig.stats.companies;
+  const regulations = live.regulations > 0 ? live.regulations : siteConfig.stats.regulations;
+
   return (
     <>
       {/* Hero */}
@@ -27,9 +35,9 @@ export default function HomePage() {
           </Link>
         </div>
         <div className="hero-metrics">
-          <div className="hm"><div className="hm-n">{siteConfig.stats.signals}</div><div className="hm-l">Signals this week</div></div>
-          <div className="hm"><div className="hm-n">{siteConfig.stats.companies}</div><div className="hm-l">Companies tracked</div></div>
-          <div className="hm"><div className="hm-n">{siteConfig.stats.regulations}</div><div className="hm-l">Active regulations</div></div>
+          <div className="hm"><div className="hm-n">{signals}</div><div className="hm-l">Signals this week</div></div>
+          <div className="hm"><div className="hm-n">{companies}</div><div className="hm-l">Companies tracked</div></div>
+          <div className="hm"><div className="hm-n">{regulations}</div><div className="hm-l">Active regulations</div></div>
           <div className="hm"><div className="hm-n">{siteConfig.stats.markets}</div><div className="hm-l">Global markets</div></div>
           <div className="hm"><div className="hm-n">2.4K</div><div className="hm-l">Professionals tracking AI</div></div>
         </div>

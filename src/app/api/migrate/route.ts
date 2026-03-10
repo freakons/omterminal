@@ -206,6 +206,63 @@ const STATEMENTS = [
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
   `CREATE INDEX IF NOT EXISTS idx_pipeline_runs_created_at ON pipeline_runs (created_at DESC)`,
+
+  // ── Migration 003: Regulations ────────────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS regulations (
+    id          TEXT        PRIMARY KEY,
+    title       TEXT        NOT NULL,
+    type        TEXT        NOT NULL CHECK (type IN ('law', 'bill', 'exec', 'policy', 'report')),
+    country     TEXT        NOT NULL,
+    flag        TEXT        NOT NULL DEFAULT '',
+    status      TEXT        NOT NULL DEFAULT 'active'
+                  CHECK (status IN ('active', 'pending', 'passed')),
+    summary     TEXT        NOT NULL DEFAULT '',
+    date        TEXT        NOT NULL DEFAULT '',
+    impact      TEXT        NOT NULL DEFAULT '',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_regulations_status  ON regulations (status)`,
+  `CREATE INDEX IF NOT EXISTS idx_regulations_type    ON regulations (type)`,
+  `CREATE INDEX IF NOT EXISTS idx_regulations_country ON regulations (country)`,
+  `CREATE INDEX IF NOT EXISTS idx_regulations_created ON regulations (created_at DESC)`,
+
+  // ── Migration 003: AI Models ──────────────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS ai_models (
+    id              TEXT        PRIMARY KEY,
+    name            TEXT        NOT NULL,
+    company         TEXT        NOT NULL,
+    icon            TEXT        NOT NULL DEFAULT '',
+    release_date    TEXT        NOT NULL DEFAULT '',
+    type            TEXT        NOT NULL DEFAULT 'proprietary'
+                      CHECK (type IN ('proprietary', 'open-weight', 'open-source')),
+    context_window  TEXT        NOT NULL DEFAULT '',
+    key_capability  TEXT        NOT NULL DEFAULT '',
+    summary         TEXT        NOT NULL DEFAULT '',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_ai_models_company  ON ai_models (company)`,
+  `CREATE INDEX IF NOT EXISTS idx_ai_models_type     ON ai_models (type)`,
+  `CREATE INDEX IF NOT EXISTS idx_ai_models_created  ON ai_models (created_at DESC)`,
+
+  // ── Migration 003: Funding Rounds ─────────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS funding_rounds (
+    id          TEXT        PRIMARY KEY,
+    company     TEXT        NOT NULL,
+    icon        TEXT        NOT NULL DEFAULT '',
+    amount      TEXT        NOT NULL,
+    valuation   TEXT        NOT NULL DEFAULT '',
+    round       TEXT        NOT NULL,
+    date        TEXT        NOT NULL DEFAULT '',
+    investors   TEXT[]      NOT NULL DEFAULT '{}',
+    summary     TEXT        NOT NULL DEFAULT '',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_funding_rounds_company ON funding_rounds (company)`,
+  `CREATE INDEX IF NOT EXISTS idx_funding_rounds_round   ON funding_rounds (round)`,
+  `CREATE INDEX IF NOT EXISTS idx_funding_rounds_created ON funding_rounds (created_at DESC)`,
 ];
 
 /** Table names that are created (or verified) by the migration. */
@@ -222,6 +279,10 @@ const TABLES_CREATED = [
   'trends',
   'insights',
   'pipeline_runs',
+  // migration 003
+  'regulations',
+  'ai_models',
+  'funding_rounds',
 ];
 
 export async function POST(req: NextRequest) {

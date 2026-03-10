@@ -7,15 +7,23 @@
  * callers are responsible for supplying mock-data fallbacks when needed.
  *
  * Tables:
- *   signals  — populated by the intelligence engine (/api/signals)
- *   events   — populated by the ingestion pipeline (/api/ingest)
- *   entities — populated by seeding or the entity tracker
+ *   signals       — populated by the intelligence engine (/api/signals)
+ *   events        — populated by the ingestion pipeline (/api/ingest)
+ *   entities      — populated by seeding or the entity tracker
+ *   articles      — populated by the ingestion pipeline (/api/ingest)
+ *   regulations   — populated by seeding or admin input (migration 003)
+ *   ai_models     — populated by seeding or admin input (migration 003)
+ *   funding_rounds — populated by seeding or admin input (migration 003)
  */
 
 import { dbQuery } from '@/db/client';
 import type { Signal, SignalCategory } from '@/data/mockSignals';
 import type { AiEvent, EventType } from '@/data/mockEvents';
 import type { EntityProfile, RiskLevel } from '@/data/mockEntities';
+import type { Article } from '@/lib/data/news';
+import type { Regulation } from '@/lib/data/regulations';
+import type { AIModel } from '@/lib/data/models';
+import type { FundingRound } from '@/lib/data/funding';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Row types (what the DB actually returns)
@@ -289,4 +297,306 @@ export async function getEntities(limit = 50): Promise<EntityProfile[]> {
   `;
 
   return rows.map(rowToEntity);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Articles
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface ArticleRow {
+  id: string;
+  title: string;
+  source: string;
+  url: string;
+  published_at: string;
+  category: string;
+  created_at: string;
+}
+
+function rowToArticle(row: ArticleRow, index: number): Article {
+  return {
+    id: index + 1,
+    cat: isArticleCat(row.category) ? row.category : 'research',
+    title: row.title,
+    body: '',
+    full: '',
+    sowhat: '',
+    source: row.source,
+    sourceUrl: row.url,
+    date: new Date(row.published_at).toLocaleDateString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric',
+    }),
+    verified: true,
+    _live: true,
+  };
+}
+
+type ArticleCat = Article['cat'];
+const ARTICLE_CATS: ArticleCat[] = ['funding', 'models', 'agents', 'regulation', 'research', 'product'];
+function isArticleCat(v: string): v is ArticleCat {
+  return ARTICLE_CATS.includes(v as ArticleCat);
+}
+
+/**
+ * Fetch articles from the database.
+ *
+ * Reads from the `articles` table populated by the ingestion pipeline.
+ * Returns an empty array when the DB is unavailable or the table is empty.
+ *
+ * @param category  Optional category filter (matches `cat` on Article interface).
+ * @param limit     Maximum articles to return (default 50).
+ */
+export async function getArticles(category?: string, limit = 50): Promise<Article[]> {
+  const safeLimit = Math.min(Math.max(1, limit), 500);
+
+  const rows = category && category !== 'all'
+    ? await dbQuery<ArticleRow>`
+        SELECT id, title, source, url, published_at, category, created_at
+        FROM articles
+        WHERE category = ${category}
+        ORDER BY published_at DESC
+        LIMIT ${safeLimit}
+      `
+    : await dbQuery<ArticleRow>`
+        SELECT id, title, source, url, published_at, category, created_at
+        FROM articles
+        ORDER BY published_at DESC
+        LIMIT ${safeLimit}
+      `;
+
+  return rows.map(rowToArticle);
+}
+
+/**
+ * Fetch the single featured article from the database.
+ *
+ * Returns undefined when the DB is unavailable or has no articles.
+ */
+export async function getFeaturedArticle(): Promise<Article | undefined> {
+  const rows = await dbQuery<ArticleRow>`
+    SELECT id, title, source, url, published_at, category, created_at
+    FROM articles
+    ORDER BY published_at DESC
+    LIMIT 1
+  `;
+  if (rows.length === 0) return undefined;
+  const article = rowToArticle(rows[0], 0);
+  return { ...article, featured: true };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Regulations
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface RegulationRow {
+  id: string;
+  title: string;
+  type: string;
+  country: string;
+  flag: string;
+  status: string;
+  summary: string;
+  date: string;
+  impact: string;
+}
+
+function rowToRegulation(row: RegulationRow): Regulation {
+  return {
+    id: row.id,
+    title: row.title,
+    type: isRegType(row.type) ? row.type : 'policy',
+    country: row.country,
+    flag: row.flag,
+    status: isRegStatus(row.status) ? row.status : 'active',
+    summary: row.summary,
+    date: row.date,
+    impact: row.impact,
+  };
+}
+
+type RegType = Regulation['type'];
+type RegStatus = Regulation['status'];
+const REG_TYPES: RegType[] = ['law', 'bill', 'exec', 'policy', 'report'];
+const REG_STATUSES: RegStatus[] = ['active', 'pending', 'passed'];
+function isRegType(v: string): v is RegType { return REG_TYPES.includes(v as RegType); }
+function isRegStatus(v: string): v is RegStatus { return REG_STATUSES.includes(v as RegStatus); }
+
+/**
+ * Fetch regulations from the database.
+ *
+ * Reads from the `regulations` table (migration 003).
+ * Returns an empty array when the DB is unavailable or the table is empty.
+ *
+ * @param type   Optional type filter ('law' | 'bill' | 'exec' | 'policy' | 'report').
+ * @param limit  Maximum regulations to return (default 50).
+ */
+export async function getRegulations(type?: string, limit = 50): Promise<Regulation[]> {
+  const safeLimit = Math.min(Math.max(1, limit), 200);
+
+  const rows = type && type !== 'all'
+    ? await dbQuery<RegulationRow>`
+        SELECT id, title, type, country, flag, status, summary, date, impact
+        FROM regulations
+        WHERE type = ${type}
+        ORDER BY created_at DESC
+        LIMIT ${safeLimit}
+      `
+    : await dbQuery<RegulationRow>`
+        SELECT id, title, type, country, flag, status, summary, date, impact
+        FROM regulations
+        ORDER BY created_at DESC
+        LIMIT ${safeLimit}
+      `;
+
+  return rows.map(rowToRegulation);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AI Models
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface AiModelRow {
+  id: string;
+  name: string;
+  company: string;
+  icon: string;
+  release_date: string;
+  type: string;
+  context_window: string;
+  key_capability: string;
+  summary: string;
+}
+
+function rowToAiModel(row: AiModelRow): AIModel {
+  return {
+    id: row.id,
+    name: row.name,
+    company: row.company,
+    icon: row.icon,
+    releaseDate: row.release_date,
+    type: isModelType(row.type) ? row.type : 'proprietary',
+    contextWindow: row.context_window,
+    keyCapability: row.key_capability,
+    summary: row.summary,
+  };
+}
+
+type ModelType = AIModel['type'];
+const MODEL_TYPES: ModelType[] = ['proprietary', 'open-weight', 'open-source'];
+function isModelType(v: string): v is ModelType { return MODEL_TYPES.includes(v as ModelType); }
+
+/**
+ * Fetch AI model records from the database.
+ *
+ * Reads from the `ai_models` table (migration 003).
+ * Returns an empty array when the DB is unavailable or the table is empty.
+ *
+ * @param limit  Maximum models to return (default 50).
+ */
+export async function getModels(limit = 50): Promise<AIModel[]> {
+  const safeLimit = Math.min(Math.max(1, limit), 200);
+
+  const rows = await dbQuery<AiModelRow>`
+    SELECT id, name, company, icon, release_date, type, context_window, key_capability, summary
+    FROM ai_models
+    ORDER BY created_at DESC
+    LIMIT ${safeLimit}
+  `;
+
+  return rows.map(rowToAiModel);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Funding Rounds
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface FundingRoundRow {
+  id: string;
+  company: string;
+  icon: string;
+  amount: string;
+  valuation: string;
+  round: string;
+  date: string;
+  investors: string[];
+  summary: string;
+}
+
+function rowToFundingRound(row: FundingRoundRow): FundingRound {
+  return {
+    id: row.id,
+    company: row.company,
+    icon: row.icon,
+    amount: row.amount,
+    valuation: row.valuation,
+    round: row.round,
+    date: row.date,
+    investors: row.investors ?? [],
+    summary: row.summary,
+  };
+}
+
+/**
+ * Fetch funding rounds from the database.
+ *
+ * Reads from the `funding_rounds` table (migration 003).
+ * Returns an empty array when the DB is unavailable or the table is empty.
+ *
+ * @param limit  Maximum rounds to return (default 50).
+ */
+export async function getFundingRounds(limit = 50): Promise<FundingRound[]> {
+  const safeLimit = Math.min(Math.max(1, limit), 200);
+
+  const rows = await dbQuery<FundingRoundRow>`
+    SELECT id, company, icon, amount, valuation, round, date, investors, summary
+    FROM funding_rounds
+    ORDER BY created_at DESC
+    LIMIT ${safeLimit}
+  `;
+
+  return rows.map(rowToFundingRound);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Site stats aggregates
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface SiteStats {
+  signals: number;
+  companies: number;
+  regulations: number;
+  sources: number;
+  fundingRounds: number;
+}
+
+/**
+ * Compute live site-wide statistics from the database.
+ *
+ * Queries aggregate counts across signals, entities, regulations, funding rounds,
+ * and distinct article sources.  Returns graceful fallback zeroes on failure.
+ */
+export async function getSiteStats(): Promise<SiteStats> {
+  try {
+    type CountRow = { signals: string; companies: string; regulations: string; sources: string; funding_rounds: string };
+    const rows = await dbQuery<CountRow>`
+      SELECT
+        (SELECT COUNT(*) FROM signals
+          WHERE status IS NULL OR status NOT IN ('rejected'))::text           AS signals,
+        (SELECT COUNT(*) FROM entities)::text                                 AS companies,
+        (SELECT COUNT(*) FROM regulations)::text                              AS regulations,
+        (SELECT COUNT(DISTINCT source) FROM articles)::text                   AS sources,
+        (SELECT COUNT(*) FROM funding_rounds)::text                           AS funding_rounds
+    `;
+    if (rows.length === 0) return { signals: 0, companies: 0, regulations: 0, sources: 0, fundingRounds: 0 };
+    const r = rows[0];
+    return {
+      signals:      parseInt(r.signals,      10) || 0,
+      companies:    parseInt(r.companies,    10) || 0,
+      regulations:  parseInt(r.regulations,  10) || 0,
+      sources:      parseInt(r.sources,      10) || 0,
+      fundingRounds: parseInt(r.funding_rounds, 10) || 0,
+    };
+  } catch {
+    return { signals: 0, companies: 0, regulations: 0, sources: 0, fundingRounds: 0 };
+  }
 }
