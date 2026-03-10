@@ -3,7 +3,7 @@ export const runtime = 'nodejs';
 import { NextResponse } from 'next/server';
 import { dbQuery } from '@/db/client';
 import { pingRedis } from '@/lib/cache/redis';
-import { getActiveProviderName } from '@/lib/ai';
+import { getProvider, getActiveProviderName } from '@/lib/ai';
 
 export async function GET() {
   // DB connectivity check
@@ -18,6 +18,15 @@ export async function GET() {
   // Redis connectivity check
   const redisStatus = await pingRedis();
 
+  // LLM provider resolution — must call getProvider() to trigger resolution;
+  // getActiveProviderName() only returns a value after the provider is initialised.
+  let llmProviderError: string | undefined;
+  try {
+    await getProvider();
+  } catch (err) {
+    llmProviderError = err instanceof Error ? err.message : String(err);
+  }
+
   const allOk = dbStatus === 'connected';
 
   const health = {
@@ -30,6 +39,13 @@ export async function GET() {
     db_provider: process.env.DB_PROVIDER || 'neon',
     redis: redisStatus,
     llmProvider: getActiveProviderName() ?? 'not_resolved',
+    llmDiagnostics: {
+      aiProviderEnv: process.env.AI_PROVIDER ?? '(unset)',
+      hasGroqKey: Boolean(process.env.GROQ_API_KEY),
+      hasGrokKey: Boolean(process.env.GROK_API_KEY),
+      hasOpenAIKey: Boolean(process.env.OPENAI_API_KEY),
+      ...(llmProviderError ? { error: llmProviderError } : {}),
+    },
   };
 
   return NextResponse.json(health, {
