@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { detectCategory } from '@/utils';
 import { cacheConfig } from '@/config/cache';
 
-export const runtime = 'edge';
+export const runtime = 'nodejs';
 
 const ALLOWED_ORIGINS = ['https://omterminal.com', 'https://www.omterminal.com'];
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { escapeHtml, truncate } from '@/utils';
 
-export const runtime = 'edge';
+export const runtime = 'nodejs';
 
 const RESEND_API = 'https://api.resend.com';
 
