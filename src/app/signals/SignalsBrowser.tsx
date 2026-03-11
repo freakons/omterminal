@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { type Signal, type SignalCategory } from '@/data/mockSignals';
+import { type Signal, type SignalCategory, type SignalContext } from '@/data/mockSignals';
 import { CommandBar } from '@/ui/layout/CommandBar';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -69,12 +69,149 @@ async function refreshSignals(current: Signal[]): Promise<Signal[]> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Signal card — intelligence context panel (progressive disclosure)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function SignalContextPanel({ ctx }: { ctx: SignalContext }) {
+  const hasWhy        = Boolean(ctx.whyItMatters);
+  const hasEntities   = ctx.affectedEntities.length > 0;
+  const hasImplications = ctx.implications.length > 0;
+  const hasSummary    = Boolean(ctx.summary);
+
+  if (!hasSummary && !hasWhy && !hasEntities && !hasImplications) return null;
+
+  return (
+    <div style={{
+      marginTop: 8,
+      padding: '10px 12px',
+      background: 'rgba(255,255,255,0.03)',
+      borderRadius: 6,
+      border: '1px solid rgba(255,255,255,0.07)',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 10,
+    }}>
+      {/* Context summary — editorial headline from the AI layer */}
+      {hasSummary && (
+        <div style={{
+          fontSize: '12px',
+          lineHeight: 1.5,
+          color: 'rgba(255,255,255,0.75)',
+          fontStyle: 'italic',
+        }}>
+          {ctx.summary}
+        </div>
+      )}
+
+      {/* Why it matters */}
+      {hasWhy && (
+        <div>
+          <div style={{
+            fontFamily: 'var(--fm)',
+            fontSize: '9px',
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            color: 'var(--text3)',
+            marginBottom: 4,
+          }}>
+            Why it matters
+          </div>
+          <div style={{
+            fontSize: '11.5px',
+            color: 'rgba(255,255,255,0.65)',
+            lineHeight: 1.55,
+          }}>
+            {ctx.whyItMatters}
+          </div>
+        </div>
+      )}
+
+      {/* Affected entities */}
+      {hasEntities && (
+        <div>
+          <div style={{
+            fontFamily: 'var(--fm)',
+            fontSize: '9px',
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            color: 'var(--text3)',
+            marginBottom: 5,
+          }}>
+            Affected entities
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {ctx.affectedEntities.map((e, i) => (
+              <span key={i} style={{
+                fontFamily: 'var(--fm)',
+                fontSize: '9.5px',
+                color: 'rgba(255,255,255,0.6)',
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: 4,
+                padding: '2px 7px',
+                whiteSpace: 'nowrap',
+              }}>
+                {e.name}{e.role ? ` · ${e.role}` : ''}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Implications */}
+      {hasImplications && (
+        <div>
+          <div style={{
+            fontFamily: 'var(--fm)',
+            fontSize: '9px',
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            color: 'var(--text3)',
+            marginBottom: 5,
+          }}>
+            Implications
+          </div>
+          <ul style={{
+            margin: 0,
+            paddingLeft: 0,
+            listStyle: 'none',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+          }}>
+            {ctx.implications.map((imp, i) => (
+              <li key={i} style={{
+                display: 'flex',
+                gap: 6,
+                fontSize: '11px',
+                color: 'rgba(255,255,255,0.6)',
+                lineHeight: 1.5,
+              }}>
+                <span style={{
+                  flexShrink: 0,
+                  color: 'var(--indigo-l)',
+                  fontSize: '9px',
+                  marginTop: 2,
+                }}>→</span>
+                {imp}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Signal card
 // ─────────────────────────────────────────────────────────────────────────────
 
 function SignalItem({ signal }: { signal: Signal }) {
   const grad = categoryGradient(signal.category);
   const confColor = confidenceColor(signal.confidence);
+  const [ctxOpen, setCtxOpen] = useState(false);
+  const ctx = signal.context ?? null;
 
   return (
     <div
@@ -103,7 +240,7 @@ function SignalItem({ signal }: { signal: Signal }) {
       <div className="nc-body">{signal.summary}</div>
 
       {/* Confidence bar */}
-      <div style={{ marginBottom: 14 }}>
+      <div style={{ marginBottom: ctx ? 10 : 14 }}>
         <div style={{
           height: 3,
           borderRadius: 2,
@@ -119,6 +256,48 @@ function SignalItem({ signal }: { signal: Signal }) {
           }} />
         </div>
       </div>
+
+      {/* Intelligence context — only rendered when a ready context exists */}
+      {ctx && (
+        <div style={{ marginBottom: 10 }}>
+          <button
+            onClick={() => setCtxOpen((o: boolean) => !o)}
+            aria-expanded={ctxOpen}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: 0,
+              fontFamily: 'var(--fm)',
+              fontSize: '9.5px',
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              color: 'var(--indigo-l)',
+              opacity: 0.85,
+            }}
+          >
+            <span style={{
+              width: 12,
+              height: 12,
+              borderRadius: '50%',
+              border: '1px solid var(--indigo-l)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              fontSize: '8px',
+              lineHeight: 1,
+            }}>
+              {ctxOpen ? '−' : '+'}
+            </span>
+            Intel Context
+          </button>
+          {ctxOpen && <SignalContextPanel ctx={ctx} />}
+        </div>
+      )}
 
       {/* Footer */}
       <div className="nc-foot">
