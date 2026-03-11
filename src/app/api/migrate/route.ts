@@ -345,6 +345,16 @@ const STATEMENTS = [
      ON signal_contexts (status)`,
   `CREATE INDEX IF NOT EXISTS idx_signal_contexts_created_at
      ON signal_contexts (created_at DESC)`,
+
+  // ── Migration 007: Signal Context Hardening ───────────────────────────────
+  // Composite indexes that improve the two main query patterns added in
+  // migration 006:
+  //   1. getSignalContextsByStatus() — filters by status, orders by created_at
+  //   2. getSignals() LEFT JOIN — joins on (signal_id, status='ready')
+  `CREATE INDEX IF NOT EXISTS idx_signal_contexts_status_created_at
+     ON signal_contexts (status, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_signal_contexts_signal_id_status
+     ON signal_contexts (signal_id, status)`,
 ];
 
 /**
@@ -395,6 +405,8 @@ const TABLES_CREATED = [
   'pipeline_runs (extended: trigger_type, articles_*, errors_count, correlation_id, ...)',
   // migration 006
   'signal_contexts',
+  // migration 007
+  'signal_contexts — composite indexes (status+created_at, signal_id+status)',
 ];
 
 export async function POST(req: NextRequest) {

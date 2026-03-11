@@ -43,6 +43,7 @@ const OPTIONAL_TABLES = [
   'funding_rounds',
   'pipeline_locks',
   'page_snapshots',
+  'signal_contexts',   // migration 006 — intelligence context layer
 ] as const;
 
 const CRITICAL_ENV_VARS = ['DATABASE_URL', 'CRON_SECRET', 'ADMIN_SECRET', 'GNEWS_API_KEY'] as const;
@@ -198,7 +199,7 @@ export async function GET(req: NextRequest) {
 
   const warnings: string[] = [];
   if (isDataStale)                    warnings.push(`No successful pipeline run in the last ${STALE_THRESHOLD_HOURS}h`);
-  if (missingOptionalTables.length > 0) warnings.push(`Optional tables absent: ${missingOptionalTables.join(', ')} — run /api/migrate`);
+  if (missingOptionalTables.length > 0) warnings.push(`Optional tables absent: ${missingOptionalTables.join(', ')} — run POST /api/migrate`);
   if (missingOptionalEnv.length > 0)  warnings.push(`Optional env vars not set: ${missingOptionalEnv.join(', ')}`);
   if (lockStatus.locked)              warnings.push(`Pipeline lock is held by: ${lockStatus.lockedBy}`);
 

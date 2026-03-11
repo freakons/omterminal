@@ -44,14 +44,19 @@ export interface ReadyContextData {
  * Create or reset a signal_contexts row to 'pending'.
  *
  * Behaviour by existing row state:
- *   - No row:              INSERT with status='pending'.
- *   - Row status='pending' or 'failed': UPDATE to 'pending', clear generation_error.
- *   - Row status='ready':  No-op (leaves the ready context intact).
+ *   - No row:                                INSERT with status='pending'.
+ *   - Row status='pending' or 'failed':      UPDATE to 'pending', clear generation_error.
+ *   - Row status='ready', same version:      No-op (leaves the ready context intact).
+ *   - Row status='ready', different version: Reset to 'pending' so context is regenerated
+ *                                            with the current prompt template.
  *
- * This is safe to call on every pipeline run — it will not clobber a valid
- * context that has already been generated.
+ * The version-aware reset ensures that incrementing CONTEXT_PROMPT_VERSION in
+ * contextGenerator.ts automatically queues stale contexts for regeneration on
+ * the next pipeline run that processes the owning signal.
  *
- * @returns true if the row was created or reset to pending; false if already ready.
+ * This is safe to call on every pipeline run.
+ *
+ * @returns true if the row was created or reset to pending; false if already ready at current version.
  */
 export async function markSignalContextPending(
   signalId:      string,
@@ -68,10 +73,39 @@ export async function markSignalContextPending(
       generation_error = NULL,
       updated_at       = NOW()
     WHERE signal_contexts.status != 'ready'
+       OR signal_contexts.prompt_version != ${promptVersion}
     RETURNING signal_id
   `;
 
   return rows.length > 0;
+}
+
+/**
+ * Reset all 'ready' signal contexts whose prompt_version differs from
+ * currentVersion back to 'pending' for regeneration.
+ *
+ * Use this as an admin/maintenance helper when you increment
+ * CONTEXT_PROMPT_VERSION and want to force a full batch regeneration of all
+ * previously-generated contexts — not just those that happen to flow through
+ * the pipeline in the next run.
+ *
+ * Safe to call repeatedly — it is a no-op when all contexts are already at
+ * the current version.
+ *
+ * @param currentVersion  The prompt version to preserve (e.g. CONTEXT_PROMPT_VERSION).
+ * @returns               Number of context rows reset to 'pending'.
+ */
+export async function resetOutdatedContexts(currentVersion: string): Promise<number> {
+  const rows = await dbQuery<{ signal_id: string }>`
+    UPDATE signal_contexts
+    SET status           = 'pending',
+        generation_error = NULL,
+        updated_at       = NOW()
+    WHERE status = 'ready'
+      AND prompt_version != ${currentVersion}
+    RETURNING signal_id
+  `;
+  return rows.length;
 }
 
 /**

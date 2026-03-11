@@ -111,12 +111,31 @@ async function runPipeline(): Promise<void> {
     // Runs after signal persistence.  Failures are non-fatal: a per-signal
     // error is recorded in signal_contexts.generation_error and the pipeline
     // continues normally.
+    //
+    // Version-aware regeneration: markSignalContextPending resets 'ready'
+    // contexts whose prompt_version != CONTEXT_PROMPT_VERSION, ensuring that
+    // incrementing the constant automatically triggers regeneration for signals
+    // processed in this run.  For a full database-wide reset of all stale
+    // contexts, call resetOutdatedContexts(CONTEXT_PROMPT_VERSION) from an
+    // admin endpoint or maintenance script.
     try {
-      const { generateContextsForSignals } = await import('@/services/intelligence/contextGenerator');
+      const { generateContextsForSignals, CONTEXT_PROMPT_VERSION } =
+        await import('@/services/intelligence/contextGenerator');
       const ctx = await generateContextsForSignals(signals, events);
-      console.log(
-        `[pipeline] context generation — attempted=${ctx.attempted} generated=${ctx.generated} failed=${ctx.failed}`,
-      );
+
+      if (ctx.attempted === 0) {
+        console.log(`[pipeline] context stage — no contexts to generate (prompt_version=${CONTEXT_PROMPT_VERSION})`);
+      } else {
+        console.log(
+          `[pipeline] context stage — attempted=${ctx.attempted} generated=${ctx.generated} failed=${ctx.failed} prompt_version=${CONTEXT_PROMPT_VERSION}`,
+        );
+      }
+
+      if (ctx.failed > 0) {
+        console.warn(
+          `[pipeline] context stage — ${ctx.failed} context(s) failed; see signal_contexts.generation_error for details`,
+        );
+      }
     } catch (ctxErr) {
       console.error(
         '[pipeline] context generation stage error:',

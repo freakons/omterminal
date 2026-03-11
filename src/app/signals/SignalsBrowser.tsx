@@ -73,10 +73,15 @@ async function refreshSignals(current: Signal[]): Promise<Signal[]> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function SignalContextPanel({ ctx }: { ctx: SignalContext }) {
-  const hasWhy        = Boolean(ctx.whyItMatters);
-  const hasEntities   = ctx.affectedEntities.length > 0;
-  const hasImplications = ctx.implications.length > 0;
-  const hasSummary    = Boolean(ctx.summary);
+  // Defensive guards: although TypeScript types say these are arrays, incoming
+  // data may be null/undefined if a context was partially written or malformed.
+  const entities    = Array.isArray(ctx.affectedEntities) ? ctx.affectedEntities : [];
+  const implications = Array.isArray(ctx.implications) ? ctx.implications : [];
+
+  const hasSummary      = Boolean(ctx.summary);
+  const hasWhy          = Boolean(ctx.whyItMatters);
+  const hasEntities     = entities.length > 0;
+  const hasImplications = implications.length > 0;
 
   if (!hasSummary && !hasWhy && !hasEntities && !hasImplications) return null;
 
@@ -140,7 +145,7 @@ function SignalContextPanel({ ctx }: { ctx: SignalContext }) {
             Affected entities
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-            {ctx.affectedEntities.map((e, i) => (
+            {entities.map((e, i) => (
               <span key={i} style={{
                 fontFamily: 'var(--fm)',
                 fontSize: '9.5px',
@@ -151,7 +156,7 @@ function SignalContextPanel({ ctx }: { ctx: SignalContext }) {
                 padding: '2px 7px',
                 whiteSpace: 'nowrap',
               }}>
-                {e.name}{e.role ? ` · ${e.role}` : ''}
+                {e.name ?? '—'}{e.role ? ` · ${e.role}` : ''}
               </span>
             ))}
           </div>
@@ -179,7 +184,7 @@ function SignalContextPanel({ ctx }: { ctx: SignalContext }) {
             flexDirection: 'column',
             gap: 4,
           }}>
-            {ctx.implications.map((imp, i) => (
+            {implications.map((imp, i) => (
               <li key={i} style={{
                 display: 'flex',
                 gap: 6,
