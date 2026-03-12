@@ -15,6 +15,10 @@
 import Parser from 'rss-parser';
 import type { Source } from '../../config/intelligenceSources';
 import type { Article, ArticleCategory } from '../../types/intelligence';
+import { withTimeout } from '@/lib/withTimeout';
+
+// Per-feed fetch timeout.  Override with RSS_FEED_TIMEOUT_MS env var.
+const RSS_FEED_TIMEOUT_MS = parseInt(process.env.RSS_FEED_TIMEOUT_MS ?? '10000', 10);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Result type
@@ -123,7 +127,9 @@ interface ParsedFeed {
 
 /**
  * Fetches and parses an RSS/Atom feed using rss-parser.
- * Races against a 10-second timeout to avoid hanging on slow/dead feeds.
+ * Races against RSS_FEED_TIMEOUT_MS (default 10 s) to avoid hanging on
+ * slow or dead feeds.  Uses the shared withTimeout utility so timeout
+ * errors carry structured stage/duration metadata.
  */
 async function fetchRawFeed(url: string): Promise<ParsedFeed> {
   const parser = new Parser({
@@ -136,12 +142,11 @@ async function fetchRawFeed(url: string): Promise<ParsedFeed> {
     },
   });
 
-  // Race the parse against a 10-second timeout
-  const timeout = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error('RSS feed timed out after 10s')), 10_000)
+  const feed = await withTimeout(
+    parser.parseURL(url),
+    RSS_FEED_TIMEOUT_MS,
+    'fetch:rss',
   );
-
-  const feed = await Promise.race([parser.parseURL(url), timeout]);
 
   return {
     title: feed.title ?? '',
