@@ -355,6 +355,22 @@ const STATEMENTS = [
      ON signal_contexts (status, created_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_signal_contexts_signal_id_status
      ON signal_contexts (signal_id, status)`,
+
+  // ── Migration 008: Signal Significance Foundation ─────────────────────────
+  // Adds significance_score and source_support_count to signals for
+  // significance-based ranking.  Both are nullable for backward compatibility.
+  // significance_score is computed at write time by signalSignificance.ts.
+  `ALTER TABLE signals
+     ADD COLUMN IF NOT EXISTS significance_score INTEGER
+       CHECK (significance_score IS NULL OR (significance_score >= 0 AND significance_score <= 100))`,
+  `ALTER TABLE signals
+     ADD COLUMN IF NOT EXISTS source_support_count INTEGER`,
+  // Index for significance-based ordering (primary read path for premium mode)
+  `CREATE INDEX IF NOT EXISTS idx_signals_significance
+     ON signals (significance_score DESC NULLS LAST)`,
+  // Composite index: filter by confidence, order by significance
+  `CREATE INDEX IF NOT EXISTS idx_signals_confidence_significance
+     ON signals (confidence_score DESC, significance_score DESC NULLS LAST)`,
 ];
 
 /**
@@ -407,6 +423,10 @@ const TABLES_CREATED = [
   'signal_contexts',
   // migration 007
   'signal_contexts — composite indexes (status+created_at, signal_id+status)',
+  // migration 008
+  'signals.significance_score (column)',
+  'signals.source_support_count (column)',
+  'signals — significance indexes (significance_score, confidence+significance)',
 ];
 
 export async function POST(req: NextRequest) {
