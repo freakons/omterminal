@@ -5,8 +5,14 @@ import { ingestGNews } from '@/services/ingestion/gnewsFetcher';
 import { createRequestId, logWithRequestId } from '@/lib/requestId';
 import { withPipelineLock, pipelineLockedResponse } from '@/lib/pipelineLock';
 import { dbQuery } from '@/db/client';
+import { withTimeout, TimeoutError } from '@/lib/withTimeout';
 
 export const maxDuration = 10; // Vercel Hobby plan limit
+
+// Timeout for the ingestGNews() call inside this route.
+// Must be well under maxDuration (10 s) to allow time for diagnostics + response.
+// Override with INGEST_ROUTE_TIMEOUT_MS env var.
+const INGEST_ROUTE_TIMEOUT_MS = parseInt(process.env.INGEST_ROUTE_TIMEOUT_MS ?? '8000', 10);
 
 /**
  * POST/GET /api/ingest
@@ -58,7 +64,20 @@ export async function GET(req: NextRequest) {
   // ── Concurrency lock ──────────────────────────────────────────────────────
   try {
     const guard = await withPipelineLock('ingest', reqId, 'ingest', async () => {
-      const result = await ingestGNews();
+      const result = await withTimeout(
+        ingestGNews(),
+        INGEST_ROUTE_TIMEOUT_MS,
+        'ingest:gnews',
+        {
+          requestId: reqId,
+          onTimeout: (stage, ms, rid) => {
+            console.warn(
+              `[ingest] timeout requestId=${rid} stage=${stage}` +
+              ` timeoutMs=${ms} — ingestGNews exceeded deadline`
+            );
+          },
+        },
+      );
 
       // Post-ingest diagnostics (authenticated path only — never exposed publicly)
       let diagnostics: Record<string, unknown> = {};
@@ -91,6 +110,25 @@ export async function GET(req: NextRequest) {
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
+    if (err instanceof TimeoutError) {
+      console.error(
+        `[ingest] stage=${err.stage} requestId=${reqId}` +
+        ` elapsed=${Date.now() - t0}ms timeout=${err.timeoutMs}ms partial=false aborted=true`
+      );
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'timeout',
+          stage: err.stage,
+          timeoutMs: err.timeoutMs,
+          requestId: reqId,
+          partial: false,
+          aborted: true,
+          message: err.message,
+        },
+        { status: 504 },
+      );
+    }
     console.error('[ingest] route error:', err);
     return NextResponse.json(
       { error: String(err) },

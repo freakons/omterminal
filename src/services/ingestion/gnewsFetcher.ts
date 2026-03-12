@@ -25,6 +25,10 @@ import { dbQuery as query } from '../../db/client';
 import { saveEvent } from '../storage/eventStore';
 import { saveArticle } from '../storage/articleStore';
 import type { Event, EventType } from '@/types/intelligence';
+import { createAbortTimeout, TimeoutError } from '@/lib/withTimeout';
+
+// Per-query fetch timeout.  Override with GNEWS_FETCH_TIMEOUT_MS env var.
+const GNEWS_FETCH_TIMEOUT_MS = parseInt(process.env.GNEWS_FETCH_TIMEOUT_MS ?? '15000', 10);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GNews API types
@@ -120,13 +124,6 @@ function categoryToDbCategory(category: IntelligenceCategory): string {
   }
 }
 
-async function withTimeout<T>(promise: Promise<T>, timeoutMs = 15000): Promise<T> {
-  const timeout = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error('fetch timeout')), timeoutMs)
-  );
-  return Promise.race([promise, timeout]) as Promise<T>;
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Result type
 // ─────────────────────────────────────────────────────────────────────────────
@@ -172,11 +169,20 @@ export async function ingestGNews(): Promise<GNewsIngestResult> {
         `&lang=en&sortby=publishedAt&max=10&apikey=${key}`;
 
       let res: Response;
+      const { controller, clear } = createAbortTimeout(GNEWS_FETCH_TIMEOUT_MS, 'fetch:gnews');
       try {
-        res = await withTimeout(fetch(url));
-      } catch {
-        console.warn(`[ingest:gnews] Timeout on query "${q}"`);
+        res = await fetch(url, { signal: controller.signal });
+      } catch (fetchErr) {
+        if (fetchErr instanceof TimeoutError || controller.signal.aborted) {
+          console.warn(
+            `[ingest:gnews] Timeout on query "${q}" after ${GNEWS_FETCH_TIMEOUT_MS}ms`
+          );
+        } else {
+          console.warn(`[ingest:gnews] Fetch error on query "${q}":`, fetchErr);
+        }
         return { q, articles: [] as GNewsArticle[], error: 'timeout' as const };
+      } finally {
+        clear();
       }
 
       // Explicit 429 detection — never swallow quota exhaustion silently

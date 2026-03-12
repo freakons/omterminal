@@ -51,6 +51,7 @@ import { withPipelineLock, pipelineLockedResponse } from '@/lib/pipelineLock';
 import { generatePageSnapshots }               from '@/lib/pipeline/snapshot';
 import { refreshCaches }                        from '@/lib/pipeline/cacheRefresh';
 import { dbQuery }                              from '@/db/client';
+import { TimeoutError }                         from '@/lib/withTimeout';
 import type { TriggerType, RunStatus, PipelineStageResult } from '@/lib/pipeline/types';
 import { toDbStatus }                           from '@/lib/pipeline/types';
 
@@ -106,23 +107,55 @@ function isAuthorized(req: NextRequest): boolean {
 
 // ── Stage runner with timeout ─────────────────────────────────────────────────
 
+/**
+ * Runs `fn` with a hard deadline of `timeoutMs`.
+ *
+ * On timeout, rejects with a {@link TimeoutError} so callers can distinguish
+ * a timeout from other failures in stage results and structured logs.
+ * The `timedOut` flag is always set in the return value for easy inspection.
+ *
+ * @param name       Stage name — included in error messages and log lines.
+ * @param fn         Async stage work.
+ * @param timeoutMs  Maximum allowed duration for this stage.
+ * @param requestId  Correlation ID from the originating request (for logs).
+ */
 async function runStage<T>(
   name: string,
   fn: () => Promise<T>,
   timeoutMs: number,
-): Promise<{ result?: T; error?: string; durationMs: number }> {
+  requestId?: string,
+): Promise<{ result?: T; error?: string; durationMs: number; timedOut: boolean }> {
   const t0 = Date.now();
-  const timer = new Promise<never>((_, reject) =>
-    setTimeout(
-      () => reject(new Error(`stage "${name}" timed out after ${timeoutMs}ms`)),
+  let handle: ReturnType<typeof setTimeout> | undefined;
+
+  const timer = new Promise<never>((_, reject) => {
+    handle = setTimeout(
+      () => reject(new TimeoutError(name, timeoutMs, requestId)),
       timeoutMs,
-    ),
-  );
+    );
+  });
+
   try {
     const result = await Promise.race([fn(), timer]);
-    return { result, durationMs: Date.now() - t0 };
+    return { result, durationMs: Date.now() - t0, timedOut: false };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : String(err), durationMs: Date.now() - t0 };
+    const durationMs = Date.now() - t0;
+    const timedOut = err instanceof TimeoutError;
+
+    if (timedOut) {
+      console.warn(
+        `[pipeline] timeout requestId=${requestId ?? 'n/a'} stage=${name}` +
+        ` elapsed=${durationMs}ms timeout=${timeoutMs}ms partial=true aborted=false`,
+      );
+    }
+
+    return {
+      error:     err instanceof Error ? err.message : String(err),
+      durationMs,
+      timedOut,
+    };
+  } finally {
+    if (handle !== undefined) clearTimeout(handle);
   }
 }
 
@@ -254,7 +287,13 @@ export async function POST(req: NextRequest) {
 
     const overallTimer = new Promise<never>((_, reject) =>
       setTimeout(
-        () => reject(new Error(`overall pipeline timed out after ${TIMEOUT.OVERALL}ms`)),
+        () => {
+          console.warn(
+            `[pipeline] timeout requestId=${correlationId} stage=overall` +
+            ` timeout=${TIMEOUT.OVERALL}ms partial=true aborted=true`,
+          );
+          reject(new TimeoutError('overall', TIMEOUT.OVERALL, correlationId));
+        },
         TIMEOUT.OVERALL,
       ),
     );
@@ -309,10 +348,10 @@ export async function POST(req: NextRequest) {
             },
           },
         };
-      }, TIMEOUT.INGEST);
+      }, TIMEOUT.INGEST, correlationId);
 
       if (ingest.error) {
-        stages.push({ stage: 'ingest', status: 'error', durationMs: ingest.durationMs, error: ingest.error });
+        stages.push({ stage: 'ingest', status: 'error', durationMs: ingest.durationMs, error: ingest.error, timedOut: ingest.timedOut });
         errorsCount++;
       } else {
         const r = ingest.result!;
@@ -336,9 +375,10 @@ export async function POST(req: NextRequest) {
           return { eventsLoaded: events.length, signalsSaved: saved };
         },
         TIMEOUT.SIGNALS,
+        correlationId,
       );
       if (signals.error) {
-        stages.push({ stage: 'signals', status: 'error', durationMs: signals.durationMs, error: signals.error });
+        stages.push({ stage: 'signals', status: 'error', durationMs: signals.durationMs, error: signals.error, timedOut: signals.timedOut });
         errorsCount++;
       } else {
         signalsGenerated = signals.result!.signalsSaved;
@@ -349,9 +389,9 @@ export async function POST(req: NextRequest) {
       }
 
       // Stage 3 — Snapshot generation
-      const snapshot = await runStage('snapshots', () => generatePageSnapshots(), TIMEOUT.SNAPSHOT);
+      const snapshot = await runStage('snapshots', () => generatePageSnapshots(), TIMEOUT.SNAPSHOT, correlationId);
       if (snapshot.error) {
-        stages.push({ stage: 'snapshots', status: 'error', durationMs: snapshot.durationMs, error: snapshot.error });
+        stages.push({ stage: 'snapshots', status: 'error', durationMs: snapshot.durationMs, error: snapshot.error, timedOut: snapshot.timedOut });
         errorsCount++;
       } else {
         const sr = snapshot.result!;
@@ -364,9 +404,9 @@ export async function POST(req: NextRequest) {
       }
 
       // Stage 4 — Cache refresh
-      const cache = await runStage('cache', () => refreshCaches(), TIMEOUT.CACHE);
+      const cache = await runStage('cache', () => refreshCaches(), TIMEOUT.CACHE, correlationId);
       if (cache.error) {
-        stages.push({ stage: 'cache', status: 'error', durationMs: cache.durationMs, error: cache.error });
+        stages.push({ stage: 'cache', status: 'error', durationMs: cache.durationMs, error: cache.error, timedOut: cache.timedOut });
       } else {
         const cr = cache.result!;
         stages.push({
