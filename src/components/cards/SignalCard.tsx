@@ -15,12 +15,6 @@ interface SignalCardProps {
  * and explanation indicators.  Renders signals from the composed feed
  * with visual cues for importance level, source coverage, and analyst
  * context.
- *
- * Preserves the existing .nc card design while adding:
- *   - Significance tier indicator (critical/high/standard)
- *   - Source corroboration count and label
- *   - Importance label from explanation layer
- *   - "Why it matters" context when available
  */
 export function SignalCard({ signal }: SignalCardProps) {
   const tier = signal._significanceTier ?? 'standard';
@@ -29,8 +23,9 @@ export function SignalCard({ signal }: SignalCardProps) {
 
   return (
     <div className={`nc${tier === 'critical' ? ' nc-critical' : tier === 'high' ? ' nc-high' : ''}`}>
+      {/* Top meta row */}
       <div className="nc-top">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div className="nc-badges">
           <Badge category={signal.category} />
           {tier === 'critical' && (
             <span className="sig-badge sig-critical">
@@ -43,42 +38,53 @@ export function SignalCard({ signal }: SignalCardProps) {
             </span>
           )}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div className="nc-indicators">
           {sourceCount != null && sourceCount > 1 && (
             <span
               className="corroboration-badge"
               title={explanation?.corroborationSummary ?? `Corroborated by ${sourceCount} sources`}
             >
-              <span style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--emerald-l)', display: 'inline-block' }} />
+              <span className="indicator-dot indicator-dot--emerald" />
               {sourceCount} sources
             </span>
           )}
           {signal.confidence >= 90 && (
             <span className="verified">
-              <span style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--emerald-l)', display: 'inline-block' }} />
+              <span className="indicator-dot indicator-dot--emerald" />
               {explanation?.confidenceLabel ?? 'Verified'}
             </span>
           )}
         </div>
       </div>
-      <div className="nc-title">{signal.title}</div>
-      <div className="nc-body">{signal.summary}</div>
+
+      {/* Title */}
+      <h3 className="nc-title">{signal.title}</h3>
+
+      {/* Summary */}
+      <p className="nc-body">{signal.summary}</p>
+
+      {/* Why it matters */}
       {(explanation?.whyThisMatters || signal.context?.whyItMatters) && (
         <div className="nc-why">
+          <span className="nc-why-label">Why it matters</span>
           {explanation?.whyThisMatters ?? signal.context?.whyItMatters}
         </div>
       )}
+
+      {/* Affected entities */}
       {explanation?.affectedEntities && explanation.affectedEntities.length > 1 && (
         <div className="nc-affected">
-          Affects: {explanation.affectedEntities.join(', ')}
+          <span className="nc-affected-label">Affects:</span> {explanation.affectedEntities.join(', ')}
         </div>
       )}
+
+      {/* Footer */}
       <div className="nc-foot">
         <span className="nc-src">
-          <span style={{ width: 3.5, height: 3.5, borderRadius: '50%', background: 'var(--indigo-l)', display: 'inline-block' }} />
+          <span className="indicator-dot indicator-dot--indigo" />
           {signal.entityName || 'Intelligence'}
         </span>
-        <span>{formatSignalDate(signal.date)}</span>
+        <span className="nc-date">{formatSignalDate(signal.date)}</span>
       </div>
     </div>
   );

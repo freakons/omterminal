@@ -27,7 +27,7 @@ export function Sidebar() {
     <aside className="sidebar" id="sb">
       <div className="logo-wrap">
         <div className="logo-row">
-          <div className="logo-gem">OM</div>
+          <div className="logo-gem">Om</div>
           <div className="logo-name">{siteConfig.name}</div>
         </div>
         <div className="logo-tag">AI INTELLIGENCE TERMINAL</div>

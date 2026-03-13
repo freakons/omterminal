@@ -46,12 +46,25 @@ export default async function IntelligencePage() {
 
   return (
     <>
+      {/* ── Live Intelligence Header ──────────────────────────────── */}
+      <div className="feed-header">
+        <div className="feed-header-left">
+          <h1 className="feed-title">Intelligence Feed</h1>
+          <p className="feed-subtitle">Live AI signals — ranked by importance and freshness</p>
+        </div>
+        <div className="feed-live-indicator">
+          <span className="feed-live-dot" />
+          <span className="feed-live-text">Live</span>
+        </div>
+      </div>
+
+      {/* ── Stats Strip ───────────────────────────────────────────── */}
       <div className="stats-row">
-        <StatCard value={signals} label="Signals This Week" delta="↑ vs last week" color="var(--indigo-l)" glowColor="rgba(79,70,229,0.4)" />
-        <StatCard value={String(modelCount)} label="Models Tracked" delta="Frontier releases" color="var(--cyan-l)" glowColor="rgba(6,182,212,0.4)" />
-        <StatCard value={fundingLabel} label="Total AI Funding" delta="Tracked rounds" color="var(--amber-l)" glowColor="rgba(217,119,6,0.4)" />
-        <StatCard value={regulations} label="Active Regulations" delta="↑ vs last quarter" color="var(--rose-l)" glowColor="rgba(225,29,72,0.4)" />
-        <StatCard value={sources} label="Verified Sources" delta="All active" color="var(--emerald-l)" glowColor="rgba(5,150,105,0.4)" />
+        <StatCard value={signals} label="Signals" delta="This week" color="var(--indigo-l)" glowColor="rgba(79,70,229,0.4)" />
+        <StatCard value={String(modelCount)} label="Models" delta="Tracked" color="var(--cyan-l)" glowColor="rgba(6,182,212,0.4)" />
+        <StatCard value={fundingLabel} label="Funding" delta="Total raised" color="var(--amber-l)" glowColor="rgba(217,119,6,0.4)" />
+        <StatCard value={regulations} label="Regulations" delta="Active" color="var(--rose-l)" glowColor="rgba(225,29,72,0.4)" />
+        <StatCard value={sources} label="Sources" delta="Verified" color="var(--emerald-l)" glowColor="rgba(5,150,105,0.4)" />
       </div>
 
       {featured && <FeaturedCard article={featured} />}
@@ -78,11 +91,9 @@ export default async function IntelligencePage() {
 
       {/* Empty state when no data exists yet */}
       {composedSignals.length === 0 && articles.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '64px 24px' }}>
-          <p style={{ fontFamily: 'var(--fs)', fontStyle: 'italic', fontSize: 18, color: 'var(--text2)', marginBottom: 8 }}>
-            No intelligence data yet
-          </p>
-          <p style={{ fontFamily: 'var(--fm)', fontSize: 11, color: 'var(--text3)', letterSpacing: '0.04em' }}>
+        <div className="feed-empty">
+          <p className="feed-empty-title">No intelligence data yet</p>
+          <p className="feed-empty-sub">
             The intelligence feed will populate automatically as the pipeline ingests data.
           </p>
         </div>
