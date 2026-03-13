@@ -30,9 +30,9 @@ export const runtime = 'nodejs';
  *  }
  */
 
-import { NextResponse }          from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { validateEnvironment }   from '@/lib/env';
-import { createRequestId, logWithRequestId } from '@/lib/requestId';
+import { getOrCreateRequestId, logWithRequestId } from '@/lib/requestId';
 import { getCache as redisGet, setCache as redisSet, TTL } from '@/lib/cache/redis';
 import { getCache as memGet, setCache as memSet, MEM_TTL } from '@/lib/memoryCache';
 import { broadcastOpportunity }  from '@/server/opportunitySocket';
@@ -122,9 +122,9 @@ const CACHE_HEADERS = { 'Cache-Control': 's-maxage=10, stale-while-revalidate=60
 const REDIS_KEY = 'signals:marketPulse';
 const MEM_KEY   = 'opportunities:marketPulse';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const t0 = Date.now();
-  const reqId = createRequestId();
+  const reqId = getOrCreateRequestId(req);
   validateEnvironment(['DATABASE_URL']);
 
   // ── 0a. In-process memory cache (instance-local, 10 s) ─────────────────
@@ -159,8 +159,8 @@ export async function GET() {
         triggerPipelineOnce(); // fire-and-forget, cooldown-gated
         logWithRequestId(reqId, 'opportunities', `cache_miss db-empty — pipeline triggered ms=${Date.now() - t0}`);
         return NextResponse.json(
-          { marketBias: 'NEUTRAL', signals: [], source: 'db-empty', timestamp: new Date().toISOString() },
-          { headers: { ...CACHE_HEADERS, 'x-source': 'empty' } },
+          { marketBias: 'NEUTRAL', signals: [], source: 'db-empty', requestId: reqId, timestamp: new Date().toISOString() },
+          { headers: { ...CACHE_HEADERS, 'x-source': 'empty', 'x-request-id': reqId } },
         );
       }
       // Development: fall back to mock data so local work is unblocked.
@@ -214,7 +214,7 @@ export async function GET() {
   const { bias: marketBias } = computeMarketPulse(ranked);
 
   // ── 5. Respond ────────────────────────────────────────────────────────────
-  const payload = { marketBias, signals: ranked, source, timestamp: new Date().toISOString() };
+  const payload = { marketBias, signals: ranked, source, requestId: reqId, timestamp: new Date().toISOString() };
   broadcastOpportunity({ type: 'opportunity_update', data: ranked });
 
   // Store in Redis for cross-instance sharing, and in memory for fast local hits.
@@ -222,5 +222,5 @@ export async function GET() {
   memSet(MEM_KEY, payload, MEM_TTL.OPPORTUNITIES);
 
   logWithRequestId(reqId, 'opportunities', `cache_miss source=${source} signals=${ranked.length} ms=${Date.now() - t0}`);
-  return NextResponse.json(payload, { headers: { ...CACHE_HEADERS, 'x-source': source } });
+  return NextResponse.json(payload, { headers: { ...CACHE_HEADERS, 'x-source': source, 'x-request-id': reqId } });
 }
