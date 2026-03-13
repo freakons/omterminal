@@ -10,6 +10,11 @@ export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { dbQuery } from '@/db/client';
+import {
+  deriveImportanceLabel,
+  deriveCorroborationLabel,
+  deriveConfidenceLabel,
+} from '@/lib/signals/explanationLayer';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Row types
@@ -245,8 +250,21 @@ export async function GET(
       type:     r.type,
       mentions: parseInt(r.mentions, 10),
     })),
-    recent_signals: recentSignals,
-    major_developments: majorDevelopments,
+    recent_signals: recentSignals.map((s) => ({
+      ...s,
+      importanceLabel: deriveImportanceLabel(s.significance_score),
+      corroborationLabel: deriveCorroborationLabel(null),
+      confidenceLabel: deriveConfidenceLabel(
+        s.confidence ?? (s.confidence_score ? Math.round(parseFloat(s.confidence_score) * 100) : null),
+      ),
+    })),
+    major_developments: majorDevelopments.map((s) => ({
+      ...s,
+      importanceLabel: deriveImportanceLabel(s.significance_score),
+      confidenceLabel: deriveConfidenceLabel(
+        s.confidence ?? (s.confidence_score ? Math.round(parseFloat(s.confidence_score) * 100) : null),
+      ),
+    })),
     source_coverage: parseInt(sourceCoverage?.distinct_sources ?? '0', 10),
   });
 }
