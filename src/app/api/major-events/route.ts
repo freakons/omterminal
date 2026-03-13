@@ -25,6 +25,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSignals } from '@/db/queries';
 import { MOCK_SIGNALS, type Signal } from '@/data/mockSignals';
 import { detectMajorEvents, type MajorEvent, type MajorEventCategory } from '@/lib/signals/eventDetector';
+import { attachEventExplanations } from '@/lib/signals/explanationLayer';
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
@@ -102,11 +103,14 @@ export async function GET(req: NextRequest) {
       events = allEvents.filter(e => e.category === categoryFilter);
     }
 
+    // Attach structured explanations to each event
+    const enrichedEvents = attachEventExplanations(events);
+
     return NextResponse.json({
       ok: true,
       source,
-      events,
-      count: events.length,
+      events: enrichedEvents,
+      count: enrichedEvents.length,
       config: {
         limit,
         minImportance,

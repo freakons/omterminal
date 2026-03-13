@@ -37,6 +37,7 @@ import { generateSignalsFromEvents } from '@/services/signals/signalEngine';
 import { saveSignals, getRecentSignals } from '@/services/storage/signalStore';
 import { getSignals } from '@/db/queries';
 import { parseSignalMode, DEFAULT_SIGNAL_MODE } from '@/lib/signals/signalModes';
+import { attachSignalExplanations } from '@/lib/signals/explanationLayer';
 
 export const maxDuration = 10; // Vercel Hobby plan limit; upgrade to Pro for larger event lookbacks
 
@@ -127,7 +128,8 @@ export async function GET(req: NextRequest) {
       }
 
       if (dbSignals.length > 0) {
-        const payload: Record<string, unknown> = { ok: true, source: 'db', mode, signals: dbSignals, count: dbSignals.length };
+        const enrichedSignals = attachSignalExplanations(dbSignals);
+        const payload: Record<string, unknown> = { ok: true, source: 'db', mode, signals: enrichedSignals, count: enrichedSignals.length };
         if (debug && diagnostics) payload.diagnostics = diagnostics;
         // Only populate edge cache for the default mode (avoids edge cache thrash across modes).
         if (mode === DEFAULT_SIGNAL_MODE) await setEdgeSignals(payload);
