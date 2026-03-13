@@ -2,14 +2,14 @@
  * Site-wide configuration — single source of truth for branding, URLs, and metadata.
  */
 export const siteConfig = {
-  name: 'OM Terminal',
+  name: 'Omterminal',
   tagline: 'Stop reading AI news. Start seeing the board.',
   description:
     'AI regulation, model releases, funding events, and global policy — structured, verified, and analyzed. One terminal. Every signal that matters.',
   url: 'https://omterminal.com',
   domain: 'omterminal.com',
   ogImage: '/og-image.png',
-  creator: 'OM Terminal',
+  creator: 'Omterminal',
   email: 'digest@omterminal.com',
 
   nav: {
