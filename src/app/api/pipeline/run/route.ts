@@ -29,7 +29,7 @@ export const runtime = 'nodejs';
  *   Add ?dry_run=true to validate auth + env without executing anything.
  *
  * Auth:
- *   - x-vercel-cron-secret header == CRON_SECRET env (Vercel cron scheduler)
+ *   - Authorization: Bearer <CRON_SECRET> header (Vercel cron scheduler)
  *   - ?secret= query param == CRON_SECRET env (manual trigger)
  *   - x-admin-secret header == ADMIN_SECRET env (marks trigger_type=admin)
  *   - No CRON_SECRET configured → open in local dev only (NODE_ENV !== production)
@@ -70,15 +70,25 @@ const TIMEOUT = {
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
+/**
+ * Extract the bearer token from the Authorization header, if present.
+ * Vercel cron sends `Authorization: Bearer <CRON_SECRET>`.
+ */
+function extractBearerToken(req: NextRequest): string {
+  const auth = req.headers.get('authorization') ?? '';
+  if (auth.startsWith('Bearer ')) return auth.slice(7);
+  return '';
+}
+
 function detectTriggerType(req: NextRequest): TriggerType {
   // Admin secret header → admin trigger
   const adminHeader = req.headers.get('x-admin-secret') ?? '';
   if (adminHeader && adminHeader === (process.env.ADMIN_SECRET ?? '')) return 'admin';
 
-  // Vercel cron secret header → cron trigger
+  // Vercel cron: Authorization: Bearer <CRON_SECRET>
   const cronSecret = process.env.CRON_SECRET ?? '';
-  const cronHeader = req.headers.get('x-vercel-cron-secret') ?? '';
-  if (cronSecret && cronHeader === cronSecret) return 'cron';
+  const bearer = extractBearerToken(req);
+  if (cronSecret && bearer === cronSecret) return 'cron';
 
   return 'manual';
 }
@@ -95,11 +105,12 @@ function isAuthorized(req: NextRequest): boolean {
   if (!cronSecret && !adminSecret) return true;
 
   // Do NOT trust User-Agent for authentication — it is trivially spoofable.
-  const cronHeader  = req.headers.get('x-vercel-cron-secret') ?? '';
+  // Check: Authorization: Bearer <secret> (Vercel cron), query param, admin header
+  const bearer      = extractBearerToken(req);
   const querySecret = new URL(req.url).searchParams.get('secret') ?? '';
   const adminHeader = req.headers.get('x-admin-secret') ?? '';
 
-  if (cronSecret  && (cronHeader === cronSecret || querySecret === cronSecret)) return true;
+  if (cronSecret  && (bearer === cronSecret || querySecret === cronSecret)) return true;
   if (adminSecret && adminHeader === adminSecret) return true;
 
   return false;

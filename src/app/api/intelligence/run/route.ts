@@ -16,7 +16,7 @@ export const runtime = 'nodejs';
  *   /api/intelligence/run → secondary — every two hours (intelligence analysis)
  *
  * Auth:
- *   - x-vercel-cron-secret header == CRON_SECRET env   (Vercel scheduler → trigger=cron)
+ *   - Authorization: Bearer <CRON_SECRET> header        (Vercel scheduler → trigger=cron)
  *   - ?secret= query param         == CRON_SECRET env   (manual test   → trigger=manual)
  *   - x-admin-secret header        == ADMIN_SECRET env  (admin call    → trigger=admin)
  *   - No secrets configured → open in local dev only (NODE_ENV !== production)
@@ -54,6 +54,16 @@ export const maxDuration = 10;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Extract the bearer token from the Authorization header, if present.
+ * Vercel cron sends `Authorization: Bearer <CRON_SECRET>`.
+ */
+function extractBearerToken(req: NextRequest): string {
+  const auth = req.headers.get('authorization') ?? '';
+  if (auth.startsWith('Bearer ')) return auth.slice(7);
+  return '';
+}
+
+/**
  * Detect whether this request was made by the Vercel cron scheduler, an admin,
  * or an unauthenticated manual caller.  Matches the pattern used in
  * /api/pipeline/run for consistency.
@@ -66,9 +76,10 @@ function detectTriggerType(req: NextRequest): TriggerType {
   const adminHeader = req.headers.get('x-admin-secret') ?? '';
   if (adminSecret && adminHeader === adminSecret) return 'admin';
 
+  // Vercel cron: Authorization: Bearer <CRON_SECRET>
   const cronSecret = process.env.CRON_SECRET ?? '';
-  const cronHeader = req.headers.get('x-vercel-cron-secret') ?? '';
-  if (cronSecret && cronHeader === cronSecret) return 'cron';
+  const bearer = extractBearerToken(req);
+  if (cronSecret && bearer === cronSecret) return 'cron';
 
   return 'manual';
 }
@@ -85,11 +96,12 @@ function isAuthorized(req: NextRequest): boolean {
   if (!cronSecret && !adminSecret) return true;
 
   // Do NOT trust User-Agent for authentication — it is trivially spoofable.
-  const cronHeader  = req.headers.get('x-vercel-cron-secret') ?? '';
+  // Check: Authorization: Bearer <secret> (Vercel cron), query param, admin header
+  const bearer      = extractBearerToken(req);
   const querySecret = new URL(req.url).searchParams.get('secret') ?? '';
   const adminHeader = req.headers.get('x-admin-secret') ?? '';
 
-  if (cronSecret  && (cronHeader === cronSecret || querySecret === cronSecret)) return true;
+  if (cronSecret  && (bearer === cronSecret || querySecret === cronSecret)) return true;
   if (adminSecret && adminHeader === adminSecret) return true;
 
   return false;

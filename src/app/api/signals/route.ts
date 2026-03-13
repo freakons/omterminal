@@ -58,7 +58,8 @@ export async function GET(req: NextRequest) {
   }
 
   const { searchParams } = new URL(req.url);
-  const cronSecret  = req.headers.get('x-vercel-cron-secret') || '';
+  const authHeader  = req.headers.get('authorization') || '';
+  const cronSecret  = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
   const querySecret = searchParams.get('secret') || '';
   const expected    = process.env.CRON_SECRET || '';
   const listOnly    = searchParams.get('list') === 'true';
