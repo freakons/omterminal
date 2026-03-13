@@ -37,6 +37,7 @@ import {
   categoryToEventType,
   categoryToDbCategory,
 } from '../normalization/helpers';
+import { detectAndLinkEntities } from '@/lib/entityResolver';
 
 // Per-query fetch timeout.  Override with GNEWS_FETCH_TIMEOUT_MS env var.
 const GNEWS_FETCH_TIMEOUT_MS = parseInt(process.env.GNEWS_FETCH_TIMEOUT_MS ?? '15000', 10);
@@ -233,15 +234,25 @@ export async function ingestGNews(): Promise<GNewsIngestResult> {
         continue;
       }
 
-      // Step 2: Write event with valid source_article_id reference
+      // Step 2: Write event with valid source_article_id reference.
+      // Use entity detection to assign correct company instead of sourceName.
+      const detected = detectAndLinkEntities(cleanTitle, cleanDescription);
+      const primaryCompany = detected.companies[0] ?? sourceName;
+      const entityTags = [
+        ...detected.companies,
+        ...detected.models,
+        ...detected.investors,
+      ];
+
       const event: Event = {
         id: eventId,
         type: eventType,
-        company: sourceName,
+        company: primaryCompany,
+        relatedModel: detected.models[0],
         title: cleanTitle,
         description: cleanDescription,
         timestamp: publishedAt,
-        tags: [q],
+        tags: Array.from(new Set([q, ...entityTags])),
         sourceArticle: {
           id: articleId,
           title: cleanTitle,
