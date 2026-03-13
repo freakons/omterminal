@@ -37,6 +37,7 @@ import { getPipelineLockStatus }                from '@/lib/pipeline/lock';
 import { getProvider, getActiveProviderName }   from '@/lib/ai';
 import { createRequestId }                      from '@/lib/requestId';
 import { getCache, setCache, MEM_TTL }          from '@/lib/memoryCache';
+import { runAllConsistencyChecks }              from '@/db/consistencyChecks';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -408,7 +409,49 @@ export async function GET(req: NextRequest) {
     subsystems.cron = { status: 'healthy' };
   }
 
-  // ── 10. Compute overall grade ─────────────────────────────────────────────
+  // ── 10. Data consistency (lightweight summary) ──────────────────────────
+  // Run all read-only consistency checks and surface a summary.
+  // The full detailed report is available at GET /api/admin/consistency.
+  let consistencySummary: {
+    overallSeverity: string;
+    checksRun: number;
+    issuesFound: number;
+    summary: { critical: number; warning: number; info: number };
+    durationMs: number;
+  } | null = null;
+
+  if (dbConnected && allCriticalTablesPresent) {
+    try {
+      const report = await runAllConsistencyChecks();
+      consistencySummary = {
+        overallSeverity: report.overallSeverity,
+        checksRun:       report.checksRun,
+        issuesFound:     report.issuesFound,
+        summary:         report.summary,
+        durationMs:      report.durationMs,
+      };
+
+      // Reflect consistency in the subsystem grade
+      if (report.summary.critical > 0) {
+        subsystems.dataConsistency = {
+          status: 'degraded',
+          message: `${report.summary.critical} critical consistency issue(s) found`,
+        };
+        warnings.push(`Data consistency: ${report.summary.critical} critical issue(s) — see GET /api/admin/consistency`);
+      } else if (report.summary.warning > 0) {
+        subsystems.dataConsistency = {
+          status: 'degraded',
+          message: `${report.summary.warning} consistency warning(s) found`,
+        };
+      } else {
+        subsystems.dataConsistency = { status: 'healthy' };
+      }
+    } catch {
+      subsystems.dataConsistency = { status: 'degraded', message: 'Consistency checks failed to run' };
+    }
+  }
+
+  // ── 11. Compute overall grade ─────────────────────────────────────────────
   const grade = computeOverallGrade(subsystems);
 
   // Build the full diagnostics response
@@ -477,6 +520,13 @@ export async function GET(req: NextRequest) {
       configured:        hasCronSecret,
       staleThresholdHours: STALE_THRESHOLD_HOURS,
     },
+
+    dataConsistency: consistencySummary
+      ? {
+          ...consistencySummary,
+          detailEndpoint: 'GET /api/admin/consistency',
+        }
+      : { status: 'skipped', reason: 'Database or critical tables not available' },
 
     warnings: warnings.length > 0 ? warnings : undefined,
   };
