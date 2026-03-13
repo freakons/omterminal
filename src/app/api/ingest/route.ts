@@ -23,7 +23,7 @@ const INGEST_ROUTE_TIMEOUT_MS = parseInt(process.env.INGEST_ROUTE_TIMEOUT_MS ?? 
  * in POST /api/pipeline/run.
  *
  * Auth:
- *   - x-vercel-cron-secret header == CRON_SECRET env
+ *   - Authorization: Bearer <CRON_SECRET> header
  *   - x-admin-secret header == ADMIN_SECRET env
  *   - No secrets configured → open in local dev only (NODE_ENV !== production)
  *
@@ -43,10 +43,12 @@ function isAuthorized(req: NextRequest): boolean {
   if (!cronSecret && !adminSecret) return true;
 
   // Do NOT trust User-Agent for authentication — it is trivially spoofable.
-  const cronHeader  = req.headers.get('x-vercel-cron-secret') ?? '';
+  // Check: Authorization: Bearer <secret> (Vercel cron), admin header
+  const auth = req.headers.get('authorization') ?? '';
+  const bearer = auth.startsWith('Bearer ') ? auth.slice(7) : '';
   const adminHeader = req.headers.get('x-admin-secret') ?? '';
 
-  if (cronSecret  && cronHeader  === cronSecret)  return true;
+  if (cronSecret  && bearer      === cronSecret)  return true;
   if (adminSecret && adminHeader === adminSecret) return true;
 
   return false;
