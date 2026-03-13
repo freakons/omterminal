@@ -35,6 +35,7 @@ import {
   categoryToEventType,
   categoryToDbCategory,
 } from '../normalization/helpers';
+import { detectAndLinkEntities } from '@/lib/entityResolver';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Primary source selection
@@ -211,14 +212,25 @@ export async function ingestRss(): Promise<RssIngestResult> {
 
       // Step 2: Derive and persist event.
       // source_article_id references the article we just wrote above.
+      // Use entity detection to assign the correct company instead of sourceName.
+      const detected = detectAndLinkEntities(cleanTitle, cleanContent || cleanExcerpt);
+      const primaryCompany = detected.companies[0] ?? sourceName;
+      const entityTags = [
+        ...detected.companies,
+        ...detected.models,
+        ...detected.investors,
+      ];
+      const mergedTags = Array.from(new Set([...(article.tags ?? []), ...entityTags]));
+
       const event: Event = {
         id: eventId,
         type: eventType,
-        company: sourceName,
+        company: primaryCompany,
+        relatedModel: detected.models[0],
         title: cleanTitle,
         description: (cleanExcerpt || cleanContent).slice(0, 500),
         timestamp: publishedAt,
-        tags: article.tags,
+        tags: mergedTags.length > 0 ? mergedTags : article.tags,
         sourceArticle: {
           id: articleId,
           title: cleanTitle,
