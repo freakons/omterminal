@@ -741,6 +741,240 @@ export async function getEntities(limit = 50): Promise<EntityProfile[]> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Entity Dossier Queries
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Fetch a single entity by name for the entity dossier page.
+ *
+ * Returns null when the entity doesn't exist or the DB is unavailable.
+ */
+export async function getEntityByName(name: string): Promise<EntityProfile | null> {
+  try {
+    const rows = await dbQuery<EntityRow>`
+      SELECT
+        id, name, type, description, sector, country,
+        founded, website, risk_level, tags, financial_scale, created_at
+      FROM entities
+      WHERE name = ${name}
+      LIMIT 1
+    `;
+    return rows.length > 0 ? rowToEntity(rows[0]) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch signals linked to an entity via the signal_entities junction table.
+ *
+ * Used by the entity dossier page to show recent intelligence activity.
+ *
+ * @param entityName  The entity name to match.
+ * @param limit       Maximum signals to return (default 20).
+ */
+export async function getSignalsForEntity(
+  entityName: string,
+  limit = 20,
+): Promise<Signal[]> {
+  const safeLimit = Math.min(Math.max(1, limit), 50);
+
+  try {
+    const hasJunction = await tableExists('signal_entities');
+
+    if (hasJunction) {
+      const rows = await dbQuery<SignalRow>`
+        SELECT
+          s.id, s.title, s.summary, s.description,
+          s.category, s.signal_type, s.entity_id, s.entity_name,
+          s.confidence, s.confidence_score, s.date, s.created_at,
+          s.significance_score, s.source_support_count
+        FROM signals s
+        JOIN signal_entities se ON se.signal_id = s.id
+        JOIN entities e ON e.id = se.entity_id
+        WHERE e.name = ${entityName}
+          AND (s.status IS NULL OR s.status NOT IN ('rejected'))
+        ORDER BY s.created_at DESC
+        LIMIT ${safeLimit}
+      `;
+      return rows.map(rowToSignal);
+    }
+
+    // Fallback: match on denormalized entity_name column
+    const rows = await dbQuery<SignalRow>`
+      SELECT
+        id, title, summary, description,
+        category, signal_type, entity_id, entity_name,
+        confidence, confidence_score, date, created_at,
+        significance_score, source_support_count
+      FROM signals
+      WHERE entity_name = ${entityName}
+        AND (status IS NULL OR status NOT IN ('rejected'))
+      ORDER BY created_at DESC
+      LIMIT ${safeLimit}
+    `;
+    return rows.map(rowToSignal);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fetch events linked to an entity.
+ *
+ * Matches on the denormalized entity_name column in the events table.
+ *
+ * @param entityName  The entity name to match.
+ * @param limit       Maximum events to return (default 20).
+ */
+export async function getEventsForEntity(
+  entityName: string,
+  limit = 20,
+): Promise<AiEvent[]> {
+  const safeLimit = Math.min(Math.max(1, limit), 50);
+
+  try {
+    const rows = await dbQuery<EventRow>`
+      SELECT
+        id, type, title, description,
+        entity_id, entity_name, company,
+        amount, signal_ids, timestamp, created_at
+      FROM events
+      WHERE entity_name = ${entityName}
+      ORDER BY timestamp DESC
+      LIMIT ${safeLimit}
+    `;
+    return rows.map(rowToEvent);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Aggregated metrics for an entity dossier.
+ */
+export interface EntityDossierMetrics {
+  signalsTotal: number;
+  signals24h: number;
+  signals7d: number;
+  signals30d: number;
+  eventsTotal: number;
+  avgConfidence: number;
+  firstSeen: string | null;
+  lastActivity: string | null;
+}
+
+/**
+ * Compute aggregated metrics for an entity.
+ *
+ * Uses the signal_entities junction table when available, with a fallback
+ * to the denormalized entity_name column.
+ *
+ * @param entityName  The entity name to compute metrics for.
+ */
+export async function getEntityMetrics(entityName: string): Promise<EntityDossierMetrics> {
+  const zero: EntityDossierMetrics = {
+    signalsTotal: 0, signals24h: 0, signals7d: 0, signals30d: 0,
+    eventsTotal: 0, avgConfidence: 0, firstSeen: null, lastActivity: null,
+  };
+
+  try {
+    const hasJunction = await tableExists('signal_entities');
+
+    if (hasJunction) {
+      type MetricRow = {
+        total: string;
+        h24: string;
+        d7: string;
+        d30: string;
+        avg_conf: string | null;
+        first_seen: string | null;
+        last_activity: string | null;
+      };
+
+      const [row] = await dbQuery<MetricRow>`
+        SELECT
+          COUNT(*)::text AS total,
+          COUNT(*) FILTER (WHERE s.created_at > NOW() - INTERVAL '24 hours')::text AS h24,
+          COUNT(*) FILTER (WHERE s.created_at > NOW() - INTERVAL '7 days')::text AS d7,
+          COUNT(*) FILTER (WHERE s.created_at > NOW() - INTERVAL '30 days')::text AS d30,
+          AVG(COALESCE(s.confidence, 50))::numeric(5,1)::text AS avg_conf,
+          MIN(s.created_at)::text AS first_seen,
+          MAX(s.created_at)::text AS last_activity
+        FROM signals s
+        JOIN signal_entities se ON se.signal_id = s.id
+        JOIN entities e ON e.id = se.entity_id
+        WHERE e.name = ${entityName}
+      `;
+
+      const [evtRow] = await dbQuery<{ count: string }>`
+        SELECT COUNT(*)::text AS count
+        FROM events
+        WHERE entity_name = ${entityName}
+      `;
+
+      if (!row) return zero;
+
+      return {
+        signalsTotal: parseInt(row.total, 10) || 0,
+        signals24h: parseInt(row.h24, 10) || 0,
+        signals7d: parseInt(row.d7, 10) || 0,
+        signals30d: parseInt(row.d30, 10) || 0,
+        eventsTotal: parseInt(evtRow?.count ?? '0', 10) || 0,
+        avgConfidence: row.avg_conf != null ? parseFloat(row.avg_conf) : 0,
+        firstSeen: row.first_seen,
+        lastActivity: row.last_activity,
+      };
+    }
+
+    // Fallback: denormalized entity_name
+    type MetricRow = {
+      total: string;
+      h24: string;
+      d7: string;
+      d30: string;
+      avg_conf: string | null;
+      first_seen: string | null;
+      last_activity: string | null;
+    };
+
+    const [row] = await dbQuery<MetricRow>`
+      SELECT
+        COUNT(*)::text AS total,
+        COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '24 hours')::text AS h24,
+        COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '7 days')::text AS d7,
+        COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '30 days')::text AS d30,
+        AVG(COALESCE(confidence, 50))::numeric(5,1)::text AS avg_conf,
+        MIN(created_at)::text AS first_seen,
+        MAX(created_at)::text AS last_activity
+      FROM signals
+      WHERE entity_name = ${entityName}
+    `;
+
+    const [evtRow] = await dbQuery<{ count: string }>`
+      SELECT COUNT(*)::text AS count
+      FROM events
+      WHERE entity_name = ${entityName}
+    `;
+
+    if (!row) return zero;
+
+    return {
+      signalsTotal: parseInt(row.total, 10) || 0,
+      signals24h: parseInt(row.h24, 10) || 0,
+      signals7d: parseInt(row.d7, 10) || 0,
+      signals30d: parseInt(row.d30, 10) || 0,
+      eventsTotal: parseInt(evtRow?.count ?? '0', 10) || 0,
+      avgConfidence: row.avg_conf != null ? parseFloat(row.avg_conf) : 0,
+      firstSeen: row.first_seen,
+      lastActivity: row.last_activity,
+    };
+  } catch {
+    return zero;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Articles
 // ─────────────────────────────────────────────────────────────────────────────
 

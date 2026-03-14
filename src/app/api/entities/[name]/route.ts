@@ -186,7 +186,26 @@ export async function GET(
     LIMIT 10
   `;
 
-  // 5. Major developments — top 5 signals by significance score
+  // 5. Recent events for this entity
+  interface EventRow {
+    id: string;
+    type: string;
+    title: string;
+    description: string;
+    entity_name: string | null;
+    amount: string | null;
+    timestamp: string;
+  }
+
+  const recentEvents = await dbQuery<EventRow>`
+    SELECT id, type, title, description, entity_name, amount, timestamp
+    FROM events
+    WHERE entity_name = ${entityName}
+    ORDER BY timestamp DESC
+    LIMIT 15
+  `;
+
+  // 6. Major developments — top 5 signals by significance score
   const majorDevelopments = await dbQuery<SignalRow>`
     SELECT
       s.id, s.title, s.summary, s.description,
@@ -264,6 +283,17 @@ export async function GET(
       confidenceLabel: deriveConfidenceLabel(
         s.confidence ?? (s.confidence_score ? Math.round(parseFloat(s.confidence_score) * 100) : null),
       ),
+    })),
+    recent_events: recentEvents.map((e) => ({
+      id: e.id,
+      type: e.type,
+      title: e.title,
+      description: e.description,
+      entity_name: e.entity_name,
+      amount: e.amount,
+      date: typeof e.timestamp === 'string'
+        ? e.timestamp.slice(0, 10)
+        : new Date(e.timestamp).toISOString().slice(0, 10),
     })),
     source_coverage: parseInt(sourceCoverage?.distinct_sources ?? '0', 10),
   });
