@@ -7,20 +7,26 @@
  * PATCH /api/alerts             — mark alert(s) as read
  *   body: { id: string }        — mark single alert read
  *   body: { all: true }         — mark all alerts read
+ *
+ * When the user has an omterminal_uid cookie, the response includes both
+ * platform alerts (user_id IS NULL) and personal alerts for that user.
+ * Without a cookie, only platform alerts are returned.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAlerts, getUnreadAlertCount, markAlertRead, markAllAlertsRead } from '@/db/queries';
+import { getUserIdFromRequest } from '@/lib/userId';
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = request.nextUrl;
     const since = searchParams.get('since') ?? undefined;
     const limit = Math.min(parseInt(searchParams.get('limit') ?? '20', 10) || 20, 100);
+    const userId = getUserIdFromRequest(request) ?? undefined;
 
     const [alerts, unreadCount] = await Promise.all([
-      getAlerts(limit, since),
-      getUnreadAlertCount(),
+      getAlerts(limit, since, userId),
+      getUnreadAlertCount(userId),
     ]);
     return NextResponse.json({ alerts, unreadCount });
   } catch {
@@ -28,12 +34,13 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function PATCH(request: Request) {
+export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
+    const userId = getUserIdFromRequest(request) ?? undefined;
 
     if (body.all === true) {
-      await markAllAlertsRead();
+      await markAllAlertsRead(userId);
       return NextResponse.json({ ok: true });
     }
 
