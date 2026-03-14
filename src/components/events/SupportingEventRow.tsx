@@ -2,25 +2,14 @@ import Link from 'next/link';
 import type { AiEvent } from '@/data/mockEvents';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Style constants
+// Style constants (minimal — most styling lives in globals.css .row-interactive)
 // ─────────────────────────────────────────────────────────────────────────────
-
-const ROW: React.CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 6,
-  padding: '14px 16px',
-  borderRadius: 'var(--rs)',
-  border: '1px solid var(--border)',
-  background: 'var(--glass)',
-  transition: 'border-color var(--t) var(--ease)',
-  textDecoration: 'none',
-};
 
 const TITLE: React.CSSProperties = {
   fontSize: 13,
-  color: 'var(--text2)',
-  lineHeight: 1.5,
+  fontWeight: 500,
+  color: 'var(--text)',
+  lineHeight: 1.55,
 };
 
 const META_ROW: React.CSSProperties = {
@@ -111,7 +100,7 @@ export function SupportingEventRow({ event, sourceUrl }: SupportingEventRowProps
   // Primary action: link to event detail page when event has an id
   if (event.id) {
     return (
-      <Link href={`/events/${event.id}`} style={{ ...ROW, cursor: 'pointer' }}>
+      <Link href={`/events/${event.id}`} className="row-interactive" style={{ cursor: 'pointer' }}>
         <span style={TITLE}>{event.title}</span>
         {meta}
       </Link>
@@ -119,7 +108,7 @@ export function SupportingEventRow({ event, sourceUrl }: SupportingEventRowProps
   }
 
   return (
-    <div style={ROW}>
+    <div className="row-interactive">
       <span style={TITLE}>{event.title}</span>
       {meta}
     </div>
