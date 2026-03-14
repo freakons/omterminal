@@ -2023,16 +2023,46 @@ function mapAlertRow(row: AlertRow): AlertRecord {
 /**
  * Fetch recent alerts ordered by priority (high first), then creation time.
  * Optionally filter to only alerts created after `since` timestamp.
+ *
+ * When `userId` is provided, returns:
+ *   - platform alerts (user_id IS NULL)
+ *   - personal alerts where user_id matches
+ * When `userId` is omitted, returns only platform alerts (user_id IS NULL).
  */
-export async function getAlerts(limit = 20, since?: string): Promise<AlertRecord[]> {
+export async function getAlerts(limit = 20, since?: string, userId?: string): Promise<AlertRecord[]> {
   if (!(await tableExists('alerts'))) return [];
+
+  if (userId && since) {
+    const rows = await dbQuery<AlertRow>`
+      SELECT id, user_id, type, entity_name, signal_id, trend_id,
+             title, message, priority, created_at, read
+      FROM alerts
+      WHERE created_at > ${since}
+        AND (user_id IS NULL OR user_id = ${userId})
+      ORDER BY priority DESC, created_at DESC
+      LIMIT ${limit}
+    `;
+    return rows.map(mapAlertRow);
+  }
+
+  if (userId) {
+    const rows = await dbQuery<AlertRow>`
+      SELECT id, user_id, type, entity_name, signal_id, trend_id,
+             title, message, priority, created_at, read
+      FROM alerts
+      WHERE (user_id IS NULL OR user_id = ${userId})
+      ORDER BY priority DESC, created_at DESC
+      LIMIT ${limit}
+    `;
+    return rows.map(mapAlertRow);
+  }
 
   if (since) {
     const rows = await dbQuery<AlertRow>`
       SELECT id, user_id, type, entity_name, signal_id, trend_id,
              title, message, priority, created_at, read
       FROM alerts
-      WHERE created_at > ${since}
+      WHERE created_at > ${since} AND user_id IS NULL
       ORDER BY priority DESC, created_at DESC
       LIMIT ${limit}
     `;
@@ -2043,6 +2073,7 @@ export async function getAlerts(limit = 20, since?: string): Promise<AlertRecord
     SELECT id, user_id, type, entity_name, signal_id, trend_id,
            title, message, priority, created_at, read
     FROM alerts
+    WHERE user_id IS NULL
     ORDER BY priority DESC, created_at DESC
     LIMIT ${limit}
   `;
@@ -2050,12 +2081,22 @@ export async function getAlerts(limit = 20, since?: string): Promise<AlertRecord
 }
 
 /**
- * Count unread alerts.
+ * Count unread alerts visible to the given user.
+ * Includes platform alerts (user_id IS NULL) and personal alerts for this user.
  */
-export async function getUnreadAlertCount(): Promise<number> {
+export async function getUnreadAlertCount(userId?: string): Promise<number> {
   if (!(await tableExists('alerts'))) return 0;
+
+  if (userId) {
+    const rows = await dbQuery<{ count: string }>`
+      SELECT COUNT(*) AS count FROM alerts
+      WHERE read = false AND (user_id IS NULL OR user_id = ${userId})
+    `;
+    return parseInt(rows[0]?.count ?? '0', 10);
+  }
+
   const rows = await dbQuery<{ count: string }>`
-    SELECT COUNT(*) AS count FROM alerts WHERE read = false
+    SELECT COUNT(*) AS count FROM alerts WHERE read = false AND user_id IS NULL
   `;
   return parseInt(rows[0]?.count ?? '0', 10);
 }
@@ -2068,10 +2109,15 @@ export async function markAlertRead(id: string): Promise<void> {
 }
 
 /**
- * Mark all alerts as read.
+ * Mark all alerts visible to the given user as read.
+ * Platform alerts (user_id IS NULL) + personal alerts for this user.
  */
-export async function markAllAlertsRead(): Promise<void> {
-  await dbQuery`UPDATE alerts SET read = true WHERE read = false`;
+export async function markAllAlertsRead(userId?: string): Promise<void> {
+  if (userId) {
+    await dbQuery`UPDATE alerts SET read = true WHERE read = false AND (user_id IS NULL OR user_id = ${userId})`;
+  } else {
+    await dbQuery`UPDATE alerts SET read = true WHERE read = false AND user_id IS NULL`;
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2198,4 +2244,43 @@ export async function bulkImportWatchlist(
     if (rows.length > 0) imported++;
   }
   return imported;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Watchlist → Alert targeting
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Find all user IDs that are watching a given entity name.
+ * Used by personal alert generation to target relevant users.
+ */
+export async function getUsersWatchingEntityName(entityName: string): Promise<string[]> {
+  if (!(await tableExists('user_watchlists'))) return [];
+
+  const rows = await dbQuery<{ user_id: string }>`
+    SELECT DISTINCT user_id FROM user_watchlists
+    WHERE LOWER(entity_name) = LOWER(${entityName})
+  `;
+  return rows.map((r) => r.user_id);
+}
+
+/**
+ * Find all user IDs watching any of the given entity names.
+ * Returns a map: entityName → [userId1, userId2, ...]
+ */
+export async function getUsersWatchingEntityNames(entityNames: string[]): Promise<Map<string, string[]>> {
+  const result = new Map<string, string[]>();
+  if (entityNames.length === 0) return result;
+  if (!(await tableExists('user_watchlists'))) return result;
+
+  const rows = await dbQuery<{ user_id: string; entity_name: string }>`
+    SELECT DISTINCT user_id, entity_name FROM user_watchlists
+    WHERE LOWER(entity_name) = ANY(${entityNames.map((n) => n.toLowerCase())})
+  `;
+  for (const row of rows) {
+    const key = row.entity_name;
+    if (!result.has(key)) result.set(key, []);
+    result.get(key)!.push(row.user_id);
+  }
+  return result;
 }

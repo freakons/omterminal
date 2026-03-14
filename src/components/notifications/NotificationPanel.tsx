@@ -6,14 +6,17 @@ import type { AlertRecord } from '@/db/queries';
 // Alert type → visual config
 // ─────────────────────────────────────────────────────────────────────────────
 
-const TYPE_CONFIG: Record<string, { label: string; color: string }> = {
-  signal_high_impact:    { label: 'High Impact', color: 'var(--rose)' },
-  signal_rising_momentum: { label: 'Momentum',   color: 'var(--amber)' },
-  trend_detected:        { label: 'Trend',       color: 'var(--violet)' },
-  trend_rising:          { label: 'Rising',      color: 'var(--amber)' },
-  entity_watch:          { label: 'Watchlist',   color: 'var(--cyan)' },
-  trend_watch:           { label: 'Trend Watch', color: 'var(--violet)' },
-  category_watch:        { label: 'Category',    color: 'var(--cyan)' },
+const TYPE_CONFIG: Record<string, { label: string; color: string; personal?: boolean }> = {
+  signal_high_impact:            { label: 'High Impact', color: 'var(--rose)' },
+  signal_rising_momentum:        { label: 'Momentum',    color: 'var(--amber)' },
+  trend_detected:                { label: 'Trend',       color: 'var(--violet)' },
+  trend_rising:                  { label: 'Rising',      color: 'var(--amber)' },
+  entity_watch:                  { label: 'Watchlist',   color: 'var(--cyan)', personal: true },
+  trend_watch:                   { label: 'Trend Watch', color: 'var(--violet)', personal: true },
+  category_watch:                { label: 'Category',    color: 'var(--cyan)', personal: true },
+  watched_entity_high_impact:    { label: 'High Impact', color: 'var(--rose)', personal: true },
+  watched_entity_rising:         { label: 'Momentum',    color: 'var(--amber)', personal: true },
+  watched_entity_trend:          { label: 'Trend',       color: 'var(--violet)', personal: true },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -84,6 +87,9 @@ export function NotificationPanel({ alerts, onAlertClick, onMarkAllRead }: Notif
                 <span className="notif-type-badge" style={{ borderColor: config.color, color: config.color }}>
                   {config.label}
                 </span>
+                {(config.personal || alert.userId) && (
+                  <span className="notif-personal-badge">Watching</span>
+                )}
                 <span className="notif-time">{timeAgo(alert.createdAt)}</span>
               </div>
               <div className="notif-title">{alert.title}</div>
