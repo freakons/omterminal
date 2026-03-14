@@ -408,7 +408,10 @@ const STATEMENTS = [
     'trend_rising',
     'entity_watch',
     'trend_watch',
-    'category_watch'
+    'category_watch',
+    'watched_entity_high_impact',
+    'watched_entity_rising',
+    'watched_entity_trend'
   ))`,
   `CREATE INDEX IF NOT EXISTS idx_alerts_priority ON alerts (priority DESC, created_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_alerts_dedup_signal ON alerts (type, signal_id, created_at DESC)`,
@@ -429,6 +432,30 @@ const STATEMENTS = [
      ON user_watchlists (user_id, entity_slug)`,
   `CREATE INDEX IF NOT EXISTS idx_user_watchlists_user_id
      ON user_watchlists (user_id, created_at DESC)`,
+
+  // ── Migration 012: Email Digest Subscriptions ──────────────────────────
+  `CREATE TABLE IF NOT EXISTS user_email_subscriptions (
+    id         SERIAL       PRIMARY KEY,
+    user_id    TEXT         NOT NULL UNIQUE,
+    email      TEXT         NOT NULL,
+    is_enabled BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_email_subs_user_id
+     ON user_email_subscriptions (user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_email_subs_enabled
+     ON user_email_subscriptions (is_enabled) WHERE is_enabled = TRUE`,
+
+  // ── Migration 012b: Digest Send Tracking ───────────────────────────────
+  `CREATE TABLE IF NOT EXISTS digest_sends (
+    id            SERIAL       PRIMARY KEY,
+    user_id       TEXT         NOT NULL,
+    sent_for_date DATE         NOT NULL,
+    sent_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_digest_sends_user_date
+     ON digest_sends (user_id, sent_for_date)`,
 ];
 
 /**
@@ -489,6 +516,9 @@ const TABLES_CREATED = [
   'alerts',
   // migration 011
   'user_watchlists',
+  // migration 012
+  'user_email_subscriptions',
+  'digest_sends',
 ];
 
 export async function POST(req: NextRequest) {

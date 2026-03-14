@@ -2284,3 +2284,177 @@ export async function getUsersWatchingEntityNames(entityNames: string[]): Promis
   }
   return result;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Email Digest Subscriptions (migration 012)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface EmailSubscription {
+  userId: string;
+  email: string;
+  isEnabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface EmailSubscriptionRow {
+  user_id: string;
+  email: string;
+  is_enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+function mapEmailSubRow(row: EmailSubscriptionRow): EmailSubscription {
+  return {
+    userId: row.user_id,
+    email: row.email,
+    isEnabled: row.is_enabled,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/**
+ * Get the email digest subscription for a user, if any.
+ */
+export async function getEmailSubscription(userId: string): Promise<EmailSubscription | null> {
+  if (!(await tableExists('user_email_subscriptions'))) return null;
+
+  const rows = await dbQuery<EmailSubscriptionRow>`
+    SELECT user_id, email, is_enabled, created_at, updated_at
+    FROM user_email_subscriptions
+    WHERE user_id = ${userId}
+    LIMIT 1
+  `;
+  return rows.length > 0 ? mapEmailSubRow(rows[0]) : null;
+}
+
+/**
+ * Create or update an email digest subscription.
+ * Uses ON CONFLICT on user_id to upsert.
+ */
+export async function upsertEmailSubscription(
+  userId: string,
+  email: string,
+  isEnabled = true,
+): Promise<void> {
+  await dbQuery`
+    INSERT INTO user_email_subscriptions (user_id, email, is_enabled, updated_at)
+    VALUES (${userId}, ${email}, ${isEnabled}, NOW())
+    ON CONFLICT (user_id) DO UPDATE SET
+      email = EXCLUDED.email,
+      is_enabled = EXCLUDED.is_enabled,
+      updated_at = NOW()
+  `;
+}
+
+/**
+ * Get all enabled email subscriptions (for digest delivery).
+ */
+export async function getEnabledEmailSubscriptions(): Promise<EmailSubscription[]> {
+  if (!(await tableExists('user_email_subscriptions'))) return [];
+
+  const rows = await dbQuery<EmailSubscriptionRow>`
+    SELECT user_id, email, is_enabled, created_at, updated_at
+    FROM user_email_subscriptions
+    WHERE is_enabled = TRUE
+  `;
+  return rows.map(mapEmailSubRow);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Digest Alert Queries
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Personal digest alert types — alerts tied to watched entities. */
+const PERSONAL_DIGEST_TYPES = [
+  'watched_entity_high_impact',
+  'watched_entity_rising',
+  'watched_entity_trend',
+];
+
+/** Platform digest alert types — broad intelligence signals. */
+const PLATFORM_DIGEST_TYPES = [
+  'signal_high_impact',
+  'trend_detected',
+  'signal_rising_momentum',
+  'trend_rising',
+];
+
+/**
+ * Fetch personal (watched-entity) alerts for a user since a given timestamp.
+ * Used to build the "Your watched entities" section of the digest email.
+ */
+export async function getDigestAlertsForUser(
+  userId: string,
+  since: string,
+): Promise<AlertRecord[]> {
+  if (!(await tableExists('alerts'))) return [];
+
+  const rows = await dbQuery<AlertRow>`
+    SELECT id, user_id, type, entity_name, signal_id, trend_id,
+           title, message, priority, created_at, read
+    FROM alerts
+    WHERE user_id = ${userId}
+      AND type = ANY(${PERSONAL_DIGEST_TYPES})
+      AND created_at > ${since}
+    ORDER BY priority DESC, created_at DESC
+    LIMIT 50
+  `;
+  return rows.map(mapAlertRow);
+}
+
+/**
+ * Fetch top platform alerts since a given timestamp.
+ * Used to build the "Platform intelligence" section of the digest email.
+ */
+export async function getTopPlatformDigestAlerts(
+  since: string,
+  limit = 15,
+): Promise<AlertRecord[]> {
+  if (!(await tableExists('alerts'))) return [];
+
+  const rows = await dbQuery<AlertRow>`
+    SELECT id, user_id, type, entity_name, signal_id, trend_id,
+           title, message, priority, created_at, read
+    FROM alerts
+    WHERE user_id IS NULL
+      AND type = ANY(${PLATFORM_DIGEST_TYPES})
+      AND created_at > ${since}
+    ORDER BY priority DESC, created_at DESC
+    LIMIT ${limit}
+  `;
+  return rows.map(mapAlertRow);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Digest Send Tracking (migration 012b)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Check if a digest has already been sent to a user for a given date.
+ */
+export async function hasDigestBeenSent(userId: string, forDate: string): Promise<boolean> {
+  if (!(await tableExists('digest_sends'))) return false;
+
+  const rows = await dbQuery<{ exists: boolean }>`
+    SELECT EXISTS(
+      SELECT 1 FROM digest_sends
+      WHERE user_id = ${userId} AND sent_for_date = ${forDate}
+    ) AS exists
+  `;
+  return rows[0]?.exists === true;
+}
+
+/**
+ * Record that a digest was sent to a user for a given date.
+ * Uses ON CONFLICT to prevent duplicate records.
+ */
+export async function recordDigestSend(userId: string, forDate: string): Promise<void> {
+  await dbQuery`
+    INSERT INTO digest_sends (user_id, sent_for_date)
+    VALUES (${userId}, ${forDate})
+    ON CONFLICT (user_id, sent_for_date) DO NOTHING
+  `;
+}
