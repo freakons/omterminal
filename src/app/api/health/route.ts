@@ -35,7 +35,7 @@ import { TimeoutError }                         from '@/lib/withTimeout';
 import { pingRedis, isRedisConfigured }         from '@/lib/cache/redis';
 import { getPipelineLockStatus }                from '@/lib/pipeline/lock';
 import { getProvider, getActiveProviderName }   from '@/lib/ai';
-import { createRequestId }                      from '@/lib/requestId';
+import { getOrCreateRequestId, logWithRequestId } from '@/lib/requestId';
 import { getCache, setCache, MEM_TTL }          from '@/lib/memoryCache';
 import { runAllConsistencyChecks }              from '@/db/consistencyChecks';
 
@@ -100,7 +100,7 @@ function computeOverallGrade(subsystems: Record<string, SubsystemStatus>): Overa
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
-  const requestId = req.headers.get('x-request-id') ?? createRequestId();
+  const requestId = getOrCreateRequestId(req);
   const timestamp = new Date().toISOString();
 
   const isAdmin = isAdminAuthenticated(req);
@@ -117,7 +117,7 @@ export async function GET(req: NextRequest) {
         { status: memHit.status, ok: memHit.ok, timestamp, requestId },
         {
           status:  memHit.ok ? 200 : 503,
-          headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' },
+          headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', 'x-request-id': requestId },
         },
       );
     }
@@ -140,11 +140,12 @@ export async function GET(req: NextRequest) {
     // Populate cache so next probe in this instance skips the DB ping.
     setCache('health:public', { status: publicGrade, ok: dbConnected }, MEM_TTL.HEALTH_PUBLIC);
 
+    logWithRequestId(requestId, 'health', `public status=${publicGrade}`);
     return NextResponse.json(
       { status: publicGrade, ok: dbConnected, timestamp, requestId },
       {
         status:  dbConnected ? 200 : 503,
-        headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' },
+        headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', 'x-request-id': requestId },
       },
     );
   }
@@ -400,8 +401,6 @@ export async function GET(req: NextRequest) {
   }
 
   // ── 9. Cron/scheduler readiness (inferred) ────────────────────────────────
-  // Cron is considered healthy if we've had a successful pipeline run recently
-  // and there is a CRON_SECRET configured (indicating Vercel cron is set up).
   const hasCronSecret = Boolean(process.env.CRON_SECRET);
   if (!hasCronSecret) {
     subsystems.cron = { status: 'degraded', message: 'CRON_SECRET not set — automated scheduling may not be active' };
@@ -419,8 +418,6 @@ export async function GET(req: NextRequest) {
   }
 
   // ── 10. Data consistency (lightweight summary) ──────────────────────────
-  // Run all read-only consistency checks and surface a summary.
-  // The full detailed report is available at GET /api/admin/consistency.
   let consistencySummary: {
     overallSeverity: string;
     checksRun: number;
@@ -440,7 +437,6 @@ export async function GET(req: NextRequest) {
         durationMs:      report.durationMs,
       };
 
-      // Reflect consistency in the subsystem grade
       if (report.summary.critical > 0) {
         subsystems.dataConsistency = {
           status: 'degraded',
@@ -463,7 +459,7 @@ export async function GET(req: NextRequest) {
   // ── 11. Compute overall grade ─────────────────────────────────────────────
   const grade = computeOverallGrade(subsystems);
 
-  // Build the full diagnostics response
+  logWithRequestId(requestId, 'health', `admin grade=${grade} db=${dbConnected}`);
   const health = {
     status:    grade,
     ok:        grade !== 'failing',
@@ -544,6 +540,6 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json(health, {
     status:  grade === 'failing' ? 503 : 200,
-    headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' },
+    headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', 'x-request-id': requestId },
   });
 }

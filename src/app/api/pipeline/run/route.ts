@@ -41,7 +41,7 @@ export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse }           from 'next/server';
 import { validateEnvironment }                  from '@/lib/env';
-import { createRequestId, logWithRequestId }    from '@/lib/requestId';
+import { getOrCreateRequestId, logWithRequestId } from '@/lib/requestId';
 import { ingestGNews }                          from '@/services/ingestion/gnewsFetcher';
 import { ingestRss }                            from '@/services/ingestion/rssIngester';
 import { getRecentEvents }                      from '@/services/storage/eventStore';
@@ -76,47 +76,96 @@ const TIMEOUT = {
 /**
  * Extract the bearer token from the Authorization header, if present.
  * Vercel cron sends `Authorization: Bearer <CRON_SECRET>`.
+ * Always trims to handle copy-paste whitespace issues.
  */
 function extractBearerToken(req: NextRequest): string {
   const auth = req.headers.get('authorization') ?? '';
-  if (auth.startsWith('Bearer ')) return auth.slice(7);
+  if (auth.startsWith('Bearer ')) return auth.slice(7).trim();
   return '';
 }
 
 function detectTriggerType(req: NextRequest): TriggerType {
   // Admin secret header → admin trigger
-  const adminHeader = req.headers.get('x-admin-secret') ?? '';
-  if (adminHeader && adminHeader === (process.env.ADMIN_SECRET ?? '')) return 'admin';
+  const adminHeader = (req.headers.get('x-admin-secret') ?? '').trim();
+  const adminSecret = (process.env.ADMIN_SECRET ?? '').trim();
+  if (adminHeader && adminHeader === adminSecret) return 'admin';
 
   // Vercel cron: Authorization: Bearer <CRON_SECRET>
-  const cronSecret = process.env.CRON_SECRET ?? '';
+  const cronSecret = (process.env.CRON_SECRET ?? '').trim();
   const bearer = extractBearerToken(req);
   if (cronSecret && bearer === cronSecret) return 'cron';
 
   return 'manual';
 }
 
-function isAuthorized(req: NextRequest): boolean {
-  const cronSecret  = process.env.CRON_SECRET  ?? '';
-  const adminSecret = process.env.ADMIN_SECRET ?? '';
+/** Safe auth diagnostics — never includes actual secret values. */
+interface AuthDiagnostics {
+  cronSecretConfigured: boolean;
+  cronSecretLength: number;
+  adminSecretConfigured: boolean;
+  bearerProvided: boolean;
+  bearerLength: number;
+  querySecretProvided: boolean;
+  querySecretLength: number;
+  adminHeaderProvided: boolean;
+  nodeEnv: string;
+  failReason: string;
+}
+
+function isAuthorized(req: NextRequest): { authorized: boolean; diagnostics: AuthDiagnostics } {
+  const cronSecret  = (process.env.CRON_SECRET  ?? '').trim();
+  const adminSecret = (process.env.ADMIN_SECRET ?? '').trim();
   const isProd      = process.env.NODE_ENV === 'production';
 
+  const bearer      = extractBearerToken(req);
+  const querySecret = (new URL(req.url).searchParams.get('secret') ?? '').trim();
+  const adminHeader = (req.headers.get('x-admin-secret') ?? '').trim();
+
+  const diag: AuthDiagnostics = {
+    cronSecretConfigured:  cronSecret.length > 0,
+    cronSecretLength:      cronSecret.length,
+    adminSecretConfigured: adminSecret.length > 0,
+    bearerProvided:        bearer.length > 0,
+    bearerLength:          bearer.length,
+    querySecretProvided:   querySecret.length > 0,
+    querySecretLength:     querySecret.length,
+    adminHeaderProvided:   adminHeader.length > 0,
+    nodeEnv:               process.env.NODE_ENV ?? 'undefined',
+    failReason:            '',
+  };
+
   // In production, missing secrets must fail closed — never open the endpoint.
-  if (isProd && !cronSecret && !adminSecret) return false;
+  if (isProd && !cronSecret && !adminSecret) {
+    diag.failReason = 'production_no_secrets_configured';
+    return { authorized: false, diagnostics: diag };
+  }
 
   // In development with no secrets configured, allow for ergonomics.
-  if (!cronSecret && !adminSecret) return true;
+  if (!cronSecret && !adminSecret) {
+    return { authorized: true, diagnostics: diag };
+  }
 
   // Do NOT trust User-Agent for authentication — it is trivially spoofable.
   // Check: Authorization: Bearer <secret> (Vercel cron), query param, admin header
-  const bearer      = extractBearerToken(req);
-  const querySecret = new URL(req.url).searchParams.get('secret') ?? '';
-  const adminHeader = req.headers.get('x-admin-secret') ?? '';
+  if (cronSecret  && (bearer === cronSecret || querySecret === cronSecret)) {
+    return { authorized: true, diagnostics: diag };
+  }
+  if (adminSecret && adminHeader === adminSecret) {
+    return { authorized: true, diagnostics: diag };
+  }
 
-  if (cronSecret  && (bearer === cronSecret || querySecret === cronSecret)) return true;
-  if (adminSecret && adminHeader === adminSecret) return true;
+  // Build specific fail reason for debugging
+  if (bearer && cronSecret && bearer !== cronSecret) {
+    diag.failReason = `bearer_mismatch (bearer_len=${bearer.length} expected_len=${cronSecret.length})`;
+  } else if (querySecret && cronSecret && querySecret !== cronSecret) {
+    diag.failReason = `query_secret_mismatch (query_len=${querySecret.length} expected_len=${cronSecret.length})`;
+  } else if (!bearer && !querySecret && !adminHeader) {
+    diag.failReason = 'no_credentials_provided';
+  } else {
+    diag.failReason = 'credentials_provided_but_no_match';
+  }
 
-  return false;
+  return { authorized: false, diagnostics: diag };
 }
 
 // ── Stage runner with timeout ─────────────────────────────────────────────────
@@ -260,30 +309,51 @@ async function persistSkippedRun(
 
 export async function POST(req: NextRequest) {
   const t0 = Date.now();
-  const correlationId = createRequestId();
+  const correlationId = getOrCreateRequestId(req);
   const url = new URL(req.url);
   const isDryRun = url.searchParams.get('dry_run') === 'true';
 
+  // Validate environment — catch and return structured error instead of raw 500
   try {
     validateEnvironment(['DATABASE_URL', 'CRON_SECRET']);
   } catch (envErr) {
+    logWithRequestId(correlationId, 'pipeline/run', `env_error: ${envErr instanceof Error ? envErr.message : String(envErr)}`);
     return NextResponse.json(
       {
         ok: false,
-        status: 'config_error',
-        message: envErr instanceof Error ? envErr.message : 'Missing critical environment variables',
-        runId: correlationId,
-        timestamp: new Date().toISOString(),
+        status: 'error',
+        message: 'Server configuration error',
+        detail: envErr instanceof Error ? envErr.message : String(envErr),
+        requestId: correlationId,
       },
-      { status: 500 },
+      { status: 500, headers: { 'x-request-id': correlationId } },
     );
   }
 
-  if (!isAuthorized(req)) {
-    logWithRequestId(correlationId, 'pipeline/run', 'unauthorized');
+  const { authorized, diagnostics: authDiag } = isAuthorized(req);
+  if (!authorized) {
+    logWithRequestId(correlationId, 'pipeline/run', `unauthorized: ${authDiag.failReason}`);
     return NextResponse.json(
-      { ok: false, status: 'error', message: 'Unauthorized' },
-      { status: 401 },
+      {
+        ok: false,
+        status: 'error',
+        message: 'Unauthorized',
+        requestId: correlationId,
+        // Safe diagnostics — no secret values exposed
+        authDebug: {
+          cronSecretConfigured: authDiag.cronSecretConfigured,
+          cronSecretLength:     authDiag.cronSecretLength,
+          adminSecretConfigured: authDiag.adminSecretConfigured,
+          bearerProvided:       authDiag.bearerProvided,
+          bearerLength:         authDiag.bearerLength,
+          querySecretProvided:  authDiag.querySecretProvided,
+          querySecretLength:    authDiag.querySecretLength,
+          adminHeaderProvided:  authDiag.adminHeaderProvided,
+          nodeEnv:              authDiag.nodeEnv,
+          failReason:           authDiag.failReason,
+        },
+      },
+      { status: 401, headers: { 'x-request-id': correlationId } },
     );
   }
 
@@ -292,17 +362,21 @@ export async function POST(req: NextRequest) {
 
   // ── Dry-run ───────────────────────────────────────────────────────────────
   if (isDryRun) {
-    return NextResponse.json({
-      ok:           true,
-      status:       'dry_run' as RunStatus,
-      runId:        correlationId,
-      triggerType,
-      dryRun:       true,
-      startedAt:    new Date(t0).toISOString(),
-      completedAt:  new Date().toISOString(),
-      durationMs:   Date.now() - t0,
-      message:      'Dry-run: auth and env validated. No pipeline execution performed.',
-    });
+    return NextResponse.json(
+      {
+        ok:           true,
+        status:       'dry_run' as RunStatus,
+        runId:        correlationId,
+        requestId:    correlationId,
+        triggerType,
+        dryRun:       true,
+        startedAt:    new Date(t0).toISOString(),
+        completedAt:  new Date().toISOString(),
+        durationMs:   Date.now() - t0,
+        message:      'Dry-run: auth and env validated. No pipeline execution performed.',
+      },
+      { headers: { 'x-request-id': correlationId } },
+    );
   }
 
   // ── Concurrency lock ──────────────────────────────────────────────────────
@@ -560,24 +634,28 @@ export async function POST(req: NextRequest) {
     `status=${overallStatus} ingested=${articlesInserted} signals=${signalsGenerated} ms=${durationMs}`,
   );
 
-  return NextResponse.json({
-    ok:          overallStatus === 'completed',
-    status:      overallStatus,
-    runId:       correlationId,
-    triggerType,
-    dryRun:      false,
-    startedAt:   new Date(t0).toISOString(),
-    completedAt: new Date().toISOString(),
-    durationMs,
-    stages,
-    diagnostics: {
-      articlesFetched,
-      articlesInserted,
-      articlesDeduped,
-      signalsGenerated,
-      errorsCount,
+  return NextResponse.json(
+    {
+      ok:          overallStatus === 'completed',
+      status:      overallStatus,
+      runId:       correlationId,
+      requestId:   correlationId,
+      triggerType,
+      dryRun:      false,
+      startedAt:   new Date(t0).toISOString(),
+      completedAt: new Date().toISOString(),
+      durationMs,
+      stages,
+      diagnostics: {
+        articlesFetched,
+        articlesInserted,
+        articlesDeduped,
+        signalsGenerated,
+        errorsCount,
+      },
     },
-  }, { status: overallStatus === 'completed' ? 200 : 207 });
+    { status: overallStatus === 'completed' ? 200 : 207, headers: { 'x-request-id': correlationId } },
+  );
 }
 
 // Cron triggers can also use GET
