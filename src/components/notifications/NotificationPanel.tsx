@@ -7,10 +7,13 @@ import type { AlertRecord } from '@/db/queries';
 // ─────────────────────────────────────────────────────────────────────────────
 
 const TYPE_CONFIG: Record<string, { label: string; color: string }> = {
-  signal_high_impact: { label: 'High Impact', color: 'var(--rose)' },
-  signal_momentum:    { label: 'Momentum',    color: 'var(--amber)' },
-  entity_watch:       { label: 'Watchlist',   color: 'var(--cyan)' },
-  trend_detected:     { label: 'Trend',       color: 'var(--violet)' },
+  signal_high_impact:    { label: 'High Impact', color: 'var(--rose)' },
+  signal_rising_momentum: { label: 'Momentum',   color: 'var(--amber)' },
+  trend_detected:        { label: 'Trend',       color: 'var(--violet)' },
+  trend_rising:          { label: 'Rising',      color: 'var(--amber)' },
+  entity_watch:          { label: 'Watchlist',   color: 'var(--cyan)' },
+  trend_watch:           { label: 'Trend Watch', color: 'var(--violet)' },
+  category_watch:        { label: 'Category',    color: 'var(--cyan)' },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
