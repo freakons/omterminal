@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/Badge';
 import { SignalImpactBadge } from '@/components/signals/SignalImpactBadge';
 import { SignalMomentumBadge } from '@/components/signals/SignalMomentumBadge';
 import type { Signal } from '@/data/mockSignals';
+import { EmailDigestCard } from '@/components/alerts/EmailDigestCard';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Styles
@@ -104,6 +105,9 @@ export default function WatchlistPage() {
               ))}
             </div>
           </div>
+
+          {/* Email digest subscription */}
+          <EmailDigestCard />
 
           {/* Recent signals feed */}
           <div style={GLASS_CARD}>
