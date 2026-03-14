@@ -1,7 +1,10 @@
 'use client';
 
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useWatchlist, type WatchedEntity } from '@/hooks/useWatchlist';
+import { Badge } from '@/components/ui/Badge';
+import type { Signal } from '@/data/mockSignals';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Styles
@@ -23,11 +26,46 @@ const BREADCRUMB: React.CSSProperties = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Fetch helper
+// ─────────────────────────────────────────────────────────────────────────────
+
+type FeedState = { status: 'idle' } | { status: 'loading' } | { status: 'error' } | { status: 'done'; signals: Signal[] };
+
+function useWatchlistSignals(entityNames: string[]): FeedState {
+  const [state, setState] = useState<FeedState>({ status: 'idle' });
+
+  const fetchSignals = useCallback(async (names: string[]) => {
+    if (names.length === 0) {
+      setState({ status: 'idle' });
+      return;
+    }
+    setState({ status: 'loading' });
+    try {
+      const params = new URLSearchParams({ entities: names.join(','), limit: '30' });
+      const res = await fetch(`/api/watchlist/signals?${params}`, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setState({ status: 'done', signals: Array.isArray(data.signals) ? data.signals : [] });
+    } catch {
+      setState({ status: 'error' });
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSignals(entityNames);
+  }, [entityNames.join(','), fetchSignals]);
+
+  return state;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Page
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function WatchlistPage() {
   const { entities, remove } = useWatchlist();
+  const entityNames = entities.map((e) => e.name);
+  const feed = useWatchlistSignals(entityNames);
 
   return (
     <div className="page-enter">
@@ -53,7 +91,7 @@ export default function WatchlistPage() {
         <EmptyState />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {/* Summary */}
+          {/* Watched entities list */}
           <div style={GLASS_CARD}>
             <div style={SECTION_HEADER}>
               Watched Entities · {entities.length}
@@ -64,9 +102,126 @@ export default function WatchlistPage() {
               ))}
             </div>
           </div>
+
+          {/* Recent signals feed */}
+          <div style={GLASS_CARD}>
+            <div style={SECTION_HEADER}>
+              Recent Signals
+            </div>
+            <SignalFeed feed={feed} />
+          </div>
         </div>
       )}
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Signal feed
+// ─────────────────────────────────────────────────────────────────────────────
+
+function SignalFeed({ feed }: { feed: FeedState }) {
+  if (feed.status === 'idle') return null;
+
+  if (feed.status === 'loading') {
+    return (
+      <div style={{ padding: '24px 0', textAlign: 'center' }}>
+        <p style={{ fontSize: 13, color: 'var(--text3)' }}>
+          Loading recent signals...
+        </p>
+      </div>
+    );
+  }
+
+  if (feed.status === 'error') {
+    return (
+      <div style={{ padding: '24px 0', textAlign: 'center' }}>
+        <p style={{ fontSize: 13, color: 'var(--text3)' }}>
+          Unable to load signals right now. Try again later.
+        </p>
+      </div>
+    );
+  }
+
+  if (feed.signals.length === 0) {
+    return (
+      <div style={{ padding: '24px 0', textAlign: 'center' }}>
+        <p style={{
+          fontFamily: 'var(--fd)', fontSize: 15, fontStyle: 'italic',
+          color: 'var(--text3)', marginBottom: 4,
+        }}>
+          No recent signals found for watched entities yet.
+        </p>
+        <p style={{ fontSize: 12, color: 'var(--text3)' }}>
+          Signals will appear here as new intelligence is detected.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+      {feed.signals.map((signal) => (
+        <SignalRow key={signal.id} signal={signal} />
+      ))}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Signal row (compact)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function SignalRow({ signal }: { signal: Signal }) {
+  return (
+    <Link
+      href={`/signals/${encodeURIComponent(signal.id)}`}
+      style={{
+        textDecoration: 'none',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+        padding: '14px 0 14px 12px',
+        borderBottom: '1px solid var(--border)',
+      }}
+    >
+      {/* Top: badge row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Badge category={signal.category} />
+        {signal.confidence >= 85 && (
+          <span style={{
+            fontFamily: 'var(--fm)', fontSize: 9, letterSpacing: '0.06em',
+            color: 'var(--text3)',
+          }}>
+            {signal.confidence}% confidence
+          </span>
+        )}
+      </div>
+
+      {/* Title */}
+      <span style={{
+        fontFamily: 'var(--fd)', fontSize: 15, fontStyle: 'italic',
+        color: 'var(--text)', letterSpacing: '-0.01em',
+        lineHeight: 1.4,
+      }}>
+        {signal.title}
+      </span>
+
+      {/* Footer: entity + date */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{
+          fontFamily: 'var(--fm)', fontSize: 9, letterSpacing: '0.1em',
+          textTransform: 'uppercase', color: 'var(--text3)',
+        }}>
+          {signal.entityName || 'Intelligence'}
+        </span>
+        <span style={{
+          fontFamily: 'var(--fm)', fontSize: 9, color: 'var(--text3)',
+        }}>
+          {formatDate(signal.date)}
+        </span>
+      </div>
+    </Link>
   );
 }
 
@@ -214,4 +369,18 @@ function EmptyState() {
       </Link>
     </div>
   );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+function formatDate(dateStr: string): string {
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch {
+    return dateStr;
+  }
 }

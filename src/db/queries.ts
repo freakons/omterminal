@@ -845,6 +845,60 @@ export async function getSignalsForEntity(
 }
 
 /**
+ * Fetch recent signals for multiple entities (watchlist feed).
+ *
+ * Accepts an array of entity names (from the client-side watchlist),
+ * returns deduplicated signals ordered by recency, limited to `limit`.
+ */
+export async function getSignalsForEntities(
+  entityNames: string[],
+  limit = 30,
+): Promise<Signal[]> {
+  if (entityNames.length === 0) return [];
+  const safeLimit = Math.min(Math.max(1, limit), 100);
+
+  try {
+    const hasJunction = await tableExists('signal_entities');
+
+    if (hasJunction) {
+      const rows = await dbQuery<SignalRow>`
+        SELECT DISTINCT ON (s.id)
+          s.id, s.title, s.summary, s.description,
+          s.category, s.signal_type, s.entity_id, s.entity_name,
+          s.confidence, s.confidence_score, s.date, s.created_at,
+          s.significance_score, s.source_support_count
+        FROM signals s
+        JOIN signal_entities se ON se.signal_id = s.id
+        JOIN entities e ON e.id = se.entity_id
+        WHERE e.name = ANY(${entityNames})
+          AND (s.status IS NULL OR s.status NOT IN ('rejected'))
+        ORDER BY s.id, s.created_at DESC
+      `;
+      // Re-sort by recency after DISTINCT ON id
+      rows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      return rows.slice(0, safeLimit).map(rowToSignal);
+    }
+
+    // Fallback: match on denormalized entity_name column
+    const rows = await dbQuery<SignalRow>`
+      SELECT
+        id, title, summary, description,
+        category, signal_type, entity_id, entity_name,
+        confidence, confidence_score, date, created_at,
+        significance_score, source_support_count
+      FROM signals
+      WHERE entity_name = ANY(${entityNames})
+        AND (status IS NULL OR status NOT IN ('rejected'))
+      ORDER BY created_at DESC
+      LIMIT ${safeLimit}
+    `;
+    return rows.map(rowToSignal);
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Fetch events linked to an entity.
  *
  * Matches on the denormalized entity_name column in the events table.
