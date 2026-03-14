@@ -1,9 +1,10 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import type { Metadata } from 'next';
+import { toSlug } from '@/lib/slug';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Types matching /api/entities/[name] response
+// Types matching /api/entities/[slug] response
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface EntityData {
@@ -59,10 +60,10 @@ interface ApiResponse {
 
 const NAV_ENTITIES = ['openai', 'deepseek', 'ai-agents'];
 
-async function fetchEntityData(name: string): Promise<ApiResponse | null> {
+async function fetchEntityData(slug: string): Promise<ApiResponse | null> {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
   try {
-    const res = await fetch(`${baseUrl}/api/entities/${encodeURIComponent(name)}`, {
+    const res = await fetch(`${baseUrl}/api/entities/${encodeURIComponent(slug)}`, {
       next: { revalidate: 300 },
     });
     if (!res.ok) return null;
@@ -109,13 +110,14 @@ const GLASS_CARD: React.CSSProperties = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function generateMetadata(
-  { params }: { params: Promise<{ name: string }> },
+  { params }: { params: Promise<{ slug: string }> },
 ): Promise<Metadata> {
-  const { name } = await params;
-  const entityName = decodeURIComponent(name);
+  const { slug } = await params;
+  const data = await fetchEntityData(slug);
+  const displayName = data?.entity?.name ?? slug;
   return {
-    title: `${entityName} — Entity Intelligence`,
-    description: `Intelligence signals, velocity, and related entities for ${entityName}.`,
+    title: `${displayName} — Entity Intelligence`,
+    description: `Intelligence signals, velocity, and related entities for ${displayName}.`,
   };
 }
 
@@ -126,11 +128,10 @@ export const revalidate = 300;
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default async function EntityIntelligencePage(
-  { params }: { params: Promise<{ name: string }> },
+  { params }: { params: Promise<{ slug: string }> },
 ) {
-  const { name } = await params;
-  const entityName = decodeURIComponent(name);
-  const data = await fetchEntityData(entityName);
+  const { slug } = await params;
+  const data = await fetchEntityData(slug);
 
   if (!data?.ok) notFound();
 
@@ -155,7 +156,7 @@ export default async function EntityIntelligencePage(
             style={{
               fontFamily: 'var(--fm)', fontSize: 10, letterSpacing: '0.08em',
               textTransform: 'uppercase', textDecoration: 'none',
-              color: e === entityName ? 'var(--text)' : 'var(--text3)',
+              color: e === slug ? 'var(--text)' : 'var(--text3)',
             }}
           >
             {e}
@@ -377,7 +378,7 @@ export default async function EntityIntelligencePage(
                 {related_entities.map((rel) => (
                   <Link
                     key={rel.name}
-                    href={`/entity/${encodeURIComponent(rel.name)}`}
+                    href={`/entity/${toSlug(rel.name)}`}
                     style={{
                       display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                       padding: '8px 12px', borderRadius: 8,

@@ -2,9 +2,10 @@ export const runtime = 'nodejs';
 /**
  * Omterminal — Entity Intelligence API
  *
- * Returns intelligence data about a specific entity by name.
+ * Returns intelligence data about a specific entity by name or slug.
  *
  * GET /api/entities/[name]
+ *   Accepts either an exact entity name or a URL-safe slug.
  *   Returns { entity, metrics, related_entities, recent_signals }
  */
 
@@ -15,6 +16,7 @@ import {
   deriveCorroborationLabel,
   deriveConfidenceLabel,
 } from '@/lib/signals/explanationLayer';
+import { toSlug } from '@/lib/slug';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Row types
@@ -77,21 +79,37 @@ export async function GET(
   { params }: { params: Promise<{ name: string }> },
 ) {
   const { name } = await params;
-  const entityName = decodeURIComponent(name);
+  const identifier = decodeURIComponent(name);
 
-  // 1. Fetch the entity record
-  const [entity] = await dbQuery<EntityRow>`
+  // 1. Fetch the entity record — try exact name first, then slug match
+  const [exactMatch] = await dbQuery<EntityRow>`
     SELECT
       id, name, type, description, sector, country,
       founded, website, risk_level, tags, financial_scale, created_at
     FROM entities
-    WHERE name = ${entityName}
+    WHERE name = ${identifier}
     LIMIT 1
   `;
+
+  let entity: EntityRow | undefined = exactMatch;
+
+  // If exact match fails, try matching by slug
+  if (!entity) {
+    const slug = toSlug(identifier);
+    const allEntities = await dbQuery<EntityRow>`
+      SELECT
+        id, name, type, description, sector, country,
+        founded, website, risk_level, tags, financial_scale, created_at
+      FROM entities
+    `;
+    entity = allEntities.find((e) => toSlug(e.name) === slug);
+  }
 
   if (!entity) {
     return NextResponse.json({ ok: false, error: 'Entity not found' }, { status: 404 });
   }
+
+  const entityName = entity.name;
 
   // 2. Fetch recent signals for this entity (last 20), including significance
   const recentSignals = await dbQuery<SignalRow>`
