@@ -1985,6 +1985,7 @@ interface AlertRow {
   trend_id: string | null;
   title: string;
   message: string;
+  priority: number;
   created_at: string;
   read: boolean;
 }
@@ -1998,6 +1999,7 @@ export interface AlertRecord {
   trendId: string | null;
   title: string;
   message: string;
+  priority: number;
   createdAt: string;
   read: boolean;
 }
@@ -2012,21 +2014,36 @@ function mapAlertRow(row: AlertRow): AlertRecord {
     trendId: row.trend_id,
     title: row.title,
     message: row.message,
+    priority: row.priority ?? 1,
     createdAt: row.created_at,
     read: row.read,
   };
 }
 
 /**
- * Fetch the most recent alerts, ordered by creation time descending.
+ * Fetch recent alerts ordered by priority (high first), then creation time.
+ * Optionally filter to only alerts created after `since` timestamp.
  */
-export async function getAlerts(limit = 20): Promise<AlertRecord[]> {
+export async function getAlerts(limit = 20, since?: string): Promise<AlertRecord[]> {
   if (!(await tableExists('alerts'))) return [];
+
+  if (since) {
+    const rows = await dbQuery<AlertRow>`
+      SELECT id, user_id, type, entity_name, signal_id, trend_id,
+             title, message, priority, created_at, read
+      FROM alerts
+      WHERE created_at > ${since}
+      ORDER BY priority DESC, created_at DESC
+      LIMIT ${limit}
+    `;
+    return rows.map(mapAlertRow);
+  }
+
   const rows = await dbQuery<AlertRow>`
     SELECT id, user_id, type, entity_name, signal_id, trend_id,
-           title, message, created_at, read
+           title, message, priority, created_at, read
     FROM alerts
-    ORDER BY created_at DESC
+    ORDER BY priority DESC, created_at DESC
     LIMIT ${limit}
   `;
   return rows.map(mapAlertRow);

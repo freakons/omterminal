@@ -397,6 +397,23 @@ const STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_alerts_type       ON alerts (type)`,
   `CREATE INDEX IF NOT EXISTS idx_alerts_user_id    ON alerts (user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_alerts_signal_id  ON alerts (signal_id)`,
+
+  // ── Migration 010: Alert System Refinement ────────────────────────────
+  `ALTER TABLE alerts ADD COLUMN IF NOT EXISTS priority INTEGER NOT NULL DEFAULT 1`,
+  `ALTER TABLE alerts DROP CONSTRAINT IF EXISTS alerts_type_check`,
+  `ALTER TABLE alerts ADD CONSTRAINT alerts_type_check CHECK (type IN (
+    'signal_high_impact',
+    'signal_rising_momentum',
+    'trend_detected',
+    'trend_rising',
+    'entity_watch',
+    'trend_watch',
+    'category_watch'
+  ))`,
+  `CREATE INDEX IF NOT EXISTS idx_alerts_priority ON alerts (priority DESC, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_alerts_dedup_signal ON alerts (type, signal_id, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_alerts_dedup_trend  ON alerts (type, trend_id, created_at DESC)`,
+  `UPDATE alerts SET type = 'signal_rising_momentum' WHERE type = 'signal_momentum'`,
 ];
 
 /**

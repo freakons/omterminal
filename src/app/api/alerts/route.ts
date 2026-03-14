@@ -1,19 +1,25 @@
 /**
  * Omterminal — Alerts API
  *
- * GET  /api/alerts         — fetch recent alerts + unread count
- * PATCH /api/alerts        — mark alert(s) as read
- *   body: { id: string }   — mark single alert read
- *   body: { all: true }    — mark all alerts read
+ * GET  /api/alerts              — fetch recent alerts + unread count
+ *   ?since=<ISO timestamp>      — only return alerts created after this time
+ *   ?limit=<number>             — max alerts to return (default 20)
+ * PATCH /api/alerts             — mark alert(s) as read
+ *   body: { id: string }        — mark single alert read
+ *   body: { all: true }         — mark all alerts read
  */
 
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getAlerts, getUnreadAlertCount, markAlertRead, markAllAlertsRead } from '@/db/queries';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = request.nextUrl;
+    const since = searchParams.get('since') ?? undefined;
+    const limit = Math.min(parseInt(searchParams.get('limit') ?? '20', 10) || 20, 100);
+
     const [alerts, unreadCount] = await Promise.all([
-      getAlerts(30),
+      getAlerts(limit, since),
       getUnreadAlertCount(),
     ]);
     return NextResponse.json({ alerts, unreadCount });
