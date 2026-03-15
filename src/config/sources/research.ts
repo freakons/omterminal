@@ -14,7 +14,7 @@ import type { SourceDefinition } from '@/types/sources';
 
 export const researchSources: SourceDefinition[] = [
 
-  // ── arXiv preprint server (4 categories) ─────────────────────────────────
+  // ── arXiv preprint server (7 categories) ─────────────────────────────────
 
   {
     id: 'arxiv_ml',
@@ -52,8 +52,35 @@ export const researchSources: SourceDefinition[] = [
     reliability: 9,
     enabled: true,
   },
+  {
+    id: 'arxiv_ro',
+    name: 'arXiv Robotics',
+    type: 'arxiv',
+    category: 'research',
+    url: 'https://arxiv.org/rss/cs.RO',
+    reliability: 9,
+    enabled: true,
+  },
+  {
+    id: 'arxiv_ir',
+    name: 'arXiv Information Retrieval',
+    type: 'arxiv',
+    category: 'research',
+    url: 'https://arxiv.org/rss/cs.IR',
+    reliability: 9,
+    enabled: true,
+  },
+  {
+    id: 'arxiv_stat_ml',
+    name: 'arXiv Statistics — Machine Learning',
+    type: 'arxiv',
+    category: 'research',
+    url: 'https://arxiv.org/rss/stat.ML',
+    reliability: 9,
+    enabled: true,
+  },
 
-  // ── Academic research labs (5) ────────────────────────────────────────────
+  // ── Academic research labs (9) ────────────────────────────────────────────
 
   {
     id: 'mit_csail',
@@ -97,6 +124,45 @@ export const researchSources: SourceDefinition[] = [
     type: 'rss',
     category: 'research',
     url: 'https://machinelearning.apple.com/rss.xml',
+    reliability: 8,
+    enabled: true,
+  },
+  {
+    id: 'openreview',
+    name: 'OpenReview',
+    type: 'rss',
+    category: 'research',
+    url: 'https://openreview.net/rss',
+    reliability: 9,
+    enabled: true,
+  },
+  {
+    id: 'google_research_blog',
+    name: 'Google Research Blog',
+    type: 'rss',
+    category: 'research',
+    entity: 'Google',
+    url: 'https://research.google/blog/rss/',
+    reliability: 9,
+    enabled: true,
+  },
+  {
+    id: 'microsoft_research_blog',
+    name: 'Microsoft Research Blog',
+    type: 'rss',
+    category: 'research',
+    entity: 'Microsoft',
+    url: 'https://www.microsoft.com/en-us/research/feed/',
+    reliability: 9,
+    enabled: true,
+  },
+  {
+    id: 'nvidia_research_blog',
+    name: 'NVIDIA Research',
+    type: 'rss',
+    category: 'research',
+    entity: 'NVIDIA',
+    url: 'https://research.nvidia.com/rss.xml',
     reliability: 8,
     enabled: true,
   },
