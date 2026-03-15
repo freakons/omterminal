@@ -24,6 +24,7 @@ import { saveEvent } from '../storage/eventStore';
 import { classifyArticle } from '../intelligence/classifier';
 import { INTELLIGENCE_SOURCES } from '../../config/intelligenceSources';
 import { getEnabledSources, getHighPrioritySources } from '../../config/sources/index';
+import { trackSourceSuccess, trackSourceFailure } from './sourceHealthTracker';
 import type { Event } from '@/types/intelligence';
 import {
   canonicalizeUrl,
@@ -139,6 +140,8 @@ export async function ingestRss(): Promise<RssIngestResult> {
         console.warn(`[rssIngester] FAILED source="${fetchResult.sourceId}" error="${err}"`);
         result.sourcesFailed++;
       }
+      // Track failure (fire-and-forget — must not block or abort ingestion)
+      void trackSourceFailure(fetchResult.sourceId, err);
       continue;
     }
 
@@ -148,12 +151,17 @@ export async function ingestRss(): Promise<RssIngestResult> {
         (fetchResult.rawItemCount > 0 ? ' (all items filtered/invalid)' : ' (feed returned 0 items)')
       );
       result.sourcesEmpty++;
+      // An empty feed is a successful fetch (no error), record 0 articles
+      void trackSourceSuccess(fetchResult.sourceId, 0);
       continue;
     }
 
     console.log(
       `[rssIngester] source="${fetchResult.sourceId}" articles=${fetchResult.articles.length} rawItems=${fetchResult.rawItemCount}`
     );
+
+    // Track success: article count from this fetch (fire-and-forget)
+    void trackSourceSuccess(fetchResult.sourceId, fetchResult.articles.length);
 
     // ── Article + event persistence ──────────────────────────────────────────
     for (const article of fetchResult.articles) {
