@@ -484,7 +484,9 @@ export async function POST(req: NextRequest) {
       const signals = await runStage(
         'signals',
         async () => {
-          const events  = await getRecentEvents(500);
+          // Scope to 14-day window (longest detection rule window) to focus
+          // on recent events and prevent stale events from anchoring clusters.
+          const events  = await getRecentEvents(500, 14);
           const sigs    = generateSignalsFromEvents(events);
           generatedSigs = sigs;
           const saved   = await saveSignals(sigs);
