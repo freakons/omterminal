@@ -23,7 +23,8 @@ import { saveArticle } from '../storage/articleStore';
 import { saveEvent } from '../storage/eventStore';
 import { classifyArticle } from '../intelligence/classifier';
 import { INTELLIGENCE_SOURCES } from '../../config/intelligenceSources';
-import { getEnabledSources, getHighPrioritySources } from '../../config/sources';
+import { getEnabledSources, getHighPrioritySources } from '../../config/sources/index';
+import { trackSourceSuccess, trackSourceFailure } from './sourceHealthTracker';
 import type { Event } from '@/types/intelligence';
 import {
   canonicalizeUrl,
@@ -41,9 +42,9 @@ import { detectAndLinkEntities } from '@/lib/entityResolver';
 // ─────────────────────────────────────────────────────────────────────────────
 // Primary source selection
 //
-// Sources are now driven by the structured registry in src/config/sources.ts.
-// All enabled sources are ingested; high-priority sources are fetched first.
-// No hardcoded feed arrays — add/remove sources in the registry only.
+// Sources are driven by the modular registry in src/config/sources/.
+// All enabled sources are ingested; high-priority sources (reliability >= 8)
+// are fetched first. Add/remove sources in the category files only.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Per-source article limit per pipeline run
@@ -91,7 +92,8 @@ export async function ingestRss(): Promise<RssIngestResult> {
   // pipeline times out before reaching the tail of the list.
   const highPriority = getHighPrioritySources();
   const allEnabled = getEnabledSources();
-  const normalPriority = allEnabled.filter((s) => s.priority !== 'high');
+  const highPriorityIds = new Set(highPriority.map((s) => s.id));
+  const normalPriority = allEnabled.filter((s) => !highPriorityIds.has(s.id));
 
   // Map canonical sources to legacy Source shape for rssFetcher compatibility
   const sourceIds = [...highPriority, ...normalPriority].map((s) => s.id);
@@ -138,6 +140,8 @@ export async function ingestRss(): Promise<RssIngestResult> {
         console.warn(`[rssIngester] FAILED source="${fetchResult.sourceId}" error="${err}"`);
         result.sourcesFailed++;
       }
+      // Track failure (fire-and-forget — must not block or abort ingestion)
+      void trackSourceFailure(fetchResult.sourceId, err);
       continue;
     }
 
@@ -147,12 +151,17 @@ export async function ingestRss(): Promise<RssIngestResult> {
         (fetchResult.rawItemCount > 0 ? ' (all items filtered/invalid)' : ' (feed returned 0 items)')
       );
       result.sourcesEmpty++;
+      // An empty feed is a successful fetch (no error), record 0 articles
+      void trackSourceSuccess(fetchResult.sourceId, 0);
       continue;
     }
 
     console.log(
       `[rssIngester] source="${fetchResult.sourceId}" articles=${fetchResult.articles.length} rawItems=${fetchResult.rawItemCount}`
     );
+
+    // Track success: article count from this fetch (fire-and-forget)
+    void trackSourceSuccess(fetchResult.sourceId, fetchResult.articles.length);
 
     // ── Article + event persistence ──────────────────────────────────────────
     for (const article of fetchResult.articles) {
@@ -256,12 +265,24 @@ export async function ingestRss(): Promise<RssIngestResult> {
   const starvationWarning =
     result.articlesNew === 0 && result.sourcesFailed >= result.sourcesAttempted / 2;
 
+  // Log which categories were actually fetched for operational visibility
+  const categoriesAttempted = new Set(
+    [...highPriority, ...normalPriority].map((s) => s.category)
+  );
+  const allCategories = ['news', 'company', 'research', 'developer', 'social', 'policy'];
+  const missingCategories = allCategories.filter((c) => !categoriesAttempted.has(c as typeof allEnabled[0]['category']));
+
+  if (missingCategories.length > 0) {
+    console.warn(`[rssIngester] Categories with 0 enabled sources: ${missingCategories.join(', ')}`);
+  }
+
   console.log(
     `[rssIngester] Done. ` +
     `sources=${result.sourcesAttempted} failed=${result.sourcesFailed} ` +
     `rateLimited=${result.sourcesRateLimited} empty=${result.sourcesEmpty} ` +
     `articlesNew=${result.articlesNew} articlesDeduped=${result.articlesDeduped} ` +
-    `eventsNew=${result.eventsNew} eventsDeduped=${result.eventsDeduped}` +
+    `eventsNew=${result.eventsNew} eventsDeduped=${result.eventsDeduped} ` +
+    `categoriesActive=${categoriesAttempted.size}/${allCategories.length}` +
     (starvationWarning ? ' — WARNING: source starvation detected' : '')
   );
 

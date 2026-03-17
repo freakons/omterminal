@@ -45,9 +45,10 @@ import { runInsightGeneration } from '@/insights/runner';
 import { dbQuery } from '@/db/client';
 import type { TriggerType } from '@/lib/pipeline/types';
 
-// Vercel function timeout (seconds). 60s for intelligence analysis on Pro plan.
+// Vercel function timeout (seconds). 120s for intelligence analysis on Pro plan.
+// Raised from 60 to 120 to accommodate retry/time budget and prevent 504 gateway timeouts.
 // https://vercel.com/docs/functions/runtimes#max-duration
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Auth

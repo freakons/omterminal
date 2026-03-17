@@ -48,6 +48,7 @@ import { getRecentEvents }                      from '@/services/storage/eventSt
 import { generateSignalsFromEvents }            from '@/services/signals/signalEngine';
 import { saveSignals, updateSignalInsight, markInsightGenerationError } from '@/services/storage/signalStore';
 import { generateSignalInsightWithMeta }        from '@/lib/intelligence/generateSignalInsight';
+import { corroborateSignals }                    from '@/lib/signals/clusterSignals';
 import { withPipelineLock, pipelineLockedResponse } from '@/lib/pipelineLock';
 import { generatePageSnapshots }               from '@/lib/pipeline/snapshot';
 import { refreshCaches }                        from '@/lib/pipeline/cacheRefresh';
@@ -64,12 +65,20 @@ export const maxDuration = 300;
 // With maxDuration=300 (Vercel Pro), we can afford generous per-stage timeouts.
 // Overall timeout is 290s (leaving 10s for response serialization).
 const TIMEOUT = {
-  INGEST:   parseInt(process.env.PIPELINE_INGEST_TIMEOUT_MS   ?? '120000', 10),
-  SIGNALS:  parseInt(process.env.PIPELINE_SIGNALS_TIMEOUT_MS  ?? '30000',  10),
-  SNAPSHOT: parseInt(process.env.PIPELINE_SNAPSHOT_TIMEOUT_MS ?? '60000',  10),
-  CACHE:    parseInt(process.env.PIPELINE_CACHE_TIMEOUT_MS    ?? '10000',  10),
-  OVERALL:  parseInt(process.env.PIPELINE_TIMEOUT_MS          ?? '290000', 10),
+  INGEST:       parseInt(process.env.PIPELINE_INGEST_TIMEOUT_MS       ?? '120000', 10),
+  SIGNALS:      parseInt(process.env.PIPELINE_SIGNALS_TIMEOUT_MS      ?? '30000',  10),
+  INTELLIGENCE: parseInt(process.env.PIPELINE_INTELLIGENCE_TIMEOUT_MS ?? '60000',  10),
+  SNAPSHOT:     parseInt(process.env.PIPELINE_SNAPSHOT_TIMEOUT_MS      ?? '60000',  10),
+  CACHE:        parseInt(process.env.PIPELINE_CACHE_TIMEOUT_MS        ?? '10000',  10),
+  OVERALL:      parseInt(process.env.PIPELINE_TIMEOUT_MS              ?? '290000', 10),
 } as const;
+
+/**
+ * Maximum insights generated per pipeline run (Groq free-tier protection).
+ * Prevents exhausting quota when a large batch of articles is ingested.
+ * Override via INTELLIGENCE_BATCH_LIMIT env var.
+ */
+const MAX_INSIGHTS_PER_RUN = parseInt(process.env.INTELLIGENCE_BATCH_LIMIT ?? '10', 10);
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -232,6 +241,10 @@ interface RunRecord {
   articlesInserted: number;
   articlesFetched: number;
   articlesDeduped: number;
+  signalsDetected: number;
+  signalsInserted: number;
+  signalsSkipped: number;
+  /** @deprecated Use signalsInserted. Kept for backward compatibility with pipeline_runs schema. */
   signalsGenerated: number;
   errorsCount: number;
   errorSummary?: string;
@@ -384,7 +397,7 @@ export async function POST(req: NextRequest) {
     const stages: PipelineStageResult[] = [];
     let errorsCount = 0;
     let articlesFetched = 0, articlesInserted = 0, articlesDeduped = 0;
-    let signalsGenerated = 0;
+    let signalsDetected = 0, signalsInserted = 0, signalsSkipped = 0;
 
     const overallTimer = new Promise<never>((_, reject) =>
       setTimeout(
@@ -475,7 +488,7 @@ export async function POST(req: NextRequest) {
           const sigs    = generateSignalsFromEvents(events);
           generatedSigs = sigs;
           const saved   = await saveSignals(sigs);
-          return { eventsLoaded: events.length, signalsSaved: saved };
+          return { eventsLoaded: events.length, ...saved };
         },
         TIMEOUT.SIGNALS,
         correlationId,
@@ -484,10 +497,16 @@ export async function POST(req: NextRequest) {
         stages.push({ stage: 'signals', status: 'error', durationMs: signals.durationMs, error: signals.error, timedOut: signals.timedOut });
         errorsCount++;
       } else {
-        signalsGenerated = signals.result!.signalsSaved;
+        const sr = signals.result!;
+        signalsDetected = sr.detected;
+        signalsInserted = sr.inserted;
+        signalsSkipped  = sr.skipped;
         stages.push({
           stage: 'signals', status: 'ok', durationMs: signals.durationMs,
-          eventsLoaded: signals.result!.eventsLoaded, signalsGenerated,
+          eventsLoaded:     sr.eventsLoaded,
+          signalsDetected,
+          signalsInserted,
+          signalsSkipped,
         });
       }
 
@@ -496,26 +515,70 @@ export async function POST(req: NextRequest) {
       // Signals with existing insight (insight_generated=true) are skipped.
       // Dedup/reuse is handled inside generateSignalInsightWithMeta.
       if (generatedSigs.length > 0) {
+        // Batch cap: protect Groq free-tier quota by limiting insights per run.
+        const sigsToProcess = generatedSigs.slice(0, MAX_INSIGHTS_PER_RUN);
+        const batchCapped   = sigsToProcess.length < generatedSigs.length;
+        if (batchCapped) {
+          console.log(
+            `[pipeline] intelligence batch capped at ${MAX_INSIGHTS_PER_RUN} of ${generatedSigs.length}` +
+            ` signals — free-tier rate-limit protection (INTELLIGENCE_BATCH_LIMIT=${MAX_INSIGHTS_PER_RUN})`,
+          );
+        }
+
         const intel = await runStage(
           'intelligence',
           async () => {
+            // Pre-flight: verify LLM provider is available before processing signals
+            let providerName: string | null = null;
+            let providerError: string | null = null;
+            try {
+              const { getProvider: checkProvider, getActiveProviderName: checkName } = await import('@/lib/ai');
+              await checkProvider();
+              providerName = checkName();
+            } catch (err) {
+              providerError = err instanceof Error ? err.message : String(err);
+              const isKeyMissing = (providerError ?? '').includes('No AI provider')
+                || (providerError ?? '').includes('API_KEY is required');
+              console.error(
+                `[pipeline] intelligence pre-flight failed provider=${providerName ?? 'none'}` +
+                ` keyMissing=${isKeyMissing}: ${providerError}`,
+              );
+              return {
+                insightsGenerated: 0,
+                insightsReused: 0,
+                insightsFailed: sigsToProcess.length,
+                signalsProcessed: sigsToProcess.length,
+                signalsSkippedByBatchCap: generatedSigs.length - sigsToProcess.length,
+                batchCapped,
+                batchLimit: MAX_INSIGHTS_PER_RUN,
+                provider: providerName,
+                providerError,
+              };
+            }
+
             let insightsGenerated = 0;
-            let insightsReused = 0;
-            let insightsFailed = 0;
-            for (const sig of generatedSigs) {
+            let insightsReused    = 0;
+            let insightsFailed    = 0;
+            let lastError: string | null = null;
+            for (const sig of sigsToProcess) {
               try {
                 const result = await generateSignalInsightWithMeta({
-                  title: sig.title,
-                  summary: sig.description,
-                  entities: sig.affectedEntities ?? [],
+                  title:      sig.title,
+                  summary:    sig.description,
+                  entities:   sig.affectedEntities ?? [],
                   signalType: sig.type,
-                  direction: sig.direction,
+                  direction:  sig.direction,
                 });
 
                 if (result.error) {
                   // Generation failed — record error for monitoring
                   await markInsightGenerationError(sig.id, result.error);
                   insightsFailed++;
+                  lastError = result.error;
+                  console.warn(
+                    `[pipeline] insight failed provider=${providerName ?? 'none'}` +
+                    ` signal="${sig.title.slice(0, 60)}" error="${result.error}"`,
+                  );
                   continue;
                 }
 
@@ -526,19 +589,30 @@ export async function POST(req: NextRequest) {
                   insightsGenerated++;
                   if (result.reused) insightsReused++;
                 }
-              } catch {
+              } catch (err) {
                 // Per-signal failure is non-fatal
                 insightsFailed++;
+                lastError = err instanceof Error ? err.message : String(err);
+                console.warn(
+                  `[pipeline] insight threw provider=${providerName ?? 'none'}` +
+                  ` signal="${sig.title.slice(0, 60)}" error="${lastError}"`,
+                );
               }
             }
             return {
               insightsGenerated,
               insightsReused,
               insightsFailed,
-              signalsProcessed: generatedSigs.length,
+              signalsProcessed: sigsToProcess.length,
+              signalsSkippedByBatchCap: generatedSigs.length - sigsToProcess.length,
+              batchCapped,
+              batchLimit: MAX_INSIGHTS_PER_RUN,
+              provider: providerName,
+              providerError,
+              lastError: insightsFailed > 0 ? lastError : null,
             };
           },
-          TIMEOUT.SIGNALS,
+          TIMEOUT.INTELLIGENCE,
           correlationId,
         );
         if (intel.error) {
@@ -550,6 +624,24 @@ export async function POST(req: NextRequest) {
             ...intel.result!,
           });
         }
+      }
+
+      // Stage 2c — Signal corroboration clustering — non-blocking
+      // Detects emerging developments when multiple signals reference the same entity.
+      // Runs after signal generation; failures are non-fatal.
+      const clustering = await runStage(
+        'clustering',
+        () => corroborateSignals(),
+        TIMEOUT.SIGNALS,
+        correlationId,
+      );
+      if (clustering.error) {
+        stages.push({ stage: 'clustering', status: 'error', durationMs: clustering.durationMs, error: clustering.error, timedOut: clustering.timedOut });
+      } else {
+        stages.push({
+          stage: 'clustering', status: 'ok', durationMs: clustering.durationMs,
+          clustersDetected: clustering.result!.length,
+        });
       }
 
       // Stage 3 — Snapshot generation
@@ -594,7 +686,7 @@ export async function POST(req: NextRequest) {
       errorsCount++;
     }
 
-    return { stages, errorsCount, articlesFetched, articlesInserted, articlesDeduped, signalsGenerated };
+    return { stages, errorsCount, articlesFetched, articlesInserted, articlesDeduped, signalsDetected, signalsInserted, signalsSkipped };
   });
 
   if (guard.locked) {
@@ -603,7 +695,7 @@ export async function POST(req: NextRequest) {
     return pipelineLockedResponse(correlationId, guard);
   }
 
-  const { stages, errorsCount, articlesFetched, articlesInserted, articlesDeduped, signalsGenerated } = guard.result;
+  const { stages, errorsCount, articlesFetched, articlesInserted, articlesDeduped, signalsDetected, signalsInserted, signalsSkipped } = guard.result;
   const durationMs = Date.now() - t0;
 
   const overallStatus: RunStatus =
@@ -623,7 +715,10 @@ export async function POST(req: NextRequest) {
     articlesFetched,
     articlesInserted,
     articlesDeduped,
-    signalsGenerated,
+    signalsDetected,
+    signalsInserted,
+    signalsSkipped,
+    signalsGenerated: signalsInserted, // backward compat: maps to DB signals_generated column
     errorsCount,
     errorSummary,
   });
@@ -631,7 +726,7 @@ export async function POST(req: NextRequest) {
   logWithRequestId(
     correlationId,
     'pipeline/run',
-    `status=${overallStatus} ingested=${articlesInserted} signals=${signalsGenerated} ms=${durationMs}`,
+    `status=${overallStatus} ingested=${articlesInserted} signalsDetected=${signalsDetected} signalsInserted=${signalsInserted} signalsSkipped=${signalsSkipped} ms=${durationMs}`,
   );
 
   return NextResponse.json(
@@ -650,7 +745,10 @@ export async function POST(req: NextRequest) {
         articlesFetched,
         articlesInserted,
         articlesDeduped,
-        signalsGenerated,
+        signalsDetected,
+        signalsInserted,
+        signalsSkipped,
+        signalsGenerated: signalsInserted, // backward compat alias
         errorsCount,
       },
     },
