@@ -701,6 +701,39 @@ body {
 .feat-body { font-size: 13.5px; color: var(--text2); line-height: 1.7; }
 
 /* ══════════════════════════════════════
+   FEED SECTIONS
+══════════════════════════════════════ */
+.feed-section {
+  margin-bottom: 40px;
+}
+.feed-section-header {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 16px; padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.feed-section-label {
+  font-family: var(--fm); font-size: 11px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase; color: var(--text2);
+}
+.feed-section-count {
+  font-family: var(--fm); font-size: 10px; color: var(--text3);
+  background: rgba(255,255,255,0.04); border: 1px solid var(--border);
+  padding: 2px 8px; border-radius: 10px;
+}
+.feed-section-accent {
+  width: 3px; height: 14px; border-radius: 2px; flex-shrink: 0;
+}
+.feed-section-accent--top {
+  background: linear-gradient(180deg, var(--indigo-l), var(--violet-l));
+}
+.feed-section-accent--emerging {
+  background: var(--cyan-l);
+}
+.feed-section-accent--more {
+  background: var(--border2);
+}
+
+/* ══════════════════════════════════════
    NEWS CARDS
 ══════════════════════════════════════ */
 .news-grid {

@@ -43,6 +43,13 @@ export interface RankScoreInput {
   /** Whether this signal mentions a tracked/priority entity. */
   isTrackedEntity?: boolean;
 
+  /**
+   * Novelty score (0–100) indicating how unique this signal is relative
+   * to recent signals.  100 = fully novel, 0 = near-duplicate of existing.
+   * When absent, no novelty adjustment is applied.
+   */
+  noveltyScore?: number | null;
+
   /** Optional: override "now" for deterministic testing. */
   now?: Date;
 }
@@ -54,6 +61,8 @@ export interface RankScoreBreakdown {
   freshness: number;
   /** Entity boost component before weighting (0 or 100). */
   entityBoost: number;
+  /** Novelty component before weighting (0–100). */
+  novelty: number;
   /** Whether significance was derived from a fallback. */
   significanceFallback: boolean;
 }
@@ -71,9 +80,11 @@ export interface RankScoreResult {
 
 export const RANK_WEIGHTS = {
   /** Significance carries most of the ranking weight. */
-  significance: 0.65,
+  significance: 0.55,
   /** Freshness rewards recency without overwhelming quality. */
-  freshness: 0.25,
+  freshness: 0.20,
+  /** Novelty rewards unique signals and penalizes repetitive ones. */
+  novelty: 0.15,
   /** Entity boost gives a small lift to tracked-entity signals. */
   entityBoost: 0.10,
 } as const;
@@ -151,10 +162,14 @@ export function computeRankScore(input: RankScoreInput): RankScoreResult {
   // ── Entity boost (0 or 100) ──────────────────────────────────────────────
   const entityBoost = input.isTrackedEntity ? 100 : 0;
 
+  // ── Novelty (0–100, default 80 = moderately novel) ─────────────────────
+  const novelty = input.noveltyScore != null ? Math.min(Math.max(input.noveltyScore, 0), 100) : 80;
+
   // ── Weighted composite ───────────────────────────────────────────────────
   const raw =
     significance * RANK_WEIGHTS.significance +
     freshness    * RANK_WEIGHTS.freshness +
+    novelty      * RANK_WEIGHTS.novelty +
     entityBoost  * RANK_WEIGHTS.entityBoost;
 
   const rankScore = Math.round(Math.min(Math.max(raw, 0), 100));
@@ -165,6 +180,7 @@ export function computeRankScore(input: RankScoreInput): RankScoreResult {
       significance,
       freshness,
       entityBoost,
+      novelty,
       significanceFallback,
     },
   };

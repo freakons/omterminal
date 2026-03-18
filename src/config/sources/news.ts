@@ -143,7 +143,7 @@ export const newsSources: SourceDefinition[] = [
     category: 'news',
     url: 'https://lsvp.com/feed/',
     reliability: 6,
-    enabled: true,
+    enabled: false, // general VC blog, low AI specificity — insufficient signal
   },
   {
     id: 'general_catalyst_blog',
@@ -152,7 +152,7 @@ export const newsSources: SourceDefinition[] = [
     category: 'news',
     url: 'https://www.generalcatalyst.com/perspectives/rss',
     reliability: 6,
-    enabled: true,
+    enabled: false, // general VC blog, low AI specificity — insufficient signal
   },
   {
     id: 'first_round_review',
@@ -161,7 +161,7 @@ export const newsSources: SourceDefinition[] = [
     category: 'news',
     url: 'https://review.firstround.com/feed.xml',
     reliability: 6,
-    enabled: true,
+    enabled: false, // startup culture/advice content, not AI intelligence
   },
   {
     id: 'techcrunch_venture',
@@ -179,7 +179,7 @@ export const newsSources: SourceDefinition[] = [
     category: 'news',
     url: 'https://aifund.ai/blog/feed/',
     reliability: 6,
-    enabled: true,
+    enabled: false, // niche VC blog, very low volume, minimal incremental signal
   },
 
   // ── AI / tech news — Batch 2 (6) ──────────────────────────────────────────
@@ -248,7 +248,7 @@ export const newsSources: SourceDefinition[] = [
     category: 'news',
     url: 'https://news.crunchbase.com/feed/',
     reliability: 8,
-    enabled: true,
+    enabled: false, // duplicates crunchbase_ai; full feed has broad non-AI content
   },
   {
     id: 'sifted',
@@ -275,7 +275,7 @@ export const newsSources: SourceDefinition[] = [
     category: 'news',
     url: 'https://nvca.org/feed/',
     reliability: 7,
-    enabled: true,
+    enabled: false, // VC trade association, not AI-specific; general industry noise
   },
   {
     id: 'accel_insights',
@@ -284,7 +284,7 @@ export const newsSources: SourceDefinition[] = [
     category: 'news',
     url: 'https://www.accel.com/feed',
     reliability: 7,
-    enabled: true,
+    enabled: false, // general VC blog, low AI specificity — insufficient signal
   },
   {
     id: 'a16z_blog',
@@ -293,7 +293,7 @@ export const newsSources: SourceDefinition[] = [
     category: 'news',
     url: 'https://a16z.com/feed/',
     reliability: 7,
-    enabled: true,
+    enabled: false, // full blog duplicates a16z_ai; AI-tagged feed is sufficient
   },
   {
     id: 'sequoia_blog',
@@ -302,7 +302,7 @@ export const newsSources: SourceDefinition[] = [
     category: 'news',
     url: 'https://www.sequoiacap.com/feed/',
     reliability: 7,
-    enabled: true,
+    enabled: false, // full blog duplicates sequoia_ai; curated views feed is sufficient
   },
   {
     id: 'yc_blog',
@@ -320,7 +320,7 @@ export const newsSources: SourceDefinition[] = [
     category: 'news',
     url: 'https://greylock.com/feed/',
     reliability: 7,
-    enabled: true,
+    enabled: false, // general VC blog, low AI specificity — insufficient signal
   },
 
   // ── Chips / infra / cloud / enterprise AI — Batch 2 (8) ───────────────────
@@ -377,7 +377,7 @@ export const newsSources: SourceDefinition[] = [
     category: 'news',
     url: 'https://aws.amazon.com/blogs/machine-learning/feed/',
     reliability: 9,
-    enabled: true,
+    enabled: false, // exact URL duplicate of aws_ml_blog in companyBlogs.ts
   },
   {
     id: 'google_cloud_ai_blog',
@@ -407,7 +407,7 @@ export const newsSources: SourceDefinition[] = [
     category: 'news',
     url: 'https://electrek.co/feed/',
     reliability: 8,
-    enabled: true,
+    enabled: false, // EV consumer news, not AI-focused; covered by AV/robotics sources
   },
   {
     id: 'inside_evs',
@@ -416,7 +416,7 @@ export const newsSources: SourceDefinition[] = [
     category: 'news',
     url: 'https://insideevs.com/rss/',
     reliability: 7,
-    enabled: true,
+    enabled: false, // EV consumer news, tangential to AI intelligence
   },
   {
     id: 'autonomous_vehicle_intl',
@@ -452,7 +452,7 @@ export const newsSources: SourceDefinition[] = [
     category: 'news',
     url: 'https://www.industryweek.com/rss',
     reliability: 7,
-    enabled: true,
+    enabled: false, // generic manufacturing/industry trade pub, low AI signal
   },
   {
     id: 'manufacturing_net',
@@ -461,6 +461,6 @@ export const newsSources: SourceDefinition[] = [
     category: 'news',
     url: 'https://www.manufacturing.net/rss',
     reliability: 6,
-    enabled: true,
+    enabled: false, // generic manufacturing trade publication, very low AI signal
   },
 ];

@@ -149,12 +149,68 @@ function findClusters(
 /**
  * Confidence score for a cluster.
  * Scales linearly between minCount (→ 0.60) and 2×minCount (→ 0.92),
- * capped at 0.95.
+ * capped at 0.95.  Signals involving major AI entities and multiple
+ * distinct sources receive a small boost.
  */
-function computeConfidence(clusterSize: number, minCount: number): number {
+function computeConfidence(clusterSize: number, minCount: number, cluster: Event[]): number {
   const ratio = clusterSize / (minCount * 2);
-  const raw = 0.60 + ratio * 0.35;
+  let raw = 0.60 + ratio * 0.35;
+
+  // Entity prominence boost: +0.03 per major entity (max +0.09)
+  const entities = [...new Set(cluster.map((e) => e.company))];
+  const majorCount = entities.filter(isMajorEntity).length;
+  raw += Math.min(majorCount * 0.03, 0.09);
+
+  // Source diversity boost: +0.02 per distinct source beyond the first (max +0.06)
+  const sources = new Set(cluster.map((e) => e.sourceArticle?.source).filter(Boolean));
+  raw += Math.min(Math.max(sources.size - 1, 0) * 0.02, 0.06);
+
   return Math.min(Math.round(raw * 100) / 100, 0.95);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Entity prominence — major AI entities receive differentiated treatment
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MAJOR_ENTITIES = new Set([
+  'openai', 'anthropic', 'google', 'google deepmind', 'deepmind', 'meta',
+  'microsoft', 'nvidia', 'apple', 'amazon', 'aws', 'mistral', 'xai',
+  'cohere', 'stability ai', 'hugging face', 'inflection', 'character ai',
+  'databricks', 'snowflake', 'salesforce', 'oracle', 'ibm', 'samsung',
+  'baidu', 'alibaba', 'tencent', 'bytedance',
+]);
+
+function isMajorEntity(name: string): boolean {
+  return MAJOR_ENTITIES.has(name.toLowerCase().trim());
+}
+
+/** Extract the most prominent entities from a cluster, major ones first. */
+function rankEntities(cluster: Event[]): string[] {
+  const freq = new Map<string, number>();
+  for (const e of cluster) {
+    freq.set(e.company, (freq.get(e.company) ?? 0) + 1);
+  }
+  return [...freq.entries()]
+    .sort((a, b) => {
+      const aMajor = isMajorEntity(a[0]) ? 1 : 0;
+      const bMajor = isMajorEntity(b[0]) ? 1 : 0;
+      if (bMajor !== aMajor) return bMajor - aMajor;
+      return b[1] - a[1]; // then by frequency
+    })
+    .map(([name]) => name);
+}
+
+/** Summarize event subtypes within a cluster (e.g. "2 acquisitions, 1 partnership"). */
+function summarizeEventMix(cluster: Event[]): string {
+  const counts = new Map<string, number>();
+  for (const e of cluster) {
+    const label = e.type.replace(/_/g, ' ');
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([type, n]) => `${n} ${type}${n > 1 ? 's' : ''}`)
+    .join(', ');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -162,82 +218,143 @@ function computeConfidence(clusterSize: number, minCount: number): number {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function buildTitle(type: SignalType, cluster: Event[]): string {
-  const companies = [...new Set(cluster.map((e) => e.company))];
+  const entities = rankEntities(cluster);
   const count = cluster.length;
+  const topNames = entities.slice(0, 2).join(', ');
+  const suffix = entities.length > 2 ? ` +${entities.length - 2} more` : '';
 
   switch (type) {
     case 'CAPITAL_ACCELERATION':
-      return `Frontier AI capital accelerating — ${count} funding rounds detected`;
+      return `${topNames}${suffix}: ${count} funding rounds signal capital acceleration`;
     case 'MODEL_RELEASE_WAVE':
-      return `Model release wave — ${count} releases in rapid succession`;
+      return `${topNames}${suffix}: ${count} model releases in rapid succession`;
     case 'REGULATION_ACTIVITY':
-      return `Regulatory activity surge — ${count} policy events in short window`;
+      return `Regulatory surge targeting ${topNames}${suffix} — ${count} policy actions`;
     case 'RESEARCH_MOMENTUM':
-      return `Research momentum building — ${count} breakthroughs in rapid succession`;
+      return `Research breakthrough cluster: ${topNames}${suffix} — ${count} advances`;
     case 'COMPANY_EXPANSION':
-      return `Company expansion wave — ${count} strategic moves by ${companies.slice(0, 2).join(', ')}${companies.length > 2 ? ' and others' : ''}`;
+      return `${topNames}${suffix} expanding: ${summarizeEventMix(cluster)}`;
   }
 }
 
 function buildDescription(type: SignalType, cluster: Event[], windowDays: number): string {
-  const companies = [...new Set(cluster.map((e) => e.company))];
-  const companiesStr = companies.slice(0, 5).join(', ');
+  const entities = rankEntities(cluster);
+  const entitiesStr = entities.slice(0, 5).join(', ');
   const timestamps = cluster
     .map((e) => new Date(e.timestamp))
     .sort((a, b) => a.getTime() - b.getTime());
   const from = timestamps[0].toISOString().split('T')[0];
   const to = timestamps[timestamps.length - 1].toISOString().split('T')[0];
 
+  // Extract concrete event details for specificity
+  const eventTitles = cluster
+    .map((e) => e.title)
+    .filter(Boolean)
+    .slice(0, 3);
+  const detailSuffix = eventTitles.length > 0
+    ? ` Key developments: ${eventTitles.join('; ')}.`
+    : '';
+
+  const majorCount = entities.filter(isMajorEntity).length;
+  const majorNote = majorCount > 0
+    ? ` Involves ${majorCount} major AI ${majorCount === 1 ? 'player' : 'players'}.`
+    : '';
+
   switch (type) {
     case 'CAPITAL_ACCELERATION':
       return (
-        `${cluster.length} funding events were detected across ${companies.length} ` +
-        `companies (${companiesStr}) between ${from} and ${to}, ` +
-        `within the ${windowDays}-day acceleration window. ` +
-        `This cluster indicates heightened investor conviction in AI.`
+        `${cluster.length} funding events across ${entities.length} ` +
+        `companies (${entitiesStr}) between ${from} and ${to} ` +
+        `(${windowDays}-day window).${majorNote}${detailSuffix} ` +
+        `Concentrated capital deployment at this velocity signals shifting investor thesis and competitive positioning.`
       );
     case 'MODEL_RELEASE_WAVE':
       return (
-        `${cluster.length} model release events were detected from ` +
-        `${companiesStr} between ${from} and ${to}, ` +
-        `within a ${windowDays}-day window. ` +
-        `Concurrent releases signal an intensifying capability race.`
+        `${cluster.length} model releases from ${entitiesStr} between ${from} and ${to} ` +
+        `(${windowDays}-day window).${majorNote}${detailSuffix} ` +
+        `Concurrent releases indicate an active capability race — downstream tool chains and integrations will need reassessment.`
       );
     case 'REGULATION_ACTIVITY':
       return (
-        `${cluster.length} regulation or policy events were recorded between ${from} and ${to} ` +
-        `(${windowDays}-day window), involving ${companiesStr}. ` +
-        `A concentration of regulatory actions can reshape compliance requirements rapidly.`
+        `${cluster.length} policy or regulatory actions between ${from} and ${to} ` +
+        `(${windowDays}-day window) involving ${entitiesStr}.${majorNote}${detailSuffix} ` +
+        `Clustered regulatory moves can rapidly redefine compliance baselines and market access.`
       );
     case 'RESEARCH_MOMENTUM':
       return (
-        `${cluster.length} research breakthrough events were identified from ` +
-        `${companiesStr} between ${from} and ${to}, ` +
-        `within a ${windowDays}-day window. ` +
-        `Clustered breakthroughs often precede product advances.`
+        `${cluster.length} research breakthroughs from ${entitiesStr} between ${from} and ${to} ` +
+        `(${windowDays}-day window).${majorNote}${detailSuffix} ` +
+        `Clustered research output is a leading indicator of near-term capability shifts and product announcements.`
       );
     case 'COMPANY_EXPANSION':
       return (
-        `${cluster.length} strategic expansion events (acquisitions, partnerships, or launches) ` +
-        `were detected across ${companiesStr} between ${from} and ${to} ` +
-        `(${windowDays}-day window), indicating a sector-wide push for market position.`
+        `${cluster.length} strategic moves (${summarizeEventMix(cluster)}) across ` +
+        `${entitiesStr} between ${from} and ${to} (${windowDays}-day window).${majorNote}${detailSuffix} ` +
+        `This pattern signals active market positioning and potential consolidation pressure.`
       );
   }
 }
 
-function buildRecommendation(type: SignalType): string {
+function buildRecommendation(type: SignalType, cluster: Event[]): string {
+  const entities = rankEntities(cluster);
+  const topEntity = entities[0] ?? 'key players';
+  const hasMajor = entities.some(isMajorEntity);
+
   switch (type) {
     case 'CAPITAL_ACCELERATION':
-      return 'Monitor which companies and sectors are attracting capital; consider strategic partnerships or competitive moves.';
+      return hasMajor
+        ? `Track ${topEntity}'s funding trajectory and investor composition. Capital at this scale reshapes competitive dynamics — assess exposure to funded competitors and potential partnership leverage.`
+        : `Monitor emerging capital flows into ${topEntity} and peers. Early-stage acceleration in this segment may signal product launches or talent acquisition waves within 6–12 months.`;
     case 'MODEL_RELEASE_WAVE':
-      return 'Evaluate capability gaps in your AI stack; benchmark new releases against your current tools.';
+      return hasMajor
+        ? `Benchmark ${topEntity}'s new releases against your current stack. Rapid releases from major labs compress adoption windows — evaluate integration timelines and API migration costs now.`
+        : `Evaluate whether ${topEntity}'s releases change the capability baseline in your domain. Clustered releases often trigger downstream tooling updates and pricing shifts.`;
     case 'REGULATION_ACTIVITY':
-      return 'Review compliance posture; engage legal counsel on emerging obligations in affected jurisdictions.';
+      return hasMajor
+        ? `Regulations targeting ${topEntity} frequently set precedents. Review compliance posture, engage legal counsel, and assess whether new obligations apply to your own AI deployments.`
+        : `Monitor how policy actions affecting ${topEntity} may cascade. Regulatory clusters often expand scope — prepare for tighter compliance requirements in adjacent areas.`;
     case 'RESEARCH_MOMENTUM':
-      return 'Track research outputs for near-term productisation signals; prioritise R&D roadmap alignment.';
+      return hasMajor
+        ? `${topEntity}'s research output is accelerating. Align R&D priorities with emerging capability shifts — breakthroughs at this velocity typically reach production within 3–6 months.`
+        : `Track research outputs from ${topEntity} for productisation signals. Clustered breakthroughs indicate a transition from exploration to deployment readiness.`;
     case 'COMPANY_EXPANSION':
-      return 'Assess competitive implications; identify partnership or acquisition opportunities before consolidation accelerates.';
+      return hasMajor
+        ? `${topEntity}'s expansion moves signal strategic repositioning. Assess competitive implications — acquisitions and partnerships at this pace often indicate market consolidation.`
+        : `Monitor ${topEntity}'s expansion pattern for partnership or acquisition opportunities. Strategic moves clustering this densely suggest the market window for positioning is narrowing.`;
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cross-signal deduplication within a single run
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Remove near-duplicate signals produced in the same generation run.
+ * Two signals are considered duplicates if they share the same type AND
+ * have ≥50% entity overlap.  Keeps the higher-confidence signal.
+ */
+function deduplicateSignals(signals: Signal[]): Signal[] {
+  if (signals.length <= 1) return signals;
+
+  const result: Signal[] = [];
+
+  for (const candidate of signals) {
+    const isDuplicate = result.some((existing) => {
+      if (existing.type !== candidate.type) return false;
+      const aEntities = new Set(existing.affectedEntities ?? []);
+      const bEntities = candidate.affectedEntities ?? [];
+      if (aEntities.size === 0 && bEntities.length === 0) return false;
+      const overlap = bEntities.filter((e) => aEntities.has(e)).length;
+      const minSize = Math.min(aEntities.size, bEntities.length);
+      return minSize > 0 && overlap / minSize >= 0.5;
+    });
+
+    if (!isDuplicate) {
+      result.push(candidate);
+    }
+  }
+
+  return result;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -292,7 +409,7 @@ export function generateSignalsFromEvents(
 
     for (const cluster of clusters) {
       const eventIds = cluster.map((e) => e.id);
-      const confidence = computeConfidence(cluster.length, effectiveMinCount);
+      const confidence = computeConfidence(cluster.length, effectiveMinCount, cluster);
       const affectedEntities = [...new Set(cluster.map((e) => e.company))];
 
       const signal: Signal = {
@@ -304,7 +421,7 @@ export function generateSignalsFromEvents(
         confidenceScore: confidence,
         direction: rule.direction,
         affectedEntities,
-        recommendation: buildRecommendation(rule.type),
+        recommendation: buildRecommendation(rule.type, cluster),
         createdAt: now,
         humanVerified: false,
       };
@@ -313,6 +430,12 @@ export function generateSignalsFromEvents(
     }
   }
 
-  console.log(`[signalEngine] mode=${mode} multiplier=${multiplier} detected=${signals.length} from ${events.length} events`);
-  return signals;
+  // Deduplicate near-identical signals (same type + high entity overlap)
+  const deduped = deduplicateSignals(signals);
+
+  // Sort by confidence descending so highest-quality signals come first
+  deduped.sort((a, b) => b.confidenceScore - a.confidenceScore);
+
+  console.log(`[signalEngine] mode=${mode} multiplier=${multiplier} detected=${signals.length} deduped=${deduped.length} from ${events.length} events`);
+  return deduped;
 }
