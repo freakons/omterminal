@@ -2513,6 +2513,110 @@ export async function recordDigestSend(userId: string, forDate: string): Promise
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Alert Preferences (migration 018)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface AlertPreferences {
+  userId: string;
+  digestEnabled: boolean;
+  highImpactOnly: boolean;
+  includeTrendAlerts: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Column-to-camel mapping for user_alert_preferences rows. */
+interface AlertPreferencesRow {
+  user_id: string;
+  digest_enabled: boolean;
+  high_impact_only: boolean;
+  include_trend_alerts: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+function mapPreferencesRow(row: AlertPreferencesRow): AlertPreferences {
+  return {
+    userId: row.user_id,
+    digestEnabled: row.digest_enabled,
+    highImpactOnly: row.high_impact_only,
+    includeTrendAlerts: row.include_trend_alerts,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/** Sensible defaults when no preferences row exists for a user. */
+export const DEFAULT_ALERT_PREFERENCES: Omit<AlertPreferences, 'userId' | 'createdAt' | 'updatedAt'> = {
+  digestEnabled: true,
+  highImpactOnly: true,
+  includeTrendAlerts: false,
+};
+
+/**
+ * Get alert preferences for a user, or null if not yet set.
+ * Callers should fall back to DEFAULT_ALERT_PREFERENCES when null.
+ */
+export async function getAlertPreferences(userId: string): Promise<AlertPreferences | null> {
+  if (!(await tableExists('user_alert_preferences'))) return null;
+
+  const rows = await dbQuery<AlertPreferencesRow>`
+    SELECT user_id, digest_enabled, high_impact_only, include_trend_alerts, created_at, updated_at
+    FROM user_alert_preferences
+    WHERE user_id = ${userId}
+    LIMIT 1
+  `;
+  return rows.length > 0 ? mapPreferencesRow(rows[0]) : null;
+}
+
+/**
+ * Create or update alert preferences for a user.
+ * Only the provided fields are updated; omitted fields retain their current value.
+ */
+export async function upsertAlertPreferences(
+  userId: string,
+  prefs: Partial<Omit<AlertPreferences, 'userId' | 'createdAt' | 'updatedAt'>>,
+): Promise<AlertPreferences> {
+  const digestEnabled = prefs.digestEnabled ?? DEFAULT_ALERT_PREFERENCES.digestEnabled;
+  const highImpactOnly = prefs.highImpactOnly ?? DEFAULT_ALERT_PREFERENCES.highImpactOnly;
+  const includeTrendAlerts = prefs.includeTrendAlerts ?? DEFAULT_ALERT_PREFERENCES.includeTrendAlerts;
+
+  const rows = await dbQuery<AlertPreferencesRow>`
+    INSERT INTO user_alert_preferences (user_id, digest_enabled, high_impact_only, include_trend_alerts)
+    VALUES (${userId}, ${digestEnabled}, ${highImpactOnly}, ${includeTrendAlerts})
+    ON CONFLICT (user_id) DO UPDATE SET
+      digest_enabled       = CASE WHEN ${prefs.digestEnabled !== undefined} THEN EXCLUDED.digest_enabled       ELSE user_alert_preferences.digest_enabled       END,
+      high_impact_only     = CASE WHEN ${prefs.highImpactOnly !== undefined} THEN EXCLUDED.high_impact_only     ELSE user_alert_preferences.high_impact_only     END,
+      include_trend_alerts = CASE WHEN ${prefs.includeTrendAlerts !== undefined} THEN EXCLUDED.include_trend_alerts ELSE user_alert_preferences.include_trend_alerts END,
+      updated_at           = NOW()
+    RETURNING user_id, digest_enabled, high_impact_only, include_trend_alerts, created_at, updated_at
+  `;
+  return mapPreferencesRow(rows[0]);
+}
+
+/**
+ * Bulk-fetch preferences for a set of user IDs.
+ * Returns a Map from userId → AlertPreferences.
+ * Users with no row are absent from the map; callers should use DEFAULT_ALERT_PREFERENCES.
+ */
+export async function getBulkAlertPreferences(userIds: string[]): Promise<Map<string, AlertPreferences>> {
+  if (userIds.length === 0) return new Map();
+  if (!(await tableExists('user_alert_preferences'))) return new Map();
+
+  const rows = await dbQuery<AlertPreferencesRow>`
+    SELECT user_id, digest_enabled, high_impact_only, include_trend_alerts, created_at, updated_at
+    FROM user_alert_preferences
+    WHERE user_id = ANY(${userIds})
+  `;
+
+  const result = new Map<string, AlertPreferences>();
+  for (const row of rows) {
+    result.set(row.user_id, mapPreferencesRow(row));
+  }
+  return result;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Entity Momentum
 // ─────────────────────────────────────────────────────────────────────────────
 

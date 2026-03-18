@@ -20,7 +20,7 @@
  */
 
 import { dbQuery } from '@/db/client';
-import { getUsersWatchingEntityNames } from '@/db/queries';
+import { getUsersWatchingEntityNames, getBulkAlertPreferences, DEFAULT_ALERT_PREFERENCES } from '@/db/queries';
 import { normalizeEntityForMatching } from '@/lib/entityResolver';
 import type { Signal } from '@/data/mockSignals';
 import type { SignalCluster } from '@/lib/signals/clusterSignals';
@@ -447,11 +447,30 @@ export async function generateAlerts(input: GenerateAlertsInput): Promise<Person
     if (entityNames.length > 0) {
       const watcherMap = await getUsersWatchingEntityNames(entityNames);
       if (watcherMap.size > 0) {
-        personalCandidates = [
+        const rawPersonal = [
           ...generateWatchedHighImpactAlerts(signals, watcherMap),
           ...generateWatchedRisingAlerts(clusters, watcherMap),
           ...generateWatchedTrendAlerts(clusters, watcherMap),
         ];
+
+        // Apply per-user preferences to filter personal alert candidates
+        if (rawPersonal.length > 0) {
+          const userIds = [...new Set(rawPersonal.map((a) => a.userId).filter((id): id is string => id !== null))];
+          const prefsMap = await getBulkAlertPreferences(userIds);
+
+          personalCandidates = rawPersonal.filter((alert) => {
+            if (!alert.userId) return true; // safety: platform alerts pass through
+            const prefs = prefsMap.get(alert.userId) ?? DEFAULT_ALERT_PREFERENCES;
+
+            // high_impact_only: only keep priority-2 (watched_entity_high_impact) alerts
+            if (prefs.highImpactOnly && alert.priority < 2) return false;
+
+            // include_trend_alerts: when false, drop trend-type alerts not already removed above
+            if (!prefs.includeTrendAlerts && alert.type === 'watched_entity_trend') return false;
+
+            return true;
+          });
+        }
       }
     }
   } catch (err) {
