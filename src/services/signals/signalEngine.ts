@@ -78,9 +78,21 @@ const DETECTION_RULES: DetectionRule[] = [
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Deterministic ID based on signal type + sorted supporting event IDs. */
+/**
+ * Deterministic ID based on signal type + sorted supporting event IDs + date bucket.
+ *
+ * The date bucket (YYYY-MM-DD) ensures that detecting the same pattern on a
+ * new day produces a new signal ID. Without it, the same event cluster would
+ * generate the same signal ID indefinitely, and ON CONFLICT (id) DO NOTHING
+ * would prevent any new signals from appearing in the database — causing the
+ * "stale signals" problem where signals.created_at stops advancing.
+ *
+ * Within the same day, hourly cron runs still dedup correctly (same date =
+ * same signal ID), preventing duplicate signals per day.
+ */
 function generateSignalId(type: string, eventIds: string[]): string {
-  const key = type + ':' + [...eventIds].sort().join(',');
+  const dateBucket = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  const key = type + ':' + dateBucket + ':' + [...eventIds].sort().join(',');
   let hash = 0;
   for (let i = 0; i < key.length; i++) {
     hash = (hash << 5) - hash + key.charCodeAt(i);

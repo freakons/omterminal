@@ -125,11 +125,28 @@ export async function saveEvents(events: Event[]): Promise<number> {
 /**
  * Retrieve the most recent Events from the database, ordered by timestamp desc.
  *
- * @param limit  Maximum number of events to return (default 50, max 500).
- * @returns      Array of Events, newest first.
+ * @param limit      Maximum number of events to return (default 50, max 500).
+ * @param windowDays If provided, only return events whose timestamp is within
+ *                   the last N days. This focuses the signal engine on recent
+ *                   events and prevents stale events from anchoring clusters.
+ * @returns          Array of Events, newest first.
  */
-export async function getRecentEvents(limit = 50): Promise<Event[]> {
+export async function getRecentEvents(limit = 50, windowDays?: number): Promise<Event[]> {
   const safeLimit = Math.min(Math.max(1, limit), 500);
+
+  if (windowDays && windowDays > 0) {
+    const cutoff = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+    const rows = await dbQuery<EventRow>`
+      SELECT
+        id, type, company, related_model, title, description,
+        timestamp, source_article_id, tags, region, payload, created_at
+      FROM events
+      WHERE timestamp >= ${cutoff}
+      ORDER BY timestamp DESC
+      LIMIT ${safeLimit}
+    `;
+    return rows.map(rowToEvent);
+  }
 
   const rows = await dbQuery<EventRow>`
     SELECT
