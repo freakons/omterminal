@@ -61,6 +61,8 @@ import {
   hasDigestBeenSent,
   recordDigestSend,
   getEmailSubscription,
+  getAlertPreferences,
+  DEFAULT_ALERT_PREFERENCES,
 } from '@/db/queries';
 import { renderDigestEmail, buildDigestSubject } from '@/lib/alerts/renderDigestEmail';
 
@@ -198,8 +200,20 @@ export async function GET(req: NextRequest) {
           continue;
         }
 
-        // Fetch personal alerts for this user
-        const personalAlerts = await getDigestAlertsForUser(sub.userId, since);
+        // Respect digest_enabled preference (user may have opted out without unsubscribing)
+        const userPrefs = await getAlertPreferences(sub.userId) ?? DEFAULT_ALERT_PREFERENCES;
+        if (!userPrefs.digestEnabled) {
+          skippedNoAlerts++;
+          continue;
+        }
+
+        // Fetch personal alerts for this user, then apply content preferences
+        const rawPersonalAlerts = await getDigestAlertsForUser(sub.userId, since);
+        const personalAlerts = rawPersonalAlerts.filter((alert) => {
+          if (userPrefs.highImpactOnly && alert.priority < 2) return false;
+          if (!userPrefs.includeTrendAlerts && alert.type === 'watched_entity_trend') return false;
+          return true;
+        });
 
         // Skip users with no alerts at all
         if (personalAlerts.length === 0 && platformAlerts.length === 0) {

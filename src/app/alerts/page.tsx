@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { AlertsPanel } from '@/components/alerts/AlertsPanel';
 import { EmailDigestCard } from '@/components/alerts/EmailDigestCard';
+import { AlertPreferencesCard } from '@/components/alerts/AlertPreferencesCard';
 
 const BREADCRUMB: React.CSSProperties = {
   fontFamily: 'var(--fm)',
@@ -36,6 +37,7 @@ export default function AlertsPage() {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <AlertsPanel />
+        <AlertPreferencesCard />
         <EmailDigestCard />
       </div>
     </div>
