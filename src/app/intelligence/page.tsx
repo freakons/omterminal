@@ -17,8 +17,17 @@ export const metadata: Metadata = {
   description: 'Real-time AI intelligence — model releases, funding, regulation, research, and product launches.',
 };
 
-/** ISR: revalidate every 5 minutes for fresh intelligence */
-export const revalidate = 300;
+/**
+ * ISR: revalidate every 60 seconds.
+ *
+ * The intelligence page has no client-side refresh, so the ISR TTL is the
+ * sole freshness gate. Reduced from 300 s to 60 s so cron-inserted signals
+ * appear within one minute rather than up to five. force-dynamic is not used
+ * here because the page runs several heavier aggregation queries; 60-second
+ * ISR is the minimum safe change that keeps caching benefits while delivering
+ * timely updates.
+ */
+export const revalidate = 60;
 
 const STATS_FALLBACK = {
   signals: 0, companies: 0, regulations: 0, sources: 0,
