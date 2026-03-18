@@ -12,6 +12,8 @@ import { SignalImpactBadge } from '@/components/signals/SignalImpactBadge';
 import { SignalMomentumBadge } from '@/components/signals/SignalMomentumBadge';
 import { getSignificanceTier } from '@/lib/signals/feedComposer';
 import { slugify } from '@/utils/sanitize';
+import { buildArticleSchema, buildBreadcrumbSchema, buildSignalFAQSchema } from '@/lib/seo/jsonld';
+import { siteConfig } from '@/config/site';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -42,9 +44,38 @@ export async function generateMetadata(
 ): Promise<Metadata> {
   const { id } = await params;
   const signal = await getSignalById(id).catch(() => null);
+  if (!signal) return { title: 'Signal Not Found' };
+
+  const description = (signal.summary ?? '').slice(0, 155) || `${signal.category} signal from ${signal.entityName} on Omterminal.`;
+  const canonicalUrl = `${siteConfig.url}/signals/${id}`;
+
   return {
-    title: signal ? `${signal.title} — Signal Intelligence` : 'Signal Not Found',
-    description: signal?.summary ?? 'Signal detail view.',
+    title: signal.title,
+    description,
+    alternates: { canonical: canonicalUrl },
+    openGraph: {
+      title: `${signal.title} | Omterminal`,
+      description,
+      url: canonicalUrl,
+      type: 'article',
+      publishedTime: signal.date,
+      siteName: siteConfig.name,
+    },
+    twitter: {
+      card: 'summary',
+      title: signal.title,
+      description,
+    },
+    keywords: [
+      signal.category,
+      `AI ${signal.category}`,
+      signal.entityName,
+      signal.entityName ? `${signal.entityName} AI` : null,
+      'AI signals',
+      'AI intelligence',
+      'artificial intelligence',
+      'Omterminal',
+    ].filter(Boolean) as string[],
   };
 }
 
@@ -73,8 +104,58 @@ export default async function SignalDetailPage(
   // Fallback: if momentum query failed, use safe defaults (stable)
   const momentum = momentumData ?? { recentCount: 0, previousCount: 0 };
 
+  const jsonLd = buildArticleSchema({
+    headline: signal.title,
+    description: (signal.summary ?? '').slice(0, 155),
+    datePublished: signal.date,
+    url: `${siteConfig.url}/signals/${signal.id}`,
+    keywords: [signal.category, signal.entityName, 'AI intelligence', 'Omterminal'].filter(Boolean) as string[],
+    entityName: signal.entityName ?? undefined,
+    entityUrl: signal.entityName
+      ? `${siteConfig.url}/entity/${slugify(signal.entityName)}`
+      : undefined,
+    category: signal.category,
+  });
+
+  const breadcrumbLd = buildBreadcrumbSchema([
+    { name: 'Omterminal', url: siteConfig.url },
+    { name: 'Signals', url: `${siteConfig.url}/signals` },
+    { name: signal.title, url: `${siteConfig.url}/signals/${signal.id}` },
+  ]);
+
+  const faqLd = signal.summary
+    ? buildSignalFAQSchema({
+        signalTitle: signal.title,
+        summary: signal.summary,
+        whyItMatters: signal.context?.whyItMatters,
+        implications: signal.context?.implications,
+      })
+    : null;
+
+  // Map signal category to a dedicated page URL for internal linking
+  const CATEGORY_URLS: Record<string, string> = {
+    models: '/models',
+    regulation: '/regulation',
+    funding: '/funding',
+  };
+  const categoryPageUrl = CATEGORY_URLS[signal.category] ?? '/signals';
+
   return (
     <div className="page-enter">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbLd) }}
+      />
+      {faqLd && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(faqLd) }}
+        />
+      )}
 
       {/* Nav breadcrumb */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 20 }}>
@@ -183,7 +264,7 @@ export default async function SignalDetailPage(
 
           {/* Summary */}
           <div style={GLASS_CARD}>
-            <div style={SECTION_HEADER}>Signal Summary</div>
+            <h2 style={{ ...SECTION_HEADER, margin: 0, marginBottom: 16 }}>Signal Summary</h2>
             <p style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.8 }}>
               {signal.summary}
             </p>
@@ -192,7 +273,7 @@ export default async function SignalDetailPage(
           {/* Why it matters */}
           {signal.context?.whyItMatters && (
             <div style={GLASS_CARD}>
-              <div style={SECTION_HEADER}>Why It Matters</div>
+              <h2 style={{ ...SECTION_HEADER, margin: 0, marginBottom: 16 }}>Why It Matters</h2>
               <p style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.8 }}>
                 {signal.context.whyItMatters}
               </p>
@@ -202,7 +283,7 @@ export default async function SignalDetailPage(
           {/* Implications */}
           {signal.context?.implications && signal.context.implications.length > 0 && (
             <div style={GLASS_CARD}>
-              <div style={SECTION_HEADER}>Implications</div>
+              <h2 style={{ ...SECTION_HEADER, margin: 0, marginBottom: 16 }}>Implications</h2>
               <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {signal.context.implications.map((item, i) => (
                   <li key={i} style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.7 }}>
@@ -346,6 +427,45 @@ export default async function SignalDetailPage(
               </Link>
             </div>
           )}
+
+          {/* Explore category — internal linking for AI search traversal */}
+          <div style={GLASS_CARD}>
+            <div style={SECTION_HEADER}>Explore Category</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <Link
+                href={categoryPageUrl}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '10px 12px', borderRadius: 8,
+                  border: '1px solid var(--border2)', background: 'var(--glass2)',
+                  textDecoration: 'none',
+                }}
+              >
+                <span style={{ fontFamily: 'var(--fm)', fontSize: 12, color: 'var(--text2)' }}>
+                  More {signal.category} signals
+                </span>
+                <span style={{ fontFamily: 'var(--fm)', fontSize: 9, color: 'var(--text3)', marginLeft: 'auto' }}>
+                  →
+                </span>
+              </Link>
+              <Link
+                href="/signals"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '10px 12px', borderRadius: 8,
+                  border: '1px solid var(--border2)', background: 'var(--glass2)',
+                  textDecoration: 'none',
+                }}
+              >
+                <span style={{ fontFamily: 'var(--fm)', fontSize: 12, color: 'var(--text2)' }}>
+                  All AI intelligence signals
+                </span>
+                <span style={{ fontFamily: 'var(--fm)', fontSize: 9, color: 'var(--text3)', marginLeft: 'auto' }}>
+                  →
+                </span>
+              </Link>
+            </div>
+          </div>
         </div>
       </div>
     </div>

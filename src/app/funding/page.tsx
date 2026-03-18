@@ -7,8 +7,9 @@ import { StatCard } from '@/components/ui/StatCard';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'AI Funding & Investment',
-  description: 'Track AI funding rounds, valuations, and M&A activity — structured intelligence for investors.',
+  title: 'AI Funding Rounds — Investments, Valuations & Deals',
+  description: 'Track AI funding rounds, valuations, and M&A activity — from seed rounds to billion-dollar mega-deals. Structured intelligence for investors and strategists.',
+  keywords: ['AI funding', 'AI investment', 'AI venture capital', 'AI startups', 'AI unicorns', 'AI M&A', 'funding rounds'],
 };
 
 export const revalidate = 300;

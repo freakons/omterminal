@@ -106,16 +106,16 @@ export function SignalCard({ signal }: SignalCardProps) {
 
         {/* Strategic impact + who should care (collapsible intelligence) */}
         {(signal.strategicImpact || signal.whoShouldCare) && (
-          <div className="nc-intel" style={{ marginTop: 6, fontSize: 12, color: 'var(--text2)', lineHeight: 1.55 }}>
+          <div className="nc-intel">
             {signal.strategicImpact && (
-              <div style={{ marginBottom: 4 }}>
-                <span style={{ fontFamily: 'var(--fm)', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text3)', marginRight: 6 }}>Strategic impact</span>
+              <div className="nc-intel-row">
+                <span className="nc-intel-label">Strategic impact</span>
                 {signal.strategicImpact}
               </div>
             )}
             {signal.whoShouldCare && (
-              <div>
-                <span style={{ fontFamily: 'var(--fm)', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text3)', marginRight: 6 }}>Who should care</span>
+              <div className="nc-intel-row">
+                <span className="nc-intel-label">Who should care</span>
                 {signal.whoShouldCare}
               </div>
             )}
@@ -166,7 +166,9 @@ export function SignalCard({ signal }: SignalCardProps) {
           )}
         </span>
         <Link href={href} className="nc-link">
-          <span className="nc-date">{formatSignalDate(signal.date)}</span>
+          <span className={`nc-date${isRecent(signal.date) ? ' nc-date--recent' : ''}`}>
+            {formatSignalDate(signal.date)}
+          </span>
         </Link>
       </div>
 
@@ -178,10 +180,25 @@ export function SignalCard({ signal }: SignalCardProps) {
   );
 }
 
+function isRecent(dateStr: string): boolean {
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return false;
+    return Date.now() - d.getTime() < 3 * 24 * 60 * 60 * 1000;
+  } catch {
+    return false;
+  }
+}
+
 function formatSignalDate(dateStr: string): string {
   try {
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return dateStr;
+    const diffMs = Date.now() - d.getTime();
+    const diffH = diffMs / (1000 * 60 * 60);
+    if (diffH < 24) return 'Today';
+    if (diffH < 48) return 'Yesterday';
+    if (diffH < 72) return '2 days ago';
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   } catch {
     return dateStr;

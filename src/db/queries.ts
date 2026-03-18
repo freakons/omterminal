@@ -905,8 +905,12 @@ export async function getSignalsForEntities(
           AND (s.status IS NULL OR s.status NOT IN ('rejected'))
         ORDER BY s.id, s.created_at DESC
       `;
-      // Re-sort by recency after DISTINCT ON id
-      rows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      // Re-sort by significance (desc) then recency after DISTINCT ON id
+      rows.sort((a, b) => {
+        const sigDiff = (b.significance_score ?? 50) - (a.significance_score ?? 50);
+        if (sigDiff !== 0) return sigDiff;
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
       return rows.slice(0, safeLimit).map(rowToSignal);
     }
 
@@ -921,7 +925,7 @@ export async function getSignalsForEntities(
       FROM signals
       WHERE LOWER(entity_name) = ANY(${lowerNames})
         AND (status IS NULL OR status NOT IN ('rejected'))
-      ORDER BY created_at DESC
+      ORDER BY COALESCE(significance_score, 50) DESC, created_at DESC
       LIMIT ${safeLimit}
     `;
     return rows.map(rowToSignal);
@@ -2509,6 +2513,110 @@ export async function recordDigestSend(userId: string, forDate: string): Promise
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Alert Preferences (migration 018)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface AlertPreferences {
+  userId: string;
+  digestEnabled: boolean;
+  highImpactOnly: boolean;
+  includeTrendAlerts: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Column-to-camel mapping for user_alert_preferences rows. */
+interface AlertPreferencesRow {
+  user_id: string;
+  digest_enabled: boolean;
+  high_impact_only: boolean;
+  include_trend_alerts: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+function mapPreferencesRow(row: AlertPreferencesRow): AlertPreferences {
+  return {
+    userId: row.user_id,
+    digestEnabled: row.digest_enabled,
+    highImpactOnly: row.high_impact_only,
+    includeTrendAlerts: row.include_trend_alerts,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/** Sensible defaults when no preferences row exists for a user. */
+export const DEFAULT_ALERT_PREFERENCES: Omit<AlertPreferences, 'userId' | 'createdAt' | 'updatedAt'> = {
+  digestEnabled: true,
+  highImpactOnly: true,
+  includeTrendAlerts: false,
+};
+
+/**
+ * Get alert preferences for a user, or null if not yet set.
+ * Callers should fall back to DEFAULT_ALERT_PREFERENCES when null.
+ */
+export async function getAlertPreferences(userId: string): Promise<AlertPreferences | null> {
+  if (!(await tableExists('user_alert_preferences'))) return null;
+
+  const rows = await dbQuery<AlertPreferencesRow>`
+    SELECT user_id, digest_enabled, high_impact_only, include_trend_alerts, created_at, updated_at
+    FROM user_alert_preferences
+    WHERE user_id = ${userId}
+    LIMIT 1
+  `;
+  return rows.length > 0 ? mapPreferencesRow(rows[0]) : null;
+}
+
+/**
+ * Create or update alert preferences for a user.
+ * Only the provided fields are updated; omitted fields retain their current value.
+ */
+export async function upsertAlertPreferences(
+  userId: string,
+  prefs: Partial<Omit<AlertPreferences, 'userId' | 'createdAt' | 'updatedAt'>>,
+): Promise<AlertPreferences> {
+  const digestEnabled = prefs.digestEnabled ?? DEFAULT_ALERT_PREFERENCES.digestEnabled;
+  const highImpactOnly = prefs.highImpactOnly ?? DEFAULT_ALERT_PREFERENCES.highImpactOnly;
+  const includeTrendAlerts = prefs.includeTrendAlerts ?? DEFAULT_ALERT_PREFERENCES.includeTrendAlerts;
+
+  const rows = await dbQuery<AlertPreferencesRow>`
+    INSERT INTO user_alert_preferences (user_id, digest_enabled, high_impact_only, include_trend_alerts)
+    VALUES (${userId}, ${digestEnabled}, ${highImpactOnly}, ${includeTrendAlerts})
+    ON CONFLICT (user_id) DO UPDATE SET
+      digest_enabled       = CASE WHEN ${prefs.digestEnabled !== undefined} THEN EXCLUDED.digest_enabled       ELSE user_alert_preferences.digest_enabled       END,
+      high_impact_only     = CASE WHEN ${prefs.highImpactOnly !== undefined} THEN EXCLUDED.high_impact_only     ELSE user_alert_preferences.high_impact_only     END,
+      include_trend_alerts = CASE WHEN ${prefs.includeTrendAlerts !== undefined} THEN EXCLUDED.include_trend_alerts ELSE user_alert_preferences.include_trend_alerts END,
+      updated_at           = NOW()
+    RETURNING user_id, digest_enabled, high_impact_only, include_trend_alerts, created_at, updated_at
+  `;
+  return mapPreferencesRow(rows[0]);
+}
+
+/**
+ * Bulk-fetch preferences for a set of user IDs.
+ * Returns a Map from userId → AlertPreferences.
+ * Users with no row are absent from the map; callers should use DEFAULT_ALERT_PREFERENCES.
+ */
+export async function getBulkAlertPreferences(userIds: string[]): Promise<Map<string, AlertPreferences>> {
+  if (userIds.length === 0) return new Map();
+  if (!(await tableExists('user_alert_preferences'))) return new Map();
+
+  const rows = await dbQuery<AlertPreferencesRow>`
+    SELECT user_id, digest_enabled, high_impact_only, include_trend_alerts, created_at, updated_at
+    FROM user_alert_preferences
+    WHERE user_id = ANY(${userIds})
+  `;
+
+  const result = new Map<string, AlertPreferences>();
+  for (const row of rows) {
+    result.set(row.user_id, mapPreferencesRow(row));
+  }
+  return result;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Entity Momentum
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -2614,6 +2722,341 @@ export async function getEntityMomentum(entityName: string): Promise<EntityMomen
     };
   } catch {
     return null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Product Analytics — Event Capture
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type ProductEventType =
+  | 'signal_opened'
+  | 'alert_opened'
+  | 'alert_read'
+  | 'entity_tracked'
+  | 'entity_untracked'
+  | 'digest_sent'
+  | 'digest_skipped'
+  | 'email_click';
+
+export interface TrackEventParams {
+  eventType: ProductEventType;
+  userId?: string | null;
+  entitySlug?: string | null;
+  signalId?: string | null;
+  alertId?: string | null;
+  properties?: Record<string, unknown> | null;
+}
+
+/**
+ * Record a single product interaction event.
+ * Silently swallows errors — callers must never await this in a hot path.
+ */
+export async function trackProductEvent(params: TrackEventParams): Promise<void> {
+  try {
+    await dbQuery`
+      INSERT INTO product_events (event_type, user_id, entity_slug, signal_id, alert_id, properties)
+      VALUES (
+        ${params.eventType},
+        ${params.userId ?? null},
+        ${params.entitySlug ?? null},
+        ${params.signalId ?? null},
+        ${params.alertId ?? null},
+        ${params.properties ? JSON.stringify(params.properties) : null}
+      )
+    `;
+  } catch {
+    // fire-and-forget; analytics must never break product flows
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Product Analytics — Aggregated Reads (admin-facing)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface TopWatchedEntity {
+  entity_slug: string;
+  entity_name: string;
+  watcher_count: number;
+}
+
+/** Entities with the most distinct watchers. */
+export async function getTopWatchedEntities(limit = 20): Promise<TopWatchedEntity[]> {
+  try {
+    type Row = { entity_slug: string; entity_name: string; watcher_count: string };
+    const rows = await dbQuery<Row>`
+      SELECT entity_slug, entity_name, COUNT(DISTINCT user_id)::text AS watcher_count
+      FROM user_watchlists
+      GROUP BY entity_slug, entity_name
+      ORDER BY COUNT(DISTINCT user_id) DESC
+      LIMIT ${limit}
+    `;
+    return rows.map((r) => ({ ...r, watcher_count: parseInt(r.watcher_count, 10) }));
+  } catch {
+    return [];
+  }
+}
+
+export interface TopOpenedSignal {
+  signal_id: string;
+  open_count: number;
+}
+
+/** Signals with the most view events in the last 30 days. */
+export async function getTopOpenedSignals(limit = 10): Promise<TopOpenedSignal[]> {
+  try {
+    type Row = { signal_id: string; open_count: string };
+    const rows = await dbQuery<Row>`
+      SELECT signal_id, COUNT(*)::text AS open_count
+      FROM product_events
+      WHERE event_type = 'signal_opened'
+        AND signal_id IS NOT NULL
+        AND created_at > NOW() - INTERVAL '30 days'
+      GROUP BY signal_id
+      ORDER BY COUNT(*) DESC
+      LIMIT ${limit}
+    `;
+    return rows.map((r) => ({ ...r, open_count: parseInt(r.open_count, 10) }));
+  } catch {
+    return [];
+  }
+}
+
+export interface AlertVolumeRow {
+  type: string;
+  total: number;
+  unread: number;
+}
+
+/** Alert counts grouped by type. */
+export async function getAlertVolumeByType(): Promise<AlertVolumeRow[]> {
+  try {
+    type Row = { type: string; total: string; unread: string };
+    const rows = await dbQuery<Row>`
+      SELECT
+        type,
+        COUNT(*)::text                              AS total,
+        COUNT(*) FILTER (WHERE read = false)::text  AS unread
+      FROM alerts
+      GROUP BY type
+      ORDER BY COUNT(*) DESC
+    `;
+    return rows.map((r) => ({
+      type: r.type,
+      total: parseInt(r.total, 10),
+      unread: parseInt(r.unread, 10),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export interface DigestStats {
+  total_sends: number;
+  unique_recipients: number;
+  sends_last_7d: number;
+  last_sent_at: string | null;
+}
+
+/** High-level digest delivery stats. */
+export async function getDigestStats(): Promise<DigestStats> {
+  try {
+    type Row = {
+      total_sends: string;
+      unique_recipients: string;
+      sends_last_7d: string;
+      last_sent_at: string | null;
+    };
+    const rows = await dbQuery<Row>`
+      SELECT
+        COUNT(*)::text                                                        AS total_sends,
+        COUNT(DISTINCT user_id)::text                                        AS unique_recipients,
+        COUNT(*) FILTER (WHERE sent_at > NOW() - INTERVAL '7 days')::text   AS sends_last_7d,
+        MAX(sent_at)::text                                                   AS last_sent_at
+      FROM digest_sends
+    `;
+    const r = rows[0];
+    if (!r) return { total_sends: 0, unique_recipients: 0, sends_last_7d: 0, last_sent_at: null };
+    return {
+      total_sends: parseInt(r.total_sends, 10),
+      unique_recipients: parseInt(r.unique_recipients, 10),
+      sends_last_7d: parseInt(r.sends_last_7d, 10),
+      last_sent_at: r.last_sent_at,
+    };
+  } catch {
+    return { total_sends: 0, unique_recipients: 0, sends_last_7d: 0, last_sent_at: null };
+  }
+}
+
+export interface EngagementSummary {
+  total_watchers: number;
+  total_watchlist_entries: number;
+  product_events_7d: number;
+  product_events_by_type: Array<{ event_type: string; count: number }>;
+  alert_read_rate: number | null;
+}
+
+/** Overall engagement summary for the analytics dashboard. */
+export async function getEngagementSummary(): Promise<EngagementSummary> {
+  try {
+    type WatchRow = { total_watchers: string; total_entries: string };
+    const watchRows = await dbQuery<WatchRow>`
+      SELECT
+        COUNT(DISTINCT user_id)::text  AS total_watchers,
+        COUNT(*)::text                 AS total_entries
+      FROM user_watchlists
+    `;
+    const w = watchRows[0];
+
+    type EventRow = { event_type: string; cnt: string };
+    const eventRows = await dbQuery<EventRow>`
+      SELECT event_type, COUNT(*)::text AS cnt
+      FROM product_events
+      WHERE created_at > NOW() - INTERVAL '7 days'
+      GROUP BY event_type
+      ORDER BY COUNT(*) DESC
+    `;
+
+    type AlertRow = { total: string; read_count: string };
+    const alertRows = await dbQuery<AlertRow>`
+      SELECT
+        COUNT(*)::text                             AS total,
+        COUNT(*) FILTER (WHERE read = true)::text  AS read_count
+      FROM alerts
+    `;
+    const a = alertRows[0];
+    const total7d = eventRows.reduce((s, r) => s + parseInt(r.cnt, 10), 0);
+    const alertTotal = parseInt(a?.total ?? '0', 10);
+    const alertRead = parseInt(a?.read_count ?? '0', 10);
+
+    return {
+      total_watchers: parseInt(w?.total_watchers ?? '0', 10),
+      total_watchlist_entries: parseInt(w?.total_entries ?? '0', 10),
+      product_events_7d: total7d,
+      product_events_by_type: eventRows.map((r) => ({ event_type: r.event_type, count: parseInt(r.cnt, 10) })),
+      alert_read_rate: alertTotal > 0 ? Math.round((alertRead / alertTotal) * 100) : null,
+    };
+  } catch {
+    return {
+      total_watchers: 0,
+      total_watchlist_entries: 0,
+      product_events_7d: 0,
+      product_events_by_type: [],
+      alert_read_rate: null,
+    };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Product Analytics — Time to Engagement
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface TimeToEngagementTrendPoint {
+  day: string;
+  avg_seconds: number;
+}
+
+export interface TimeToEngagementMetric {
+  avg_seconds: number | null;
+  median_seconds: number | null;
+  trend_7d: TimeToEngagementTrendPoint[];
+}
+
+export interface TimeToEngagementStats {
+  signal: TimeToEngagementMetric;
+  alert: TimeToEngagementMetric;
+}
+
+/**
+ * Compute how quickly users engage with signals and alerts after creation.
+ *
+ * - signal: time from signals.created_at → first signal_opened product event
+ * - alert: time from alerts.created_at → first alert_read product event
+ *
+ * Returns average, median (PERCENTILE_CONT), and a 7-day daily trend.
+ */
+export async function getTimeToEngagement(): Promise<TimeToEngagementStats> {
+  const empty: TimeToEngagementMetric = { avg_seconds: null, median_seconds: null, trend_7d: [] };
+
+  try {
+    // ── Signal time-to-engagement (overall avg + median) ──────────────────
+    type OverallRow = { avg_seconds: string | null; median_seconds: string | null };
+
+    const signalOverall = await dbQuery<OverallRow>`
+      SELECT
+        AVG(EXTRACT(EPOCH FROM (pe.created_at - s.created_at)))::text         AS avg_seconds,
+        PERCENTILE_CONT(0.5) WITHIN GROUP (
+          ORDER BY EXTRACT(EPOCH FROM (pe.created_at - s.created_at))
+        )::text                                                                AS median_seconds
+      FROM product_events pe
+      JOIN signals s ON s.id::text = pe.signal_id
+      WHERE pe.event_type = 'signal_opened'
+        AND pe.signal_id IS NOT NULL
+        AND pe.created_at > s.created_at
+    `;
+
+    // ── Alert time-to-engagement (overall avg + median) ───────────────────
+    const alertOverall = await dbQuery<OverallRow>`
+      SELECT
+        AVG(EXTRACT(EPOCH FROM (pe.created_at - a.created_at)))::text         AS avg_seconds,
+        PERCENTILE_CONT(0.5) WITHIN GROUP (
+          ORDER BY EXTRACT(EPOCH FROM (pe.created_at - a.created_at))
+        )::text                                                                AS median_seconds
+      FROM product_events pe
+      JOIN alerts a ON a.id::text = pe.alert_id
+      WHERE pe.event_type = 'alert_read'
+        AND pe.alert_id IS NOT NULL
+        AND pe.created_at > a.created_at
+    `;
+
+    // ── Signal 7-day daily trend ──────────────────────────────────────────
+    type TrendRow = { day: string; avg_seconds: string };
+    const signalTrend = await dbQuery<TrendRow>`
+      SELECT
+        DATE_TRUNC('day', pe.created_at)::text                                AS day,
+        AVG(EXTRACT(EPOCH FROM (pe.created_at - s.created_at)))::text         AS avg_seconds
+      FROM product_events pe
+      JOIN signals s ON s.id::text = pe.signal_id
+      WHERE pe.event_type = 'signal_opened'
+        AND pe.signal_id IS NOT NULL
+        AND pe.created_at > NOW() - INTERVAL '7 days'
+        AND pe.created_at > s.created_at
+      GROUP BY DATE_TRUNC('day', pe.created_at)
+      ORDER BY 1
+    `;
+
+    // ── Alert 7-day daily trend ───────────────────────────────────────────
+    const alertTrend = await dbQuery<TrendRow>`
+      SELECT
+        DATE_TRUNC('day', pe.created_at)::text                                AS day,
+        AVG(EXTRACT(EPOCH FROM (pe.created_at - a.created_at)))::text         AS avg_seconds
+      FROM product_events pe
+      JOIN alerts a ON a.id::text = pe.alert_id
+      WHERE pe.event_type = 'alert_read'
+        AND pe.alert_id IS NOT NULL
+        AND pe.created_at > NOW() - INTERVAL '7 days'
+        AND pe.created_at > a.created_at
+      GROUP BY DATE_TRUNC('day', pe.created_at)
+      ORDER BY 1
+    `;
+
+    const sr = signalOverall[0];
+    const ar = alertOverall[0];
+
+    return {
+      signal: {
+        avg_seconds: sr?.avg_seconds != null ? parseFloat(sr.avg_seconds) : null,
+        median_seconds: sr?.median_seconds != null ? parseFloat(sr.median_seconds) : null,
+        trend_7d: signalTrend.map((r) => ({ day: r.day, avg_seconds: parseFloat(r.avg_seconds) })),
+      },
+      alert: {
+        avg_seconds: ar?.avg_seconds != null ? parseFloat(ar.avg_seconds) : null,
+        median_seconds: ar?.median_seconds != null ? parseFloat(ar.median_seconds) : null,
+        trend_7d: alertTrend.map((r) => ({ day: r.day, avg_seconds: parseFloat(r.avg_seconds) })),
+      },
+    };
+  } catch {
+    return { signal: empty, alert: empty };
   }
 }
 

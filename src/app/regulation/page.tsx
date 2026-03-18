@@ -6,8 +6,9 @@ import { RegulationFilters } from './filters';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'AI Regulation & Policy',
-  description: 'Track global AI regulation — EU AI Act, US executive orders, China CAC rules, and more.',
+  title: 'AI Regulation Tracker — EU AI Act, Policy & Compliance',
+  description: 'Track global AI regulation — EU AI Act, US executive orders, China CAC rules, and emerging policy frameworks. Plain-English impact analysis for every jurisdiction.',
+  keywords: ['AI regulation', 'EU AI Act', 'AI policy', 'AI compliance', 'AI law', 'AI governance', 'AI executive order'],
 };
 
 export const revalidate = 300;

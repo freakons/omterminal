@@ -49,6 +49,8 @@ import { generateSignalsFromEvents }            from '@/services/signals/signalE
 import { saveSignals, updateSignalInsight, markInsightGenerationError } from '@/services/storage/signalStore';
 import { generateSignalInsightWithMeta }        from '@/lib/intelligence/generateSignalInsight';
 import { corroborateSignals }                    from '@/lib/signals/clusterSignals';
+import type { SignalCluster, CorroborationCluster } from '@/lib/signals/clusterSignals';
+import { generateAlerts }                          from '@/lib/alerts/generateAlerts';
 import { withPipelineLock, pipelineLockedResponse } from '@/lib/pipelineLock';
 import { generatePageSnapshots }               from '@/lib/pipeline/snapshot';
 import { refreshCaches }                        from '@/lib/pipeline/cacheRefresh';
@@ -643,6 +645,84 @@ export async function POST(req: NextRequest) {
         stages.push({
           stage: 'clustering', status: 'ok', durationMs: clustering.durationMs,
           clustersDetected: clustering.result!.length,
+        });
+      }
+
+      // Stage 2d — Watchlist alert generation — non-blocking
+      // Converts newly generated signals + corroboration clusters into personal
+      // (watched-entity) and platform alerts persisted to the alerts table.
+      // These alerts are later consumed by the daily digest delivery cron.
+      const alertsStage = await runStage(
+        'alerts',
+        async () => {
+          // Adapt CorroborationCluster → minimal SignalCluster shape for generateAlerts.
+          // Only the fields actually read by generateAlerts are populated:
+          //   id, title, summary, entities[], momentum, signalCount, signals[0].id
+          const adaptedClusters: SignalCluster[] = (clustering.result ?? []).map(
+            (c: CorroborationCluster) => ({
+              id: `corr-${c.entity.replace(/\s+/g, '-').toLowerCase()}-${Date.now()}`,
+              title: c.topic,
+              summary: `${c.signalCount} corroborated signals for ${c.entity}.`,
+              signals: c.signalIds.map((id) => ({
+                id,
+                title: '',
+                category: 'research' as const,
+                entityId: c.entity,
+                entityName: c.entity,
+                summary: '',
+                date: new Date().toISOString(),
+                confidence: c.confidence,
+              })),
+              entities: [c.entity],
+              category: 'research' as const,
+              // Treat high-confidence corroboration clusters as rising momentum
+              momentum: c.confidence >= 70 ? 'rising' as const : 'stable' as const,
+              signalCount: c.signalCount,
+            }),
+          );
+
+          // Map intelligence.Signal → mockSignals.Signal shape expected by generateAlerts.
+          // generateAlerts only reads: id, title, entityName, confidence, significanceScore.
+          const signalsForAlerts = generatedSigs.map((s) => ({
+            id: s.id,
+            title: s.title,
+            category: 'research' as const,
+            entityId: s.affectedEntities?.[0] ?? '',
+            entityName: s.affectedEntities?.[0] ?? '',
+            summary: s.description ?? '',
+            date: s.createdAt,
+            // confidenceScore is 0.0–1.0; generateAlerts expects 0–100
+            confidence: Math.round((s.confidenceScore ?? 0) * 100),
+            significanceScore: s.significanceScore ?? null,
+            sourceSupportCount: s.sourceSupportCount ?? null,
+          }));
+
+          const generated = await generateAlerts({
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            signals: signalsForAlerts as any,
+            clusters: adaptedClusters,
+          });
+
+          const platformAlerts = generated.filter((a) => !a.userId).length;
+          const personalAlerts = generated.filter((a) => !!a.userId).length;
+
+          console.log(
+            `[pipeline] alerts stage: ${generated.length} alerts generated` +
+            ` (${platformAlerts} platform, ${personalAlerts} personal/watchlist)`,
+          );
+
+          return { alertsGenerated: generated.length, platformAlerts, personalAlerts };
+        },
+        TIMEOUT.SIGNALS,
+        correlationId,
+      );
+      if (alertsStage.error) {
+        // Alert generation is non-fatal — log but do not increment errorsCount
+        stages.push({ stage: 'alerts', status: 'error', durationMs: alertsStage.durationMs, error: alertsStage.error, timedOut: alertsStage.timedOut });
+      } else {
+        stages.push({
+          stage: 'alerts', status: 'ok', durationMs: alertsStage.durationMs,
+          ...alertsStage.result!,
         });
       }
 

@@ -3,9 +3,9 @@
  */
 export const siteConfig = {
   name: 'Omterminal',
-  tagline: 'Stop reading AI news. Start seeing the board.',
+  tagline: 'Every signal that moves AI. One terminal.',
   description:
-    'AI regulation, model releases, funding events, and global policy — structured, verified, and analyzed. One terminal. Every signal that matters.',
+    'Track AI regulation, models, funding, and policy shifts — scored by impact and structured into actionable intelligence. One terminal for every signal that matters.',
   url: 'https://omterminal.com',
   domain: 'omterminal.com',
   ogImage: '/og-image.png',
@@ -22,6 +22,8 @@ export const siteConfig = {
       { label: 'Funding', href: '/funding', id: 'funding', icon: 'trending-up', chip: null },
       { label: 'Ecosystem Graph', href: '/graph', id: 'graph', icon: 'share-2', chip: null },
       { label: 'Watchlist', href: '/watchlist', id: 'watchlist', icon: 'star', chip: null },
+      { label: 'Alerts', href: '/alerts', id: 'alerts', icon: 'bell', chip: null },
+      { label: 'Threads', href: '/threads', id: 'threads', icon: 'message-square', chip: 'NEW' },
       { label: 'Compare', href: '/compare', id: 'compare', icon: 'columns', chip: null },
     ],
     info: [
@@ -30,12 +32,11 @@ export const siteConfig = {
   },
 
   features: [
-    { icon: '⚖️', title: 'Regulatory Intelligence', body: 'EU AI Act. US executive orders. China\'s CAC rules. Every law that affects your AI deployment — tracked with plain-English impact analysis.' },
-    { icon: '📡', title: 'Model Release Radar', body: 'Every major model launch, benchmark, and capability shift — plus our "So What For You" editorial.' },
-    { icon: '💰', title: 'Funding & M&A Tracker', body: 'Who raised. Who merged. Who\'s about to. Structured data on AI funding rounds and acquisitions.' },
-    { icon: '🌍', title: 'Global Market Coverage', body: 'Key players, AI investment figures, regulatory posture, and local dynamics for major AI markets.' },
-    { icon: '🏢', title: 'Company Timelines', body: 'News history, valuations, product launches, and benchmark performance — structured and searchable.' },
-    { icon: '✅', title: 'Verified Sources', body: 'Zero aggregator fluff. Every story traced to a primary source and verified before it enters the feed.' },
+    { icon: '📡', title: 'Signals', body: 'Every regulation change, model release, funding round, and policy shift — scored by impact and delivered as structured intelligence, not articles.' },
+    { icon: '⭐', title: 'Watchlist', body: 'Track the companies, models, and regulations that matter to your portfolio. One view, always current.' },
+    { icon: '🔔', title: 'Alerts', body: 'Get notified when something moves — enforcement actions, capability jumps, acquisition signals — before the market reacts.' },
+    { icon: '⚖️', title: 'Regulation Tracker', body: 'EU AI Act. US executive orders. China\'s CAC rules. Every law that affects AI deployment — tracked with plain-English impact analysis.' },
+    { icon: '✅', title: 'Verified Intelligence', body: 'Zero aggregator noise. Every signal traced to a primary source and verified before it enters the terminal.' },
   ],
 
   stats: {
