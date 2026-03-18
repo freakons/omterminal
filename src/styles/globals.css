@@ -741,7 +741,7 @@ body {
   gap: 16px;
 }
 .nc {
-  padding: 22px 24px; border-radius: var(--r);
+  padding: 20px 22px 18px; border-radius: var(--r);
   background: var(--glass); border: 1px solid var(--border);
   cursor: pointer; transition: all 0.22s var(--ease);
   position: relative; overflow: hidden;
@@ -752,18 +752,19 @@ body {
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
   background: var(--cc, linear-gradient(90deg, var(--indigo), var(--cyan)));
   transform: scaleX(0); transform-origin: left; transition: transform 0.28s ease;
+  opacity: 0.55;
 }
-.nc:hover::before { transform: scaleX(1); }
+.nc:hover::before { transform: scaleX(1); opacity: 1; }
 .nc:hover {
   background: var(--glass2); border-color: var(--border2);
   transform: translateY(-2px); box-shadow: 0 12px 36px rgba(0,0,0,0.35);
 }
 .nc-top {
   display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 14px; gap: 8px;
+  margin-bottom: 12px; gap: 8px; flex-wrap: wrap;
 }
-.nc-badges { display: flex; align-items: center; gap: 8px; }
-.nc-indicators { display: flex; align-items: center; gap: 10px; }
+.nc-badges { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.nc-indicators { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 
 /* Indicator dots — reusable small status circles */
 .indicator-dot {
@@ -773,8 +774,9 @@ body {
 .indicator-dot--indigo { background: var(--indigo-l); }
 
 .badge {
-  font-family: var(--fm); font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
-  padding: 4px 10px; border-radius: 6px; border: 1px solid;
+  font-family: var(--fm); font-size: 9.5px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase;
+  padding: 3px 9px; border-radius: 5px; border: 1px solid;
+  white-space: nowrap;
 }
 .badge.models { color: var(--indigo-l); border-color: rgba(79,70,229,0.25); background: rgba(79,70,229,0.08); }
 .badge.agents { color: var(--cyan-l); border-color: rgba(6,182,212,0.25); background: rgba(6,182,212,0.08); }
@@ -785,34 +787,49 @@ body {
 
 .verified {
   display: flex; align-items: center; gap: 5px;
-  font-family: var(--fm); font-size: 10px; font-weight: 500; color: var(--emerald-l); opacity: 0.8;
+  font-family: var(--fm); font-size: 10px; font-weight: 500; color: var(--emerald-l);
 }
 
 .nc-title {
-  font-family: var(--fd); font-size: 19px; font-style: italic; font-weight: 500;
-  letter-spacing: -0.015em; color: var(--text); line-height: 1.35; margin-bottom: 10px;
+  font-family: var(--fd); font-size: 20px; font-style: italic; font-weight: 500;
+  letter-spacing: -0.018em; color: var(--text); line-height: 1.3; margin-bottom: 9px;
 }
 .nc-body {
-  font-family: var(--f); font-size: 14px; font-weight: 400; color: var(--text2);
-  line-height: 1.75; margin-bottom: 16px; flex: 1;
+  font-family: var(--f); font-size: 13.5px; font-weight: 400;
+  color: rgba(180,180,210,0.92);
+  line-height: 1.72; margin-bottom: 14px; flex: 1;
 }
 .nc-foot {
   display: flex; align-items: center; justify-content: space-between;
-  padding-top: 14px; border-top: 1px solid var(--border);
+  padding-top: 12px; border-top: 1px solid var(--border);
   font-family: var(--fm); font-size: 11px; color: var(--text3);
 }
-.nc-src { display: flex; align-items: center; gap: 6px; }
-.nc-date { color: var(--text3); }
+.nc-src { display: flex; align-items: center; gap: 6px; color: rgba(136,136,168,0.85); }
+.nc-date { color: rgba(136,136,168,0.7); }
+.nc-date--recent { color: var(--indigo-l); font-weight: 600; }
 .nc-why {
-  font-family: var(--f); font-size: 13px; color: var(--text2); line-height: 1.65;
+  font-family: var(--f); font-size: 13px; color: rgba(180,180,210,0.9); line-height: 1.65;
   padding: 10px 14px; margin-bottom: 14px;
-  border-left: 2px solid rgba(79,70,229,0.3);
-  background: rgba(79,70,229,0.03); border-radius: 0 8px 8px 0;
+  border-left: 2px solid rgba(79,70,229,0.45);
+  background: rgba(79,70,229,0.05); border-radius: 0 8px 8px 0;
 }
 .nc-why-label {
   display: block; font-family: var(--fm); font-size: 9px; font-weight: 600;
   letter-spacing: 0.1em; text-transform: uppercase; color: var(--indigo-l);
-  margin-bottom: 4px; opacity: 0.7;
+  margin-bottom: 5px;
+}
+.nc-intel {
+  margin-top: 8px; margin-bottom: 14px;
+  font-family: var(--f); font-size: 12.5px; color: rgba(136,136,168,0.85); line-height: 1.55;
+  display: flex; flex-direction: column; gap: 5px;
+  padding: 9px 12px;
+  background: rgba(255,255,255,0.018); border-radius: 7px;
+  border: 1px solid var(--border);
+}
+.nc-intel-row { display: flex; flex-direction: column; gap: 1px; }
+.nc-intel-label {
+  font-family: var(--fm); font-size: 8.5px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--text3); font-weight: 600;
 }
 .nc-affected {
   font-family: var(--f); font-size: 12px; color: var(--text3); line-height: 1.5;
@@ -820,27 +837,40 @@ body {
 }
 .nc-affected-label {
   font-family: var(--fm); font-size: 10px; font-weight: 600;
-  letter-spacing: 0.06em; text-transform: uppercase; color: var(--text3);
+  letter-spacing: 0.06em; text-transform: uppercase; color: rgba(136,136,168,0.7);
 }
 
 /* Significance tier indicators */
-.nc-critical { border-color: rgba(79,70,229,0.3); background: rgba(79,70,229,0.025); }
-.nc-critical::before { background: linear-gradient(90deg, var(--indigo), var(--violet)); transform: scaleX(1) !important; }
-.nc-high { border-color: rgba(6,182,212,0.2); background: rgba(6,182,212,0.015); }
+.nc-critical {
+  border-color: rgba(79,70,229,0.38); background: rgba(79,70,229,0.04);
+  box-shadow: inset 0 0 0 1px rgba(79,70,229,0.08), 0 2px 12px rgba(79,70,229,0.08);
+}
+.nc-critical::before {
+  background: linear-gradient(90deg, var(--indigo), var(--violet));
+  transform: scaleX(1) !important; opacity: 1 !important;
+}
+.nc-high {
+  border-color: rgba(6,182,212,0.28); background: rgba(6,182,212,0.025);
+}
+.nc-high::before {
+  background: linear-gradient(90deg, var(--cyan), var(--indigo-l));
+  transform: scaleX(1) !important; opacity: 0.6;
+}
 
 .sig-badge {
   font-family: var(--fm); font-size: 9px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
-  padding: 3px 8px; border-radius: 4px; line-height: 1.4;
+  padding: 3px 9px; border-radius: 4px; line-height: 1.4;
 }
 .sig-critical {
-  color: var(--indigo-l); background: rgba(79,70,229,0.12); border: 1px solid rgba(79,70,229,0.25);
+  color: var(--indigo-l); background: rgba(79,70,229,0.16); border: 1px solid rgba(79,70,229,0.35);
+  text-shadow: 0 0 8px rgba(129,140,248,0.4);
 }
 .sig-high {
-  color: var(--cyan-l); background: rgba(6,182,212,0.08); border: 1px solid rgba(6,182,212,0.2);
+  color: var(--cyan-l); background: rgba(6,182,212,0.1); border: 1px solid rgba(6,182,212,0.28);
 }
 .corroboration-badge {
   display: flex; align-items: center; gap: 5px;
-  font-family: var(--fm); font-size: 10px; font-weight: 500; color: var(--emerald-l); opacity: 0.8;
+  font-family: var(--fm); font-size: 10px; font-weight: 500; color: var(--emerald-l);
 }
 
 /* Signal card link wrapper */
