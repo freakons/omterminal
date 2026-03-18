@@ -79,6 +79,7 @@ describe('computeRankScore — basic behavior', () => {
     assert.ok('significance' in result.breakdown);
     assert.ok('freshness' in result.breakdown);
     assert.ok('entityBoost' in result.breakdown);
+    assert.ok('novelty' in result.breakdown);
     assert.ok('significanceFallback' in result.breakdown);
   });
 
@@ -223,7 +224,7 @@ describe('computeRankScore — ordering stability', () => {
   });
 
   it('weights sum to 1.0', () => {
-    const sum = RANK_WEIGHTS.significance + RANK_WEIGHTS.freshness + RANK_WEIGHTS.entityBoost;
+    const sum = RANK_WEIGHTS.significance + RANK_WEIGHTS.freshness + RANK_WEIGHTS.novelty + RANK_WEIGHTS.entityBoost;
     assert.ok(Math.abs(sum - 1.0) < 0.001, `Weights should sum to 1.0, got ${sum}`);
   });
 });

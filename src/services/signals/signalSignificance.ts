@@ -67,6 +67,13 @@ export interface SignificanceInput {
    * When absent, the source trust component uses a neutral midpoint.
    */
   sourceIds?: string[];
+
+  /**
+   * Optional list of entity names involved in this signal.  When provided,
+   * enables entity prominence scoring — signals involving major AI players
+   * receive a boost.
+   */
+  entityNames?: string[];
 }
 
 /**
@@ -97,6 +104,8 @@ export interface SignificanceResult {
     typeWeight: number;
     /** Entity spread component (0–100 before weighting). */
     entitySpread: number;
+    /** Entity prominence component (0–100 before weighting). */
+    entityProminence: number;
   };
 }
 
@@ -124,12 +133,13 @@ const DEFAULT_TYPE_WEIGHT = 60;
 // ─────────────────────────────────────────────────────────────────────────────
 
 const COMPONENT_WEIGHTS = {
-  confidence:        0.30,  // Confidence remains the primary signal of validity
+  confidence:        0.25,  // Confidence remains important but shares weight with prominence
   sourceDiversity:   0.20,  // Source corroboration (distinct source count)
   sourceTrustQuality: 0.10, // Quality/credibility of contributing sources
-  velocity:          0.20,  // How fast events are clustering matters for timeliness
+  velocity:          0.15,  // How fast events are clustering matters for timeliness
   typeWeight:        0.10,  // Strategic category boost
   entitySpread:      0.10,  // Breadth of impact across the AI ecosystem
+  entityProminence:  0.10,  // Boost for signals involving major AI players
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -215,6 +225,33 @@ function scoreSourceTrustQuality(sourceIds?: string[]): number {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Entity prominence
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PROMINENT_ENTITIES = new Set([
+  'openai', 'anthropic', 'google', 'google deepmind', 'deepmind', 'meta',
+  'microsoft', 'nvidia', 'apple', 'amazon', 'aws', 'mistral', 'xai',
+  'cohere', 'stability ai', 'hugging face', 'inflection', 'character ai',
+  'databricks', 'snowflake', 'salesforce', 'oracle', 'ibm', 'samsung',
+  'baidu', 'alibaba', 'tencent', 'bytedance',
+]);
+
+/**
+ * Entity prominence: rewards signals that involve major AI players.
+ * 0 entities → 0.  1 major entity → 60.  2+ → up to 100.
+ * Returns neutral 40 when no entity names are provided.
+ */
+function scoreEntityProminence(entityNames?: string[]): number {
+  if (!entityNames || entityNames.length === 0) return 40;
+  const majorCount = entityNames.filter(
+    (n) => PROMINENT_ENTITIES.has(n.toLowerCase().trim()),
+  ).length;
+  if (majorCount === 0) return 20;
+  if (majorCount === 1) return 60;
+  return toScore(Math.min(majorCount, 4) / 4); // 2→50, 3→75, 4→100
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main export
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -252,6 +289,7 @@ export function computeSignificance(input: SignificanceInput): SignificanceResul
     windowHours,
     entityCount,
     sourceIds,
+    entityNames,
   } = input;
 
   // --- per-component scores (0–100) ---
@@ -262,6 +300,7 @@ export function computeSignificance(input: SignificanceInput): SignificanceResul
     velocity:          scoreVelocity(eventCount, windowHours),
     typeWeight:        scoreTypeWeight(signalType),
     entitySpread:      scoreEntitySpread(entityCount),
+    entityProminence:  scoreEntityProminence(entityNames),
   };
 
   // --- weighted composite ---
@@ -271,7 +310,8 @@ export function computeSignificance(input: SignificanceInput): SignificanceResul
     components.sourceTrustQuality * COMPONENT_WEIGHTS.sourceTrustQuality +
     components.velocity          * COMPONENT_WEIGHTS.velocity          +
     components.typeWeight        * COMPONENT_WEIGHTS.typeWeight        +
-    components.entitySpread      * COMPONENT_WEIGHTS.entitySpread;
+    components.entitySpread      * COMPONENT_WEIGHTS.entitySpread      +
+    components.entityProminence  * COMPONENT_WEIGHTS.entityProminence;
 
   const significanceScore = Math.round(clamp01(raw / 100) * 100);
 
