@@ -9,6 +9,7 @@ import { SignalMomentumBadge } from '@/components/signals/SignalMomentumBadge';
 import type { Signal } from '@/data/mockSignals';
 import { EmailDigestCard } from '@/components/alerts/EmailDigestCard';
 import { WatchlistDiscovery } from '@/components/watchlist/WatchlistDiscovery';
+import { WatchlistDigest } from '@/components/watchlist/WatchlistDigest';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Styles
@@ -109,6 +110,11 @@ export default function WatchlistPage() {
 
           {/* Entity discovery — add more */}
           <DiscoveryPanel />
+
+          {/* Watchlist digest — on-site daily summary */}
+          {feed.status === 'done' && feed.signals.length > 0 && (
+            <WatchlistDigest signals={feed.signals} entities={entities} />
+          )}
 
           {/* Email digest subscription */}
           <EmailDigestCard />
