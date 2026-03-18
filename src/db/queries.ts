@@ -2947,6 +2947,119 @@ export async function getEngagementSummary(): Promise<EngagementSummary> {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Product Analytics — Time to Engagement
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface TimeToEngagementTrendPoint {
+  day: string;
+  avg_seconds: number;
+}
+
+export interface TimeToEngagementMetric {
+  avg_seconds: number | null;
+  median_seconds: number | null;
+  trend_7d: TimeToEngagementTrendPoint[];
+}
+
+export interface TimeToEngagementStats {
+  signal: TimeToEngagementMetric;
+  alert: TimeToEngagementMetric;
+}
+
+/**
+ * Compute how quickly users engage with signals and alerts after creation.
+ *
+ * - signal: time from signals.created_at → first signal_opened product event
+ * - alert: time from alerts.created_at → first alert_read product event
+ *
+ * Returns average, median (PERCENTILE_CONT), and a 7-day daily trend.
+ */
+export async function getTimeToEngagement(): Promise<TimeToEngagementStats> {
+  const empty: TimeToEngagementMetric = { avg_seconds: null, median_seconds: null, trend_7d: [] };
+
+  try {
+    // ── Signal time-to-engagement (overall avg + median) ──────────────────
+    type OverallRow = { avg_seconds: string | null; median_seconds: string | null };
+
+    const signalOverall = await dbQuery<OverallRow>`
+      SELECT
+        AVG(EXTRACT(EPOCH FROM (pe.created_at - s.created_at)))::text         AS avg_seconds,
+        PERCENTILE_CONT(0.5) WITHIN GROUP (
+          ORDER BY EXTRACT(EPOCH FROM (pe.created_at - s.created_at))
+        )::text                                                                AS median_seconds
+      FROM product_events pe
+      JOIN signals s ON s.id::text = pe.signal_id
+      WHERE pe.event_type = 'signal_opened'
+        AND pe.signal_id IS NOT NULL
+        AND pe.created_at > s.created_at
+    `;
+
+    // ── Alert time-to-engagement (overall avg + median) ───────────────────
+    const alertOverall = await dbQuery<OverallRow>`
+      SELECT
+        AVG(EXTRACT(EPOCH FROM (pe.created_at - a.created_at)))::text         AS avg_seconds,
+        PERCENTILE_CONT(0.5) WITHIN GROUP (
+          ORDER BY EXTRACT(EPOCH FROM (pe.created_at - a.created_at))
+        )::text                                                                AS median_seconds
+      FROM product_events pe
+      JOIN alerts a ON a.id::text = pe.alert_id
+      WHERE pe.event_type = 'alert_read'
+        AND pe.alert_id IS NOT NULL
+        AND pe.created_at > a.created_at
+    `;
+
+    // ── Signal 7-day daily trend ──────────────────────────────────────────
+    type TrendRow = { day: string; avg_seconds: string };
+    const signalTrend = await dbQuery<TrendRow>`
+      SELECT
+        DATE_TRUNC('day', pe.created_at)::text                                AS day,
+        AVG(EXTRACT(EPOCH FROM (pe.created_at - s.created_at)))::text         AS avg_seconds
+      FROM product_events pe
+      JOIN signals s ON s.id::text = pe.signal_id
+      WHERE pe.event_type = 'signal_opened'
+        AND pe.signal_id IS NOT NULL
+        AND pe.created_at > NOW() - INTERVAL '7 days'
+        AND pe.created_at > s.created_at
+      GROUP BY DATE_TRUNC('day', pe.created_at)
+      ORDER BY 1
+    `;
+
+    // ── Alert 7-day daily trend ───────────────────────────────────────────
+    const alertTrend = await dbQuery<TrendRow>`
+      SELECT
+        DATE_TRUNC('day', pe.created_at)::text                                AS day,
+        AVG(EXTRACT(EPOCH FROM (pe.created_at - a.created_at)))::text         AS avg_seconds
+      FROM product_events pe
+      JOIN alerts a ON a.id::text = pe.alert_id
+      WHERE pe.event_type = 'alert_read'
+        AND pe.alert_id IS NOT NULL
+        AND pe.created_at > NOW() - INTERVAL '7 days'
+        AND pe.created_at > a.created_at
+      GROUP BY DATE_TRUNC('day', pe.created_at)
+      ORDER BY 1
+    `;
+
+    const sr = signalOverall[0];
+    const ar = alertOverall[0];
+
+    return {
+      signal: {
+        avg_seconds: sr?.avg_seconds != null ? parseFloat(sr.avg_seconds) : null,
+        median_seconds: sr?.median_seconds != null ? parseFloat(sr.median_seconds) : null,
+        trend_7d: signalTrend.map((r) => ({ day: r.day, avg_seconds: parseFloat(r.avg_seconds) })),
+      },
+      alert: {
+        avg_seconds: ar?.avg_seconds != null ? parseFloat(ar.avg_seconds) : null,
+        median_seconds: ar?.median_seconds != null ? parseFloat(ar.median_seconds) : null,
+        trend_7d: alertTrend.map((r) => ({ day: r.day, avg_seconds: parseFloat(r.avg_seconds) })),
+      },
+    };
+  } catch {
+    return { signal: empty, alert: empty };
+  }
+}
+
 /**
  * Get top entities ranked by momentum score.
  *

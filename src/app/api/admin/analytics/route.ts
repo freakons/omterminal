@@ -19,6 +19,7 @@ import {
   getTopOpenedSignals,
   getAlertVolumeByType,
   getDigestStats,
+  getTimeToEngagement,
 } from '@/db/queries';
 
 function isAuthorized(req: NextRequest): boolean {
@@ -35,16 +36,17 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const [engagement, topEntities, topSignals, alertVolume, digest] = await Promise.all([
+  const [engagement, topEntities, topSignals, alertVolume, digest, timeToEngagement] = await Promise.all([
     getEngagementSummary(),
     getTopWatchedEntities(20),
     getTopOpenedSignals(10),
     getAlertVolumeByType(),
     getDigestStats(),
+    getTimeToEngagement(),
   ]);
 
   return NextResponse.json(
-    { ok: true, engagement, topEntities, topSignals, alertVolume, digest },
+    { ok: true, engagement, topEntities, topSignals, alertVolume, digest, timeToEngagement },
     { headers: { 'Cache-Control': 'no-store' } },
   );
 }
