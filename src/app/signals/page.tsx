@@ -3,6 +3,7 @@ import { getSignals } from '@/db/queries';
 import { MOCK_SIGNALS } from '@/data/mockSignals';
 import { SignalsBrowser } from './SignalsBrowser';
 import { buildDatasetSchema } from '@/lib/seo/jsonld';
+import { IntelligenceSnapshot } from '@/components/signals/IntelligenceSnapshot';
 
 export const metadata: Metadata = {
   title: 'AI Signals — Latest Models, Funding & Regulation',
@@ -95,6 +96,8 @@ export default async function SignalsPage() {
           </span>
         </div>
       </section>
+
+      <IntelligenceSnapshot signals={initialSignals} />
 
       <SignalsBrowser initialSignals={initialSignals} />
     </>
