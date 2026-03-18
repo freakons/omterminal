@@ -2,8 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { mockGraphData, type GraphNode, type GraphData } from '@/data/mockGraph';
-import type { EntityProfile } from '@/data/mockEntities';
+import { mockGraphData, type GraphNode, type GraphLink, type GraphData } from '@/data/mockGraph';
 
 // Disable SSR — ForceGraph2D uses canvas and window APIs
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -21,57 +20,52 @@ const NODE_COLORS: Record<GraphNode['type'], string> = {
 
 /** Node as enriched by force-graph at runtime */
 type RuntimeNode = GraphNode & { x?: number; y?: number };
-type RuntimeLink = { source: string | RuntimeNode; target: string | RuntimeNode };
+type RuntimeLink = GraphLink & { source: string | RuntimeNode; target: string | RuntimeNode };
 
 function nodeId(n: string | RuntimeNode): string {
   return typeof n === 'object' ? n.id : n;
 }
 
-/** Build graph data from entity profiles (entity nodes only, no links). */
-function buildGraphFromEntities(entities: EntityProfile[]): GraphData {
-  if (entities.length === 0) return mockGraphData;
+// ─────────────────────────────────────────────────────────────────────────────
+// Data fetching — uses /api/graph/relationships for live relationship data
+// ─────────────────────────────────────────────────────────────────────────────
 
-  const nodes: GraphNode[] = entities.map(e => ({
-    id:    e.id,
-    type:  'entity' as const,
-    label: e.name,
-  }));
+async function fetchGraphData(): Promise<{ data: GraphData; isDemo: boolean; source: string }> {
+  try {
+    const res = await fetch('/api/graph/relationships', { next: { revalidate: 120 } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
 
-  // Connect entities in the same sector
-  const links: { source: string; target: string }[] = [];
-  const bySector: Record<string, string[]> = {};
-  for (const e of entities) {
-    if (e.sector) {
-      bySector[e.sector] = bySector[e.sector] ?? [];
-      bySector[e.sector].push(e.id);
+    const source: string = json.source ?? 'unknown';
+    const graph: GraphData | undefined = json.graph;
+
+    // Use live graph if it has nodes and came from real DB data
+    if (graph && Array.isArray(graph.nodes) && graph.nodes.length > 0 && source === 'db') {
+      return { data: graph, isDemo: false, source };
     }
-  }
-  for (const ids of Object.values(bySector)) {
-    for (let i = 0; i < ids.length - 1; i++) {
-      links.push({ source: ids[i], target: ids[i + 1] });
-    }
-  }
 
-  return { nodes, links };
+    // Mock data returned by the API (dev mode or empty DB) — show demo banner
+    if (graph && Array.isArray(graph.nodes) && graph.nodes.length > 0) {
+      return { data: graph, isDemo: true, source };
+    }
+
+    // No graph data at all — fall back to static mock so the canvas isn't blank
+    return { data: mockGraphData, isDemo: true, source: 'fallback' };
+  } catch {
+    return { data: mockGraphData, isDemo: true, source: 'fallback' };
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Data fetching
+// Link helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function fetchGraphData(): Promise<{ data: GraphData; isDemo: boolean }> {
-  try {
-    const res = await fetch('/api/entities', { next: { revalidate: 120 } });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = await res.json();
-    if (Array.isArray(json.entities) && json.entities.length > 0) {
-      return { data: buildGraphFromEntities(json.entities as EntityProfile[]), isDemo: false };
-    }
-    // No real data yet — fall back to mock so the graph isn't blank
-    return { data: mockGraphData, isDemo: true };
-  } catch {
-    return { data: mockGraphData, isDemo: true };
-  }
+/** Base link opacity scaled by relationship strength (0–100). */
+function baseLinkAlpha(link: RuntimeLink): number {
+  if (link.tier === 'strong')   return 0.45;
+  if (link.tier === 'moderate') return 0.25;
+  if (link.strength != null)    return Math.max(0.06, link.strength / 100 * 0.4);
+  return 0.1; // generic edge (entity→event, event→signal)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -83,12 +77,14 @@ export function IntelligenceGraph() {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [graphData, setGraphData] = useState<GraphData>(mockGraphData);
   const [isDemo, setIsDemo] = useState(true);
+  const [dataSource, setDataSource] = useState<string>('fallback');
 
-  // Fetch entity graph data on mount; fall back to mock data if unavailable
+  // Fetch live relationship graph on mount; fall back to mock data if unavailable
   useEffect(() => {
-    fetchGraphData().then(({ data, isDemo: demo }) => {
+    fetchGraphData().then(({ data, isDemo: demo, source }) => {
       setGraphData(data);
       setIsDemo(demo);
+      setDataSource(source);
     });
   }, []);
 
@@ -149,22 +145,32 @@ export function IntelligenceGraph() {
 
   const getLinkColor = useCallback(
     (link: RuntimeLink) => {
-      if (!hoveredId) return 'rgba(255,255,255,0.1)';
       const src = nodeId(link.source as string | RuntimeNode);
       const tgt = nodeId(link.target as string | RuntimeNode);
-      return src === hoveredId || tgt === hoveredId
-        ? 'rgba(255,255,255,0.55)'
-        : 'rgba(255,255,255,0.04)';
+      if (hoveredId) {
+        return src === hoveredId || tgt === hoveredId
+          ? 'rgba(255,255,255,0.6)'
+          : 'rgba(255,255,255,0.03)';
+      }
+      const alpha = baseLinkAlpha(link);
+      // Tint strong entity↔entity edges with a subtle blue hue
+      if (link.tier) return `rgba(147,197,253,${alpha})`;
+      return `rgba(255,255,255,${alpha})`;
     },
     [hoveredId],
   );
 
   const getLinkWidth = useCallback(
     (link: RuntimeLink) => {
-      if (!hoveredId) return 0.8;
       const src = nodeId(link.source as string | RuntimeNode);
       const tgt = nodeId(link.target as string | RuntimeNode);
-      return src === hoveredId || tgt === hoveredId ? 2.5 : 0.4;
+      if (hoveredId) {
+        return src === hoveredId || tgt === hoveredId ? 2.5 : 0.3;
+      }
+      if (link.tier === 'strong')   return 1.8;
+      if (link.tier === 'moderate') return 1.2;
+      if (link.strength != null)    return Math.max(0.4, link.strength / 100 * 1.5);
+      return 0.6;
     },
     [hoveredId],
   );
@@ -179,6 +185,11 @@ export function IntelligenceGraph() {
       containerRef.current.style.cursor = node ? 'pointer' : 'default';
     }
   }, []);
+
+  const demoBannerText =
+    dataSource === 'fallback'
+      ? 'Graph unavailable — showing static demo'
+      : 'Demo data — live graph populates once the ingestion pipeline runs';
 
   return (
     <div style={{ width: '100%', height: '100%', minHeight: 600, position: 'relative' }}>
@@ -200,7 +211,26 @@ export function IntelligenceGraph() {
           pointerEvents: 'none',
           whiteSpace: 'nowrap',
         }}>
-          Demo data — live graph populates once the ingestion pipeline runs
+          {demoBannerText}
+        </div>
+      )}
+      {!isDemo && (
+        <div style={{
+          position: 'absolute',
+          top: 12,
+          right: 12,
+          zIndex: 10,
+          background: 'rgba(16,185,129,0.12)',
+          border: '1px solid rgba(16,185,129,0.3)',
+          borderRadius: 6,
+          padding: '3px 10px',
+          fontSize: '0.68rem',
+          color: 'rgba(110,231,183,0.85)',
+          letterSpacing: '0.04em',
+          backdropFilter: 'blur(8px)',
+          pointerEvents: 'none',
+        }}>
+          live
         </div>
       )}
     <div
