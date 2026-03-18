@@ -7,10 +7,16 @@ export const metadata: Metadata = {
     'Interactive force-directed map of relationships between AI companies, events, and signals.',
 };
 
-const LEGEND = [
-  { type: 'entity', label: 'Entity',  color: '#3b82f6' },
-  { type: 'event',  label: 'Event',   color: '#f59e0b' },
-  { type: 'signal', label: 'Signal',  color: '#10b981' },
+const NODE_LEGEND = [
+  { label: 'Entity',  color: '#3b82f6' },
+  { label: 'Event',   color: '#f59e0b' },
+  { label: 'Signal',  color: '#10b981' },
+] as const;
+
+const EDGE_LEGEND = [
+  { label: 'Strong',   width: 3,   opacity: 0.85, color: '#93c5fd' },
+  { label: 'Moderate', width: 2,   opacity: 0.6,  color: '#93c5fd' },
+  { label: 'Weak',     width: 1.2, opacity: 0.35, color: '#93c5fd' },
 ] as const;
 
 export default function GraphPage() {
@@ -43,15 +49,14 @@ export default function GraphPage() {
       {/* Legend */}
       <div style={{
         display: 'flex',
-        gap: 20,
+        gap: 24,
         marginBottom: 16,
         flexWrap: 'wrap',
+        alignItems: 'center',
       }}>
-        {LEGEND.map(({ label, color }) => (
-          <div
-            key={label}
-            style={{ display: 'flex', alignItems: 'center', gap: 7 }}
-          >
+        {/* Node types */}
+        {NODE_LEGEND.map(({ label, color }) => (
+          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
             <span style={{
               display: 'inline-block',
               width: 10,
@@ -61,6 +66,27 @@ export default function GraphPage() {
               boxShadow: `0 0 8px ${color}`,
               flexShrink: 0,
             }} />
+            <span style={{ fontSize: '0.78rem', color: 'var(--text2)', letterSpacing: '0.04em' }}>
+              {label}
+            </span>
+          </div>
+        ))}
+
+        {/* Divider */}
+        <span style={{ width: 1, height: 14, background: 'rgba(255,255,255,0.1)', flexShrink: 0 }} />
+
+        {/* Edge strength */}
+        {EDGE_LEGEND.map(({ label, width, opacity, color }) => (
+          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+            <svg width={22} height={10} style={{ flexShrink: 0 }}>
+              <line
+                x1={0} y1={5} x2={22} y2={5}
+                stroke={color}
+                strokeWidth={width}
+                strokeOpacity={opacity}
+                strokeLinecap="round"
+              />
+            </svg>
             <span style={{ fontSize: '0.78rem', color: 'var(--text2)', letterSpacing: '0.04em' }}>
               {label}
             </span>

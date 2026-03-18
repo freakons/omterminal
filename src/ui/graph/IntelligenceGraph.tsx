@@ -1,6 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { mockGraphData, type GraphNode, type GraphLink, type GraphData } from '@/data/mockGraph';
 
@@ -18,12 +19,22 @@ const NODE_COLORS: Record<GraphNode['type'], string> = {
   signal: '#10b981', // emerald
 };
 
+const NODE_TYPE_LABELS: Record<GraphNode['type'], string> = {
+  entity: 'Entity',
+  event:  'Event',
+  signal: 'Signal',
+};
+
 /** Node as enriched by force-graph at runtime */
 type RuntimeNode = GraphNode & { x?: number; y?: number };
 type RuntimeLink = GraphLink & { source: string | RuntimeNode; target: string | RuntimeNode };
 
 function nodeId(n: string | RuntimeNode): string {
   return typeof n === 'object' ? n.id : n;
+}
+
+function nodeLabel(n: string | RuntimeNode): string {
+  return typeof n === 'object' ? n.label : n;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -69,12 +80,35 @@ function baseLinkAlpha(link: RuntimeLink): number {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Tooltip helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+function formatDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  } catch {
+    return iso;
+  }
+}
+
+function tierLabel(tier: string): string {
+  if (tier === 'strong')   return 'Strong';
+  if (tier === 'moderate') return 'Moderate';
+  if (tier === 'weak')     return 'Weak';
+  return tier;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Component
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function IntelligenceGraph() {
+  const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [hoveredNode, setHoveredNode] = useState<RuntimeNode | null>(null);
+  const [hoveredLink, setHoveredLink] = useState<RuntimeLink | null>(null);
+  const [mousePos, setMousePos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [graphData, setGraphData] = useState<GraphData>(mockGraphData);
   const [isDemo, setIsDemo] = useState(true);
   const [dataSource, setDataSource] = useState<string>('fallback');
@@ -86,6 +120,14 @@ export function IntelligenceGraph() {
       setIsDemo(demo);
       setDataSource(source);
     });
+  }, []);
+
+  // Track mouse position for tooltip placement
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (rect) {
+      setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    }
   }, []);
 
   /** Set of node IDs connected to the hovered node */
@@ -176,13 +218,31 @@ export function IntelligenceGraph() {
   );
 
   const handleNodeClick = useCallback((node: RuntimeNode) => {
-    console.log('[IntelligenceGraph] node clicked:', node);
-  }, []);
+    if (node.type === 'entity') {
+      router.push(`/entity/${node.id}`);
+    } else if (node.type === 'signal') {
+      router.push(`/signals/${node.id}`);
+    }
+    // event nodes: graceful no-op (no stable route pattern for graph node IDs)
+  }, [router]);
 
   const handleNodeHover = useCallback((node: RuntimeNode | null) => {
     setHoveredId(node?.id ?? null);
+    setHoveredNode(node ?? null);
+    // Clear link tooltip when hovering a node
+    if (node) setHoveredLink(null);
     if (containerRef.current) {
-      containerRef.current.style.cursor = node ? 'pointer' : 'default';
+      const isClickable = node?.type === 'entity' || node?.type === 'signal';
+      containerRef.current.style.cursor = isClickable ? 'pointer' : node ? 'default' : 'default';
+    }
+  }, []);
+
+  const handleLinkHover = useCallback((link: RuntimeLink | null) => {
+    setHoveredLink(link ?? null);
+    // Clear node tooltip when hovering a link
+    if (link) {
+      setHoveredNode(null);
+      setHoveredId(null);
     }
   }, []);
 
@@ -190,6 +250,98 @@ export function IntelligenceGraph() {
     dataSource === 'fallback'
       ? 'Graph unavailable — showing static demo'
       : 'Demo data — live graph populates once the ingestion pipeline runs';
+
+  // ── Tooltip render helpers ────────────────────────────────────────────────
+
+  const TOOLTIP_STYLE: React.CSSProperties = {
+    position: 'absolute',
+    zIndex: 20,
+    background: 'rgba(15,15,25,0.92)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: 8,
+    padding: '10px 14px',
+    fontSize: '0.76rem',
+    color: 'rgba(238,238,248,0.85)',
+    backdropFilter: 'blur(12px)',
+    pointerEvents: 'none',
+    maxWidth: 240,
+    lineHeight: 1.55,
+    boxShadow: '0 4px 24px rgba(0,0,0,0.5)',
+  };
+
+  // Offset tooltip from cursor to avoid flickering
+  const tooltipX = mousePos.x + 14;
+  const tooltipY = mousePos.y - 10;
+
+  const nodeTooltip = hoveredNode && (
+    <div style={{ ...TOOLTIP_STYLE, left: tooltipX, top: tooltipY }}>
+      <div style={{ fontWeight: 600, color: NODE_COLORS[hoveredNode.type] ?? '#fff', marginBottom: 3 }}>
+        {hoveredNode.label}
+      </div>
+      <div style={{ color: 'rgba(238,238,248,0.5)', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+        {NODE_TYPE_LABELS[hoveredNode.type]}
+      </div>
+      {(hoveredNode.type === 'entity' || hoveredNode.type === 'signal') && (
+        <div style={{ marginTop: 6, color: 'rgba(238,238,248,0.4)', fontSize: '0.68rem' }}>
+          Click to open →
+        </div>
+      )}
+    </div>
+  );
+
+  const linkTooltip = hoveredLink && (() => {
+    const srcLabel = nodeLabel(hoveredLink.source as string | RuntimeNode);
+    const tgtLabel = nodeLabel(hoveredLink.target as string | RuntimeNode);
+    const hasRelData = hoveredLink.tier || hoveredLink.strength != null;
+
+    return (
+      <div style={{ ...TOOLTIP_STYLE, left: tooltipX, top: tooltipY }}>
+        <div style={{ fontWeight: 600, marginBottom: 5 }}>
+          {srcLabel}{' '}
+          <span style={{ color: 'rgba(238,238,248,0.35)' }}>→</span>{' '}
+          {tgtLabel}
+        </div>
+        {hasRelData && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            {hoveredLink.tier && (
+              <div>
+                <span style={{ color: 'rgba(238,238,248,0.45)' }}>Tier: </span>
+                <span style={{
+                  color: hoveredLink.tier === 'strong' ? '#93c5fd'
+                       : hoveredLink.tier === 'moderate' ? '#fcd34d'
+                       : 'rgba(238,238,248,0.65)',
+                }}>
+                  {tierLabel(hoveredLink.tier)}
+                </span>
+              </div>
+            )}
+            {hoveredLink.strength != null && (
+              <div>
+                <span style={{ color: 'rgba(238,238,248,0.45)' }}>Strength: </span>
+                {Math.round(hoveredLink.strength)}/100
+              </div>
+            )}
+            {hoveredLink.sharedSignals != null && (
+              <div style={{ marginTop: 4, color: 'rgba(238,238,248,0.6)', fontStyle: 'italic' }}>
+                Connected through {hoveredLink.sharedSignals} shared signal{hoveredLink.sharedSignals !== 1 ? 's' : ''}
+              </div>
+            )}
+            {hoveredLink.lastInteraction && (
+              <div>
+                <span style={{ color: 'rgba(238,238,248,0.45)' }}>Last activity: </span>
+                {formatDate(hoveredLink.lastInteraction)}
+              </div>
+            )}
+          </div>
+        )}
+        {!hasRelData && (
+          <div style={{ color: 'rgba(238,238,248,0.4)', fontSize: '0.7rem' }}>
+            Structural connection
+          </div>
+        )}
+      </div>
+    );
+  })();
 
   return (
     <div style={{ width: '100%', height: '100%', minHeight: 600, position: 'relative' }}>
@@ -233,18 +385,27 @@ export function IntelligenceGraph() {
           live
         </div>
       )}
+
+      {/* Node tooltip */}
+      {nodeTooltip}
+
+      {/* Link tooltip */}
+      {linkTooltip}
+
     <div
       ref={containerRef}
       style={{ width: '100%', height: '100%', minHeight: 600 }}
+      onMouseMove={handleMouseMove}
     >
       <ForceGraph2D
         graphData={graphData}
         backgroundColor="transparent"
         nodeCanvasObject={paintNode}
         nodeCanvasObjectMode={() => 'replace'}
-        nodeLabel="label"
+        nodeLabel={() => ''}
         onNodeClick={handleNodeClick}
         onNodeHover={handleNodeHover}
+        onLinkHover={handleLinkHover}
         linkColor={getLinkColor}
         linkWidth={getLinkWidth}
         cooldownTicks={120}
