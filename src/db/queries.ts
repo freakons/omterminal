@@ -905,8 +905,12 @@ export async function getSignalsForEntities(
           AND (s.status IS NULL OR s.status NOT IN ('rejected'))
         ORDER BY s.id, s.created_at DESC
       `;
-      // Re-sort by recency after DISTINCT ON id
-      rows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      // Re-sort by significance (desc) then recency after DISTINCT ON id
+      rows.sort((a, b) => {
+        const sigDiff = (b.significance_score ?? 50) - (a.significance_score ?? 50);
+        if (sigDiff !== 0) return sigDiff;
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
       return rows.slice(0, safeLimit).map(rowToSignal);
     }
 
@@ -921,7 +925,7 @@ export async function getSignalsForEntities(
       FROM signals
       WHERE LOWER(entity_name) = ANY(${lowerNames})
         AND (status IS NULL OR status NOT IN ('rejected'))
-      ORDER BY created_at DESC
+      ORDER BY COALESCE(significance_score, 50) DESC, created_at DESC
       LIMIT ${safeLimit}
     `;
     return rows.map(rowToSignal);
