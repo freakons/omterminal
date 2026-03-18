@@ -17,7 +17,7 @@ import { EntityMomentumBadge } from '@/components/entity/EntityMomentumBadge';
 import { composeFeed, getSignificanceTier } from '@/lib/signals/feedComposer';
 import { explainSignal } from '@/lib/signals/explanationLayer';
 import type { Signal, SignalCategory } from '@/data/mockSignals';
-import { buildEntitySchema } from '@/lib/seo/jsonld';
+import { buildEntitySchema, buildBreadcrumbSchema } from '@/lib/seo/jsonld';
 import { siteConfig } from '@/config/site';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -161,10 +161,15 @@ export async function generateMetadata(
     },
     keywords: [
       name,
+      `${name} AI`,
+      `${name} funding`,
+      `${name} signals`,
       'AI intelligence',
       'AI signals',
-      ...(entity?.sector ? [entity.sector] : []),
+      ...(entity?.sector ? [entity.sector, `${entity.sector} AI`] : []),
+      ...(entity?.country ? [`AI ${entity.country}`] : []),
       ...(entity?.tags ?? []),
+      'Omterminal',
     ],
   };
 }
@@ -230,13 +235,33 @@ export default async function EntityDossierPage(
     description: entity.summary,
     foundingDate: entity.founded,
     website: entity.website,
+    sector: entity.sector,
+    country: entity.country,
+    tags: entity.tags,
   });
+
+  const breadcrumbLd = buildBreadcrumbSchema([
+    { name: 'Omterminal', url: siteConfig.url },
+    { name: 'Intelligence', url: `${siteConfig.url}/intelligence` },
+    { name: entityName, url: `${siteConfig.url}/entity/${slug}` },
+  ]);
+
+  // Map signal categories to dedicated page URLs for internal linking
+  const CATEGORY_URLS: Record<string, string> = {
+    models: '/models',
+    regulation: '/regulation',
+    funding: '/funding',
+  };
 
   return (
     <div className="page-enter">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbLd) }}
       />
 
       {/* Breadcrumb nav */}
@@ -371,6 +396,67 @@ export default async function EntityDossierPage(
           )}
         </div>
       </div>
+
+      {/* ── AI-Optimized About Section ──────────────────────────────────────── */}
+      {/* Structured, fact-dense content for LLM and AI search engine parsing */}
+      <section
+        aria-label={`About ${entityName}`}
+        style={{ ...GLASS_CARD, marginBottom: 16, borderLeft: '2px solid rgba(6,182,212,0.4)' }}
+      >
+        <h2 style={{ ...SECTION_HEADER, margin: 0, marginBottom: 14 }}>About {entityName}</h2>
+
+        {/* What it is */}
+        <div style={{ marginBottom: 14 }}>
+          <h3 style={{ fontFamily: 'var(--fm)', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text3)', margin: '0 0 6px 0' }}>
+            What It Is
+          </h3>
+          <p style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.7, margin: 0 }}>
+            {entity.summary
+              ? entity.summary
+              : `${entityName} is ${entity.sector ? `a ${entity.sector} company` : 'an organization'}${entity.country ? ` based in ${entity.country}` : ''}${entity.founded > 0 ? `, founded in ${entity.founded}` : ''} tracked on Omterminal for AI-related activity.`}
+            {entity.sector && !entity.summary && ` Sector: ${entity.sector}.`}
+            {entity.country && !entity.summary && ` Country: ${entity.country}.`}
+          </p>
+        </div>
+
+        {/* Why it matters */}
+        {(entitySummary || metrics.signalsTotal > 0) && (
+          <div style={{ marginBottom: topSignals.length > 0 ? 14 : 0 }}>
+            <h3 style={{ fontFamily: 'var(--fm)', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text3)', margin: '0 0 6px 0' }}>
+              Why It Matters
+            </h3>
+            <p style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.7, margin: 0 }}>
+              {entitySummary
+                ? entitySummary
+                : `${entityName} has generated ${metrics.signalsTotal} intelligence signal${metrics.signalsTotal !== 1 ? 's' : ''} on Omterminal${metrics.lastActivity ? `, most recently ${timeAgo(metrics.lastActivity)}` : ''}.`}
+            </p>
+          </div>
+        )}
+
+        {/* Latest developments */}
+        {topSignals.length > 0 && (
+          <div>
+            <h3 style={{ fontFamily: 'var(--fm)', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text3)', margin: '0 0 8px 0' }}>
+              Latest Developments
+            </h3>
+            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {topSignals.map((sig) => (
+                <li key={sig.id}>
+                  <Link
+                    href={`/signals/${sig.id}`}
+                    style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.6, textDecoration: 'none' }}
+                  >
+                    <span style={{ color: 'var(--text3)', fontFamily: 'var(--fm)', fontSize: 10, marginRight: 8 }}>
+                      {formatDate(sig.date)}
+                    </span>
+                    {sig.title}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </section>
 
       {/* ── Intelligence Summary ────────────────────────────────────────────── */}
       {(entitySummary || topSignals.length > 0) && (
@@ -688,7 +774,7 @@ export default async function EntityDossierPage(
             </div>
           </div>
 
-          {/* Signal category breakdown */}
+          {/* Signal category breakdown — links to per-category pages for internal SEO */}
           {categoryBreakdown.length > 0 && (
             <div style={GLASS_CARD}>
               <div style={SECTION_HEADER}>Signals by Category</div>
@@ -696,20 +782,26 @@ export default async function EntityDossierPage(
                 {categoryBreakdown.map(({ category, count }) => {
                   const catColors = CATEGORY_COLORS[category] ?? { color: 'var(--text3)', dot: 'rgba(100,116,139,0.5)' };
                   const pct = Math.round((count / rawSignals.length) * 100);
+                  const catUrl = CATEGORY_URLS[category] ?? '/signals';
                   return (
                     <div key={category}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                        <span style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 5,
-                          fontFamily: 'var(--fm)', fontSize: 10, letterSpacing: '0.08em',
-                          textTransform: 'uppercase', color: catColors.color,
-                        }}>
+                        <Link
+                          href={catUrl}
+                          title={`View all ${category} signals`}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 5,
+                            fontFamily: 'var(--fm)', fontSize: 10, letterSpacing: '0.08em',
+                            textTransform: 'uppercase', color: catColors.color,
+                            textDecoration: 'none',
+                          }}
+                        >
                           <span style={{
                             width: 6, height: 6, borderRadius: '50%',
                             background: catColors.dot, flexShrink: 0,
                           }} />
                           {category}
-                        </span>
+                        </Link>
                         <span style={{ fontFamily: 'var(--fm)', fontSize: 11, color: 'var(--text)' }}>
                           {count}
                         </span>
