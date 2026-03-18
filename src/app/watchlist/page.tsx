@@ -8,6 +8,7 @@ import { SignalImpactBadge } from '@/components/signals/SignalImpactBadge';
 import { SignalMomentumBadge } from '@/components/signals/SignalMomentumBadge';
 import type { Signal } from '@/data/mockSignals';
 import { EmailDigestCard } from '@/components/alerts/EmailDigestCard';
+import { WatchlistDiscovery } from '@/components/watchlist/WatchlistDiscovery';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Styles
@@ -105,6 +106,9 @@ export default function WatchlistPage() {
               ))}
             </div>
           </div>
+
+          {/* Entity discovery — add more */}
+          <DiscoveryPanel />
 
           {/* Email digest subscription */}
           <EmailDigestCard />
@@ -345,48 +349,82 @@ function EntityRow({
 
 function EmptyState() {
   return (
-    <div style={{
-      ...GLASS_CARD,
-      textAlign: 'center',
-      padding: '48px 24px',
-    }}>
-      <svg
-        viewBox="0 0 24 24"
-        width={32}
-        height={32}
-        fill="none"
-        stroke="var(--text3)"
-        strokeWidth={1.25}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        style={{ marginBottom: 16, opacity: 0.5 }}
-      >
-        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-      </svg>
-      <p style={{
-        fontFamily: 'var(--fd)', fontSize: 18, fontStyle: 'italic',
-        color: 'var(--text2)', marginBottom: 8,
-      }}>
-        No watched entities yet
-      </p>
-      <p style={{
-        fontSize: 13, color: 'var(--text3)', lineHeight: 1.7, maxWidth: 380, margin: '0 auto 20px',
-      }}>
-        Save entities from their dossier pages to build your personal intelligence view.
-      </p>
-      <Link
-        href="/intelligence"
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ ...GLASS_CARD, textAlign: 'center', padding: '32px 24px 24px' }}>
+        <svg
+          viewBox="0 0 24 24"
+          width={28}
+          height={28}
+          fill="none"
+          stroke="var(--text3)"
+          strokeWidth={1.25}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{ marginBottom: 12, opacity: 0.5 }}
+        >
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+        </svg>
+        <p style={{
+          fontFamily: 'var(--fd)', fontSize: 17, fontStyle: 'italic',
+          color: 'var(--text2)', marginBottom: 6,
+        }}>
+          No watched entities yet
+        </p>
+        <p style={{
+          fontSize: 13, color: 'var(--text3)', lineHeight: 1.7, maxWidth: 380, margin: '0 auto',
+        }}>
+          Add entities below to build your personal intelligence feed, or visit any entity dossier to watch it.
+        </p>
+      </div>
+      <DiscoveryPanel defaultOpen />
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Discovery panel — collapsible entity browser
+// ─────────────────────────────────────────────────────────────────────────────
+
+function DiscoveryPanel({ defaultOpen = false }: { defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  return (
+    <div style={GLASS_CARD}>
+      <button
+        onClick={() => setOpen((v) => !v)}
         style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          padding: '8px 16px', borderRadius: 10,
-          border: '1px solid var(--border2)', background: 'var(--glass2)',
-          textDecoration: 'none', fontFamily: 'var(--fm)',
-          fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase',
-          color: 'var(--text2)', transition: 'border-color 0.18s',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          width: '100%',
+          background: 'none',
+          border: 'none',
+          padding: 0,
+          cursor: 'pointer',
+          color: 'inherit',
         }}
       >
-        Browse Intelligence Feed
-      </Link>
+        <div style={SECTION_HEADER}>Add Entities to Watchlist</div>
+        <svg
+          viewBox="0 0 24 24"
+          width={14}
+          height={14}
+          fill="none"
+          stroke="var(--text3)"
+          strokeWidth={1.75}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0, marginBottom: 14 }}
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+      {open && <WatchlistDiscovery />}
+      {!open && (
+        <p style={{ fontSize: 12, color: 'var(--text3)' }}>
+          Browse and add tracked entities to your watchlist.
+        </p>
+      )}
     </div>
   );
 }
