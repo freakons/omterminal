@@ -68,10 +68,6 @@ function MomentumEntityRow({ record }: { record: EntityMomentumRecord }) {
   );
 }
 
-function EmptyState() {
-  return <p className="eco-empty">No activity detected.</p>;
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Main component
 // ─────────────────────────────────────────────────────────────────────────────
@@ -104,26 +100,26 @@ export function EcosystemActivity({ snapshot, topMomentumEntities = [] }: Ecosys
 
       <div className="eco-grid">
         {/* ── Top Signals ──────────────────────────────────────────── */}
-        <div className="eco-panel">
-          <div className="eco-panel-header">
-            <h3 className="eco-panel-title">Top Signals</h3>
-            <HeatIndicator level={heat.topSignals} />
+        {topSignals.length > 0 && (
+          <div className="eco-panel">
+            <div className="eco-panel-header">
+              <h3 className="eco-panel-title">Top Signals</h3>
+              <HeatIndicator level={heat.topSignals} />
+            </div>
+            {topSignals.map((s) => <SignalRow key={s.id} signal={s} />)}
           </div>
-          {topSignals.length > 0
-            ? topSignals.map((s) => <SignalRow key={s.id} signal={s} />)
-            : <EmptyState />}
-        </div>
+        )}
 
         {/* ── Most Active Entities ─────────────────────────────────── */}
-        <div className="eco-panel">
-          <div className="eco-panel-header">
-            <h3 className="eco-panel-title">Most Active Entities</h3>
-            <HeatIndicator level={heat.mostActiveEntities} />
+        {mostActiveEntities.length > 0 && (
+          <div className="eco-panel">
+            <div className="eco-panel-header">
+              <h3 className="eco-panel-title">Most Active Entities</h3>
+              <HeatIndicator level={heat.mostActiveEntities} />
+            </div>
+            {mostActiveEntities.map((e) => <EntityRow key={e.name} entity={e} />)}
           </div>
-          {mostActiveEntities.length > 0
-            ? mostActiveEntities.map((e) => <EntityRow key={e.name} entity={e} />)
-            : <EmptyState />}
-        </div>
+        )}
 
         {/* ── Top Momentum Entities ──────────────────────────────── */}
         {topMomentumEntities.length > 0 && (
@@ -138,26 +134,26 @@ export function EcosystemActivity({ snapshot, topMomentumEntities = [] }: Ecosys
         )}
 
         {/* ── Recent Funding ───────────────────────────────────────── */}
-        <div className="eco-panel">
-          <div className="eco-panel-header">
-            <h3 className="eco-panel-title">Recent Funding</h3>
-            <HeatIndicator level={heat.recentFunding} />
+        {recentFunding.length > 0 && (
+          <div className="eco-panel">
+            <div className="eco-panel-header">
+              <h3 className="eco-panel-title">Recent Funding</h3>
+              <HeatIndicator level={heat.recentFunding} />
+            </div>
+            {recentFunding.map((f) => <FundingRow key={f.id} round={f} />)}
           </div>
-          {recentFunding.length > 0
-            ? recentFunding.map((f) => <FundingRow key={f.id} round={f} />)
-            : <EmptyState />}
-        </div>
+        )}
 
         {/* ── Model Releases ───────────────────────────────────────── */}
-        <div className="eco-panel">
-          <div className="eco-panel-header">
-            <h3 className="eco-panel-title">Model Releases</h3>
-            <HeatIndicator level={heat.modelReleases} />
+        {modelReleases.length > 0 && (
+          <div className="eco-panel">
+            <div className="eco-panel-header">
+              <h3 className="eco-panel-title">Model Releases</h3>
+              <HeatIndicator level={heat.modelReleases} />
+            </div>
+            {modelReleases.map((m) => <ModelRow key={m.id} model={m} />)}
           </div>
-          {modelReleases.length > 0
-            ? modelReleases.map((m) => <ModelRow key={m.id} model={m} />)
-            : <EmptyState />}
-        </div>
+        )}
       </div>
     </section>
   );
