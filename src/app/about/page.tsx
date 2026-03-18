@@ -26,7 +26,7 @@ export default function AboutPage() {
           fontFamily: 'var(--fd)', fontSize: 28, fontStyle: 'italic', color: 'var(--text)',
           letterSpacing: '-0.02em', marginBottom: 16, lineHeight: 1.3,
         }}>
-          Stop reading AI news. Start seeing the board.
+          Every signal that moves AI. One terminal.
         </h2>
         <p style={{ fontSize: 15, color: 'var(--text2)', lineHeight: 1.8, maxWidth: 600, marginBottom: 24 }}>
           {siteConfig.name} is not a news site. It&apos;s not a blog. It&apos;s not a newsletter.
