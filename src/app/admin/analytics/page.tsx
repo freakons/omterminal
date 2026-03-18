@@ -60,6 +60,22 @@ interface DigestStats {
   last_sent_at: string | null;
 }
 
+interface TimeToEngagementTrendPoint {
+  day: string;
+  avg_seconds: number;
+}
+
+interface TimeToEngagementMetric {
+  avg_seconds: number | null;
+  median_seconds: number | null;
+  trend_7d: TimeToEngagementTrendPoint[];
+}
+
+interface TimeToEngagementStats {
+  signal: TimeToEngagementMetric;
+  alert: TimeToEngagementMetric;
+}
+
 interface AnalyticsResponse {
   ok: boolean;
   engagement: EngagementSummary;
@@ -67,6 +83,7 @@ interface AnalyticsResponse {
   topSignals: TopOpenedSignal[];
   alertVolume: AlertVolumeRow[];
   digest: DigestStats;
+  timeToEngagement: TimeToEngagementStats;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -109,6 +126,18 @@ async function fetchAnalytics(base: string, adminSecret: string): Promise<Analyt
 // ─────────────────────────────────────────────────────────────────────────────
 // Formatting helpers
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** Format a duration in seconds as a human-readable string (e.g. "2h 30m", "45m", "30s"). */
+function fmtDuration(seconds: number | null | undefined): string {
+  if (seconds == null || isNaN(seconds) || seconds < 0) return '—';
+  const s = Math.round(seconds);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return rem > 0 ? `${h}h ${rem}m` : `${h}h`;
+}
 
 function fmtRelative(isoStr: string | null | undefined): string {
   if (!isoStr) return '—';
@@ -233,6 +262,10 @@ export default async function AnalyticsPage({
     unique_recipients: 0,
     sends_last_7d: 0,
     last_sent_at: null,
+  };
+  const timeToEngagement = data?.timeToEngagement ?? {
+    signal: { avg_seconds: null, median_seconds: null, trend_7d: [] },
+    alert: { avg_seconds: null, median_seconds: null, trend_7d: [] },
   };
 
   const maxWatchers = topEntities[0]?.watcher_count ?? 1;
@@ -411,6 +444,122 @@ export default async function AnalyticsPage({
             />
           </tbody>
         </table>
+      </Card>
+
+      {/* ── Time to Engagement ── */}
+      <Card>
+        <SectionHeader title="Time to Engagement" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x"
+          style={{ borderColor: 'var(--border)' }}>
+
+          {/* Signal engagement */}
+          <div>
+            <div style={{ borderBottom: '1px solid var(--border)' }} className="px-5 py-2">
+              <span className="text-[9px] font-mono uppercase tracking-[0.14em] text-zinc-500">
+                Signal — creation → first open
+              </span>
+            </div>
+            <div className="grid grid-cols-2 divide-x" style={{ borderColor: 'var(--border)' }}>
+              <StatBlock
+                label="Avg time"
+                value={fmtDuration(timeToEngagement.signal.avg_seconds)}
+                sub="all time"
+              />
+              <StatBlock
+                label="Median time"
+                value={fmtDuration(timeToEngagement.signal.median_seconds)}
+                sub="all time"
+              />
+            </div>
+            {timeToEngagement.signal.trend_7d.length > 0 && (
+              <div style={{ borderTop: '1px solid var(--border)' }} className="px-5 py-3">
+                <div className="text-[9px] font-mono uppercase tracking-[0.14em] text-zinc-500 mb-2">
+                  Daily avg (last 7d)
+                </div>
+                <div className="space-y-1.5">
+                  {timeToEngagement.signal.trend_7d.map((pt) => {
+                    const maxSec = Math.max(...timeToEngagement.signal.trend_7d.map((p) => p.avg_seconds), 1);
+                    return (
+                      <div key={pt.day} className="flex items-center gap-3">
+                        <span className="w-20 text-[10px] font-mono text-zinc-500 shrink-0">
+                          {new Date(pt.day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </span>
+                        <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--glass3)' }}>
+                          <div
+                            className="h-full rounded-full bg-emerald-500/60"
+                            style={{ width: barWidth(pt.avg_seconds, maxSec) }}
+                          />
+                        </div>
+                        <span className="w-14 text-right text-[10px] font-mono tabular-nums text-zinc-400 shrink-0">
+                          {fmtDuration(pt.avg_seconds)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {timeToEngagement.signal.avg_seconds == null && (
+              <p className="px-5 py-4 text-xs font-mono text-zinc-500">
+                No signal engagement data yet.
+              </p>
+            )}
+          </div>
+
+          {/* Alert engagement */}
+          <div>
+            <div style={{ borderBottom: '1px solid var(--border)' }} className="px-5 py-2">
+              <span className="text-[9px] font-mono uppercase tracking-[0.14em] text-zinc-500">
+                Alert — creation → first read
+              </span>
+            </div>
+            <div className="grid grid-cols-2 divide-x" style={{ borderColor: 'var(--border)' }}>
+              <StatBlock
+                label="Avg time"
+                value={fmtDuration(timeToEngagement.alert.avg_seconds)}
+                sub="all time"
+              />
+              <StatBlock
+                label="Median time"
+                value={fmtDuration(timeToEngagement.alert.median_seconds)}
+                sub="all time"
+              />
+            </div>
+            {timeToEngagement.alert.trend_7d.length > 0 && (
+              <div style={{ borderTop: '1px solid var(--border)' }} className="px-5 py-3">
+                <div className="text-[9px] font-mono uppercase tracking-[0.14em] text-zinc-500 mb-2">
+                  Daily avg (last 7d)
+                </div>
+                <div className="space-y-1.5">
+                  {timeToEngagement.alert.trend_7d.map((pt) => {
+                    const maxSec = Math.max(...timeToEngagement.alert.trend_7d.map((p) => p.avg_seconds), 1);
+                    return (
+                      <div key={pt.day} className="flex items-center gap-3">
+                        <span className="w-20 text-[10px] font-mono text-zinc-500 shrink-0">
+                          {new Date(pt.day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </span>
+                        <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--glass3)' }}>
+                          <div
+                            className="h-full rounded-full bg-amber-500/60"
+                            style={{ width: barWidth(pt.avg_seconds, maxSec) }}
+                          />
+                        </div>
+                        <span className="w-14 text-right text-[10px] font-mono tabular-nums text-zinc-400 shrink-0">
+                          {fmtDuration(pt.avg_seconds)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {timeToEngagement.alert.avg_seconds == null && (
+              <p className="px-5 py-4 text-xs font-mono text-zinc-500">
+                No alert engagement data yet.
+              </p>
+            )}
+          </div>
+        </div>
       </Card>
 
       {/* ── Footer ── */}
