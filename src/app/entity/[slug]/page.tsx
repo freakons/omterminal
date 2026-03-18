@@ -17,6 +17,8 @@ import { EntityMomentumBadge } from '@/components/entity/EntityMomentumBadge';
 import { composeFeed, getSignificanceTier } from '@/lib/signals/feedComposer';
 import { explainSignal } from '@/lib/signals/explanationLayer';
 import type { Signal, SignalCategory } from '@/data/mockSignals';
+import { buildEntitySchema } from '@/lib/seo/jsonld';
+import { siteConfig } from '@/config/site';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -133,10 +135,37 @@ export async function generateMetadata(
 ): Promise<Metadata> {
   const { slug } = await params;
   const entity = await getEntityBySlug(slug);
-  const displayName = entity?.name ?? slug;
+  const name = entity?.name ?? slug;
+  const sector = entity?.sector ? `${entity.sector} · ` : '';
+  const country = entity?.country ? `${entity.country} · ` : '';
+  const description = entity?.summary
+    ? entity.summary.slice(0, 155)
+    : `${sector}${country}Track ${name} AI signals, funding rounds, and strategic activity on Omterminal.`;
+  const canonicalUrl = `${siteConfig.url}/entity/${slug}`;
+
   return {
-    title: `${displayName} — Entity Intelligence Dossier`,
-    description: `Intelligence dossier for ${displayName} — signals, events, metrics, and related activity.`,
+    title: `${name} — AI Intelligence Dossier`,
+    description,
+    alternates: { canonical: canonicalUrl },
+    openGraph: {
+      title: `${name} — AI Intelligence Dossier | Omterminal`,
+      description,
+      url: canonicalUrl,
+      type: 'profile',
+      siteName: siteConfig.name,
+    },
+    twitter: {
+      card: 'summary',
+      title: `${name} | Omterminal`,
+      description,
+    },
+    keywords: [
+      name,
+      'AI intelligence',
+      'AI signals',
+      ...(entity?.sector ? [entity.sector] : []),
+      ...(entity?.tags ?? []),
+    ],
   };
 }
 
@@ -195,8 +224,20 @@ export default async function EntityDossierPage(
     ? 'rgba(217,119,6,0.4)'
     : 'var(--border2)';
 
+  const jsonLd = buildEntitySchema({
+    name: entityName,
+    pageUrl: `${siteConfig.url}/entity/${slug}`,
+    description: entity.summary,
+    foundingDate: entity.founded,
+    website: entity.website,
+  });
+
   return (
     <div className="page-enter">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
 
       {/* Breadcrumb nav */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 20 }}>
@@ -334,7 +375,7 @@ export default async function EntityDossierPage(
       {/* ── Intelligence Summary ────────────────────────────────────────────── */}
       {(entitySummary || topSignals.length > 0) && (
         <div style={{ ...GLASS_CARD, marginBottom: 16, borderLeft: '2px solid rgba(79,70,229,0.5)' }}>
-          <div style={SECTION_HEADER}>Intelligence Summary</div>
+          <h2 style={{ ...SECTION_HEADER, margin: 0, marginBottom: 16 }}>Intelligence Summary</h2>
 
           {entitySummary && (
             <p style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.7, marginBottom: topSignals.length > 0 ? 16 : 0 }}>
@@ -397,7 +438,7 @@ export default async function EntityDossierPage(
 
       {/* Entity Timeline */}
       <div style={{ ...GLASS_CARD, marginBottom: 16 }}>
-        <div style={SECTION_HEADER}>Entity Timeline</div>
+        <h2 style={{ ...SECTION_HEADER, margin: 0, marginBottom: 16 }}>Entity Timeline</h2>
         <EntityTimeline timeline={timeline} />
       </div>
 
@@ -410,7 +451,7 @@ export default async function EntityDossierPage(
           {/* Recent signals — significance-ranked */}
           <div style={GLASS_CARD}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <span style={{ ...SECTION_HEADER, marginBottom: 0 }}>Recent Signals</span>
+              <h2 style={{ ...SECTION_HEADER, margin: 0 }}>Recent Signals</h2>
               {signals.length > 0 && (
                 <span style={{ fontFamily: 'var(--fm)', fontSize: 9, color: 'var(--text3)' }}>
                   ranked by significance
@@ -527,7 +568,7 @@ export default async function EntityDossierPage(
 
           {/* Recent events */}
           <div style={GLASS_CARD}>
-            <div style={SECTION_HEADER}>Recent Events</div>
+            <h2 style={{ ...SECTION_HEADER, margin: 0, marginBottom: 16 }}>Recent Events</h2>
 
             {events.length === 0 ? (
               <p style={EMPTY_TEXT}>No recent events available yet</p>

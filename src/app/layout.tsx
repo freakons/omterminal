@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import localFont from 'next/font/local';
 import { siteConfig } from '@/config/site';
+import { buildSiteSchemas } from '@/lib/seo/jsonld';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Topbar } from '@/components/layout/Topbar';
 import { Ticker } from '@/components/layout/Ticker';
@@ -71,6 +72,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${instrumentSerif.variable} ${dmSans.variable} ${dmMono.variable}`}>
       <head>
         <meta name="theme-color" content="#05050f" />
+        {buildSiteSchemas().map((schema, i) => (
+          <script
+            key={i}
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+          />
+        ))}
       </head>
       <body>
         <CommandPaletteProvider>
