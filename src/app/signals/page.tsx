@@ -8,8 +8,17 @@ export const metadata: Metadata = {
   description: 'Intelligence signals detected across the AI ecosystem — model releases, funding events, regulatory shifts, and research breakthroughs.',
 };
 
-/** ISR: revalidate every 5 minutes */
-export const revalidate = 300;
+/**
+ * Force dynamic rendering so every request reads fresh signals from the DB.
+ *
+ * Why: /signals is fed by hourly cron jobs. With ISR (revalidate=300) the
+ * Vercel edge cache could serve a stale snapshot for up to 5 minutes — and if
+ * a background re-render silently fails it can stay stale indefinitely.
+ * force-dynamic bypasses page-level ISR entirely so the SSR HTML always
+ * reflects the live DB state. The client-side refresh in SignalsBrowser
+ * (cache: 'no-store') handles subsequent in-session updates independently.
+ */
+export const dynamic = 'force-dynamic';
 
 export default async function SignalsPage() {
   // Pre-fetch signals server-side; pass as initial prop to the client component.
