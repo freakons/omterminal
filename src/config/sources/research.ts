@@ -176,7 +176,7 @@ export const researchSources: SourceDefinition[] = [
     category: 'research',
     url: 'https://huggingface.co/blog/feed.xml',
     reliability: 9,
-    enabled: true,
+    enabled: false, // duplicate id with companyBlogs.ts entry; canonical entry lives there
   },
 
   // ── Research aggregators (10) ─────────────────────────────────────────────
@@ -305,6 +305,6 @@ export const researchSources: SourceDefinition[] = [
     entity: 'HuggingFace',
     url: 'https://huggingface.co/datasets?format=rss',
     reliability: 8,
-    enabled: true,
+    enabled: false, // high-volume, low intelligence value; dataset uploads ≠ AI intelligence signal
   },
 ];

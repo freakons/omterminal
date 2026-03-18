@@ -102,8 +102,8 @@ export const companyBlogSources: SourceDefinition[] = [
     type: 'rss',
     category: 'company',
     url: 'https://stability.ai/news/rss',
-    reliability: 10,
-    enabled: true,
+    reliability: 5,
+    enabled: false, // Stability AI entered administration in 2024; blog near-inactive
   },
   {
     id: 'xai_blog',
@@ -181,8 +181,8 @@ export const companyBlogSources: SourceDefinition[] = [
     category: 'company',
     url: 'https://www.adept.ai/blog/rss.xml',
     entity: 'Adept AI',
-    reliability: 10,
-    enabled: true,
+    reliability: 4,
+    enabled: false, // Adept AI acquired by Amazon in 2024; blog inactive/dead
   },
   {
     id: 'inflection_ai_blog',
@@ -274,8 +274,8 @@ export const companyBlogSources: SourceDefinition[] = [
     category: 'company',
     url: 'https://octoml.ai/blog/rss.xml',
     entity: 'OctoML',
-    reliability: 9,
-    enabled: true,
+    reliability: 4,
+    enabled: false, // OctoML acquired by NVIDIA in August 2023; blog shut down
   },
   {
     id: 'cerebras_blog',

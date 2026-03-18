@@ -214,7 +214,7 @@ export const githubSources: SourceDefinition[] = [
     entity: 'LanceDB',
     url: 'https://github.com/lancedb/lancedb/releases.atom',
     reliability: 7,
-    enabled: true,
+    enabled: false, // smallest vector DB in category; overlaps with Qdrant/Milvus/Weaviate
   },
 
   // ── Multimodal / diffusion / vision (3) ──────────────────────────────────
@@ -247,6 +247,6 @@ export const githubSources: SourceDefinition[] = [
     entity: 'AUTOMATIC1111',
     url: 'https://github.com/AUTOMATIC1111/stable-diffusion-webui/releases.atom',
     reliability: 8,
-    enabled: true,
+    enabled: false, // image gen UI niche; overlaps with ComfyUI; lower release cadence
   },
 ];
