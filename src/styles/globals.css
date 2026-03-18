@@ -2062,3 +2062,70 @@ body {
   background: rgba(255,255,255,0.04); border: 1px solid var(--border);
   border-radius: 3px; padding: 1px 4px; margin: 0 2px;
 }
+
+/* ══════════════════════════════════════
+   THREADS PAGE
+══════════════════════════════════════ */
+.threads-page { padding: 32px 24px; max-width: 1200px; }
+.threads-header { margin-bottom: 32px; }
+.threads-title {
+  font-family: var(--fi); font-style: italic; font-size: 28px;
+  color: var(--text1); margin: 0 0 6px;
+}
+.threads-subtitle {
+  font-family: var(--fm); font-size: 12px; color: var(--text3);
+  letter-spacing: 0.04em; text-transform: uppercase;
+}
+.threads-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
+}
+@media (max-width: 900px) {
+  .threads-grid { grid-template-columns: 1fr; }
+}
+
+.thread-preview {
+  background: var(--ink-2, #0a0a1a); border: 1px solid var(--border);
+  border-radius: 10px; overflow: hidden;
+}
+.thread-preview-header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 18px; border-bottom: 1px solid var(--border);
+}
+.thread-preview-label {
+  font-family: var(--fm); font-size: 11px; font-weight: 600;
+  color: var(--text2); letter-spacing: 0.06em; text-transform: uppercase;
+  margin: 0; flex: 1;
+}
+.thread-preview-stats {
+  display: flex; gap: 10px;
+}
+.thread-stat {
+  font-family: var(--fm); font-size: 10px; color: var(--text3);
+  letter-spacing: 0.03em;
+}
+.thread-copy-btn {
+  font-family: var(--fm); font-size: 10px; font-weight: 500;
+  color: var(--signal-cyan); background: rgba(6,182,212,0.08);
+  border: 1px solid rgba(6,182,212,0.2); border-radius: 5px;
+  padding: 4px 12px; cursor: pointer; letter-spacing: 0.04em;
+  text-transform: uppercase; transition: background 0.15s;
+}
+.thread-copy-btn:hover { background: rgba(6,182,212,0.15); }
+
+.thread-preview-body {
+  padding: 16px 18px; max-height: 600px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.thread-item {
+  position: relative;
+  background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.04);
+  border-radius: 6px; padding: 12px 14px;
+}
+.thread-item-num {
+  font-family: var(--fm); font-size: 9px; color: var(--text3);
+  letter-spacing: 0.04em; display: block; margin-bottom: 6px;
+}
+.thread-item-text {
+  font-family: var(--fs); font-size: 13px; line-height: 1.6;
+  color: var(--text1); margin: 0; white-space: pre-wrap; word-wrap: break-word;
+}

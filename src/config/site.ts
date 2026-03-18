@@ -23,6 +23,7 @@ export const siteConfig = {
       { label: 'Ecosystem Graph', href: '/graph', id: 'graph', icon: 'share-2', chip: null },
       { label: 'Watchlist', href: '/watchlist', id: 'watchlist', icon: 'star', chip: null },
       { label: 'Alerts', href: '/alerts', id: 'alerts', icon: 'bell', chip: null },
+      { label: 'Threads', href: '/threads', id: 'threads', icon: 'message-square', chip: 'NEW' },
       { label: 'Compare', href: '/compare', id: 'compare', icon: 'columns', chip: null },
     ],
     info: [
