@@ -1,8 +1,10 @@
 import Link from 'next/link';
 import { siteConfig } from '@/config/site';
-import { getSiteStats } from '@/db/queries';
+import { getSiteStats, getSignals } from '@/db/queries';
+import { MOCK_SIGNALS } from '@/data/mockSignals';
 import RequestAccessButton from '@/components/RequestAccessButton';
 import { TrendRadar } from '@/components/TrendRadar';
+import { IntelligenceSnapshot } from '@/components/signals/IntelligenceSnapshot';
 
 /** ISR: revalidate every hour */
 export const revalidate = 3600;
@@ -10,10 +12,21 @@ export const revalidate = 3600;
 export default async function HomePage() {
   // Compute live stats from DB — show real numbers only, never hardcoded fallbacks
   const fallbackStats = { signals: 0, companies: 0, regulations: 0, sources: 0, fundingRounds: 0, models: 0, totalFundingUsdM: 0 };
-  const live = await getSiteStats().catch(() => fallbackStats);
+  const [live, dbSignals] = await Promise.all([
+    getSiteStats().catch(() => fallbackStats),
+    getSignals(10).catch(() => []),
+  ]);
   const signals     = live.signals;
   const companies   = live.companies;
   const regulations = live.regulations;
+
+  // Top signals for the snapshot: prefer live DB data, fall back to mock in dev
+  const snapshotSignals =
+    dbSignals.length > 0
+      ? dbSignals
+      : process.env.NODE_ENV === 'production'
+        ? []
+        : MOCK_SIGNALS;
 
   return (
     <>
@@ -43,6 +56,9 @@ export default async function HomePage() {
           )}
         </div>
       </div>
+
+      {/* Intelligence Snapshot */}
+      <IntelligenceSnapshot signals={snapshotSignals} />
 
       {/* Trend Radar */}
       <div style={{ marginBottom: 32 }}>
