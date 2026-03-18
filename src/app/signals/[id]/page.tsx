@@ -12,7 +12,7 @@ import { SignalImpactBadge } from '@/components/signals/SignalImpactBadge';
 import { SignalMomentumBadge } from '@/components/signals/SignalMomentumBadge';
 import { getSignificanceTier } from '@/lib/signals/feedComposer';
 import { slugify } from '@/utils/sanitize';
-import { buildArticleSchema } from '@/lib/seo/jsonld';
+import { buildArticleSchema, buildBreadcrumbSchema, buildSignalFAQSchema } from '@/lib/seo/jsonld';
 import { siteConfig } from '@/config/site';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -68,11 +68,14 @@ export async function generateMetadata(
     },
     keywords: [
       signal.category,
+      `AI ${signal.category}`,
       signal.entityName,
+      signal.entityName ? `${signal.entityName} AI` : null,
       'AI signals',
       'AI intelligence',
+      'artificial intelligence',
       'Omterminal',
-    ].filter(Boolean),
+    ].filter(Boolean) as string[],
   };
 }
 
@@ -106,8 +109,36 @@ export default async function SignalDetailPage(
     description: (signal.summary ?? '').slice(0, 155),
     datePublished: signal.date,
     url: `${siteConfig.url}/signals/${signal.id}`,
-    keywords: [signal.category, signal.entityName, 'AI intelligence', 'Omterminal'].filter(Boolean),
+    keywords: [signal.category, signal.entityName, 'AI intelligence', 'Omterminal'].filter(Boolean) as string[],
+    entityName: signal.entityName ?? undefined,
+    entityUrl: signal.entityName
+      ? `${siteConfig.url}/entity/${slugify(signal.entityName)}`
+      : undefined,
+    category: signal.category,
   });
+
+  const breadcrumbLd = buildBreadcrumbSchema([
+    { name: 'Omterminal', url: siteConfig.url },
+    { name: 'Signals', url: `${siteConfig.url}/signals` },
+    { name: signal.title, url: `${siteConfig.url}/signals/${signal.id}` },
+  ]);
+
+  const faqLd = signal.summary
+    ? buildSignalFAQSchema({
+        signalTitle: signal.title,
+        summary: signal.summary,
+        whyItMatters: signal.context?.whyItMatters,
+        implications: signal.context?.implications,
+      })
+    : null;
+
+  // Map signal category to a dedicated page URL for internal linking
+  const CATEGORY_URLS: Record<string, string> = {
+    models: '/models',
+    regulation: '/regulation',
+    funding: '/funding',
+  };
+  const categoryPageUrl = CATEGORY_URLS[signal.category] ?? '/signals';
 
   return (
     <div className="page-enter">
@@ -115,6 +146,16 @@ export default async function SignalDetailPage(
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbLd) }}
+      />
+      {faqLd && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(faqLd) }}
+        />
+      )}
 
       {/* Nav breadcrumb */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 20 }}>
@@ -386,6 +427,45 @@ export default async function SignalDetailPage(
               </Link>
             </div>
           )}
+
+          {/* Explore category — internal linking for AI search traversal */}
+          <div style={GLASS_CARD}>
+            <div style={SECTION_HEADER}>Explore Category</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <Link
+                href={categoryPageUrl}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '10px 12px', borderRadius: 8,
+                  border: '1px solid var(--border2)', background: 'var(--glass2)',
+                  textDecoration: 'none',
+                }}
+              >
+                <span style={{ fontFamily: 'var(--fm)', fontSize: 12, color: 'var(--text2)' }}>
+                  More {signal.category} signals
+                </span>
+                <span style={{ fontFamily: 'var(--fm)', fontSize: 9, color: 'var(--text3)', marginLeft: 'auto' }}>
+                  →
+                </span>
+              </Link>
+              <Link
+                href="/signals"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '10px 12px', borderRadius: 8,
+                  border: '1px solid var(--border2)', background: 'var(--glass2)',
+                  textDecoration: 'none',
+                }}
+              >
+                <span style={{ fontFamily: 'var(--fm)', fontSize: 12, color: 'var(--text2)' }}>
+                  All AI intelligence signals
+                </span>
+                <span style={{ fontFamily: 'var(--fm)', fontSize: 9, color: 'var(--text3)', marginLeft: 'auto' }}>
+                  →
+                </span>
+              </Link>
+            </div>
+          </div>
         </div>
       </div>
     </div>
