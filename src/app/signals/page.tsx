@@ -2,10 +2,12 @@ import type { Metadata } from 'next';
 import { getSignals } from '@/db/queries';
 import { MOCK_SIGNALS } from '@/data/mockSignals';
 import { SignalsBrowser } from './SignalsBrowser';
+import { buildDatasetSchema } from '@/lib/seo/jsonld';
 
 export const metadata: Metadata = {
-  title: 'Signals',
-  description: 'Intelligence signals detected across the AI ecosystem — model releases, funding events, regulatory shifts, and research breakthroughs.',
+  title: 'AI Signals — Latest Models, Funding & Regulation',
+  description: 'Real-time AI intelligence signals — model releases, funding rounds, regulatory shifts, and research breakthroughs. Scored by impact, corroborated by multiple sources.',
+  keywords: ['AI signals', 'AI intelligence', 'AI funding', 'AI models', 'AI regulation', 'machine learning news'],
 };
 
 /**
@@ -31,8 +33,14 @@ export default async function SignalsPage() {
         ? []
         : MOCK_SIGNALS;
 
+  const jsonLd = buildDatasetSchema();
+
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       <div className="ph">
         <div className="ph-left">
           <h1>Signals</h1>

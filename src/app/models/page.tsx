@@ -4,8 +4,9 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'AI Models',
-  description: 'Track every major AI model release — benchmarks, capabilities, and competitive analysis.',
+  title: 'AI Models Tracker — Latest Releases & Benchmarks',
+  description: 'Track every major AI model release — GPT, Claude, Gemini, Mistral and more. Benchmarks, capabilities, context windows, and competitive analysis.',
+  keywords: ['AI models', 'GPT', 'Claude', 'Gemini', 'LLM', 'large language model', 'AI benchmarks', 'model releases'],
 };
 
 export const revalidate = 300;
