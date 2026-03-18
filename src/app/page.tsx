@@ -19,19 +19,19 @@ export default async function HomePage() {
     <>
       {/* Hero */}
       <div className="hero">
-        <div className="hero-eyebrow">PROFESSIONAL AI INTELLIGENCE PLATFORM</div>
+        <div className="hero-eyebrow">AI INTELLIGENCE TERMINAL</div>
         <h1 className="hero-h1">
-          Stop reading AI news.<br />
-          Start <em>seeing the board.</em>
+          Every signal that moves AI.<br />
+          <em>One terminal.</em>
         </h1>
         <p className="hero-sub">
-          Regulation, model releases, funding, and global policy — structured, verified, and
-          curated for decision-makers. Not a feed. An intelligence terminal.
+          Regulation, models, funding, and policy shifts — scored by impact
+          and structured into actionable intelligence for decision-makers.
         </p>
         <div className="hero-ctas">
           <RequestAccessButton />
-          <Link href="/intelligence" className="cta-secondary">
-            Browse Intelligence
+          <Link href="/signals" className="cta-secondary">
+            Explore Signals
           </Link>
         </div>
         <div className="hero-metrics">
@@ -51,7 +51,7 @@ export default async function HomePage() {
 
       {/* Features */}
       <div style={{ fontFamily: 'var(--fm)', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: 'var(--text3)', marginBottom: 12 }}>
-        WHAT&apos;S INSIDE
+        TERMINAL CAPABILITIES
       </div>
       <div className="feature-grid">
         {siteConfig.features.map((feat) => (
