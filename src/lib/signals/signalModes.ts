@@ -124,7 +124,7 @@ export const SIGNAL_MODES: Record<SignalMode, SignalModeConfig> = {
     allowedStatuses:          ['auto', 'published'],
     defaultLimit:             50,
     engineMinCountMultiplier: 1.0,
-    minSignificance:          0,
+    minSignificance:          30,
   },
 
   /**

@@ -95,9 +95,9 @@ describe('signal mode configs — minSignificance', () => {
     assert.equal(config.minSignificance, 0);
   });
 
-  it('standard mode has no significance filter (minSignificance = 0)', () => {
+  it('standard mode filters low-significance signals (minSignificance = 30)', () => {
     const config = getModeConfig('standard');
-    assert.equal(config.minSignificance, 0);
+    assert.equal(config.minSignificance, 30);
   });
 
   it('premium mode requires significance >= 50', () => {

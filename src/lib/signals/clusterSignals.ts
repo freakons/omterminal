@@ -64,15 +64,23 @@ function extractKeywords(text: string): Set<string> {
   );
 }
 
+/**
+ * Jaccard-based keyword similarity.  Returns true when the keyword sets
+ * share enough overlap relative to their combined size, preventing false
+ * merges between large keyword sets that only share a few generic words.
+ *
+ * Threshold: overlap ≥ 3 AND Jaccard ≥ 0.20 (i.e. 20% of the union).
+ * This is stricter than the previous "≥ 2 overlap" which merged too
+ * aggressively, producing repetitive clusters.
+ */
 function keywordsOverlap(a: Set<string>, b: Set<string>): boolean {
-  let count = 0;
+  let overlap = 0;
   for (const word of a) {
-    if (b.has(word)) {
-      count++;
-      if (count >= 2) return true;
-    }
+    if (b.has(word)) overlap++;
   }
-  return false;
+  if (overlap < 3) return false;
+  const unionSize = a.size + b.size - overlap;
+  return unionSize > 0 && overlap / unionSize >= 0.20;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -306,6 +314,11 @@ export interface CorroborationCluster {
 // Corroboration helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Title similarity using Jaccard coefficient.  Requires ≥ 2 shared keywords
+ * AND a Jaccard ratio ≥ 0.25 to avoid merging unrelated signals that happen
+ * to share generic words like "model" or "funding".
+ */
 function titlesSimilar(a: string, b: string): boolean {
   const kwA = extractKeywords(a);
   const kwB = extractKeywords(b);
@@ -313,29 +326,53 @@ function titlesSimilar(a: string, b: string): boolean {
   for (const word of kwA) {
     if (kwB.has(word)) overlap++;
   }
-  return overlap >= 2;
+  if (overlap < 2) return false;
+  const unionSize = kwA.size + kwB.size - overlap;
+  return unionSize > 0 && overlap / unionSize >= 0.25;
 }
 
+/**
+ * Corroboration confidence now weights average significance more heavily
+ * and applies diminishing returns on signal count to avoid inflating
+ * confidence for large clusters of low-quality signals.
+ */
 function computeCorroborationConfidence(
   signalCount: number,
   avgSignificance: number,
   uniqueSourceCount: number,
 ): number {
-  const raw =
-    (signalCount * 10) +
-    (avgSignificance / 2) +
-    (uniqueSourceCount * 5);
+  // Diminishing returns on signal count: log2-based
+  const countComponent = Math.log2(signalCount + 1) * 15;
+  // Significance carries the most weight
+  const sigComponent = avgSignificance * 0.6;
+  // Source diversity with diminishing returns
+  const sourceComponent = Math.min(uniqueSourceCount, 8) * 4;
+
+  const raw = countComponent + sigComponent + sourceComponent;
   return Math.min(100, Math.max(0, Math.round(raw)));
 }
+
+/** Generic words that add noise to topic labels. */
+const TOPIC_NOISE_WORDS = new Set([
+  'detected', 'signal', 'wave', 'surge', 'cluster', 'rapid',
+  'succession', 'events', 'multiple', 'strategic', 'moves',
+  'activity', 'rounds', 'releases', 'actions', 'advances',
+  'expanding', 'more', 'targeting',
+]);
 
 function extractTopic(titles: string[]): string {
   const freq = new Map<string, number>();
   for (const title of titles) {
     for (const kw of extractKeywords(title)) {
-      freq.set(kw, (freq.get(kw) ?? 0) + 1);
+      if (!TOPIC_NOISE_WORDS.has(kw)) {
+        freq.set(kw, (freq.get(kw) ?? 0) + 1);
+      }
     }
   }
+  // Prefer words that appear in multiple titles (shared across signals)
+  const minAppearances = Math.max(1, Math.floor(titles.length * 0.4));
   const top = Array.from(freq.entries())
+    .filter(([, count]) => count >= minAppearances)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 3)
     .map(([word]) => word);
