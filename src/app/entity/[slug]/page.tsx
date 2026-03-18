@@ -14,6 +14,9 @@ import { SupportingEventRow } from '@/components/events/SupportingEventRow';
 import { WatchlistButton } from '@/components/watchlist/WatchlistButton';
 import { EntityTimeline } from '@/components/entity/TimelineNavigator';
 import { EntityMomentumBadge } from '@/components/entity/EntityMomentumBadge';
+import { composeFeed, getSignificanceTier } from '@/lib/signals/feedComposer';
+import { explainSignal } from '@/lib/signals/explanationLayer';
+import type { Signal, SignalCategory } from '@/data/mockSignals';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -24,6 +27,67 @@ function formatDate(iso: string): string {
     month: 'short', day: 'numeric', year: 'numeric',
   });
 }
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const hours = Math.floor(diff / 3_600_000);
+  if (hours < 1) return 'just now';
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  if (days < 30) return `${Math.floor(days / 7)}w ago`;
+  return formatDate(iso);
+}
+
+/** Derive a brief entity intelligence summary from top-ranked signals. */
+function buildEntitySummary(
+  entityName: string,
+  signals: Signal[],
+  lastActivity: string | null,
+): string | null {
+  if (signals.length === 0) return null;
+
+  const top = signals.slice(0, 3);
+  const categories = Array.from(new Set(top.map((s) => s.category)));
+  const topSig = signals[0];
+  const tier = getSignificanceTier(topSig.significanceScore);
+
+  // Use existing intelligence layer text if available
+  if (topSig.whyThisMatters) {
+    return topSig.whyThisMatters;
+  }
+
+  // Derive from signal data
+  const catLabel = categories
+    .map((c) => c.replace(/_/g, ' '))
+    .join(', ');
+
+  const recency = lastActivity ? timeAgo(lastActivity) : null;
+  const activityStr = recency ? ` — last active ${recency}` : '';
+
+  if (tier === 'critical') {
+    return `${entityName} is generating critical intelligence signals across ${catLabel}${activityStr}. ${signals.length} signal${signals.length !== 1 ? 's' : ''} detected, with the highest-confidence signal at ${topSig.confidence}%.`;
+  }
+  if (tier === 'high') {
+    return `${entityName} shows elevated activity in ${catLabel}${activityStr}. ${signals.length} signal${signals.length !== 1 ? 's' : ''} in the intelligence feed.`;
+  }
+  return `${entityName} has ${signals.length} tracked signal${signals.length !== 1 ? 's' : ''} across ${catLabel}${activityStr}.`;
+}
+
+/** Count signals by category. */
+function getCategoryBreakdown(signals: Signal[]): { category: SignalCategory; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const s of signals) {
+    counts.set(s.category, (counts.get(s.category) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([category, count]) => ({ category: category as SignalCategory, count }))
+    .sort((a, b) => b.count - a.count);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Style constants
+// ─────────────────────────────────────────────────────────────────────────────
 
 const SECTION_HEADER: React.CSSProperties = {
   fontFamily: 'var(--fm)', fontSize: 9, letterSpacing: '0.12em',
@@ -48,6 +112,16 @@ const TAG: React.CSSProperties = {
 
 const EMPTY_TEXT: React.CSSProperties = {
   fontSize: 13, color: 'var(--text3)', lineHeight: 1.7,
+};
+
+// Category color map — aligned with globals.css badge classes
+const CATEGORY_COLORS: Record<string, { color: string; dot: string }> = {
+  models:     { color: 'var(--indigo-l)', dot: 'rgba(79,70,229,0.6)' },
+  agents:     { color: 'var(--cyan-l)',   dot: 'rgba(6,182,212,0.6)' },
+  funding:    { color: 'var(--amber-l)',  dot: 'rgba(217,119,6,0.6)' },
+  research:   { color: 'var(--sky-l)',    dot: 'rgba(2,132,199,0.6)' },
+  regulation: { color: 'var(--rose-l)',   dot: 'rgba(225,29,72,0.6)' },
+  product:    { color: 'var(--emerald-l)',dot: 'rgba(5,150,105,0.6)' },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -82,8 +156,8 @@ export default async function EntityDossierPage(
 
   const entityName = entity.name;
 
-  const [signals, events, metrics, timeline, momentum] = await Promise.all([
-    getSignalsForEntity(entityName, 20).catch(() => []),
+  const [rawSignals, events, metrics, timeline, momentum] = await Promise.all([
+    getSignalsForEntity(entityName, 20).catch(() => [] as Signal[]),
     getEventsForEntity(entityName, 15).catch(() => []),
     getEntityMetrics(entityName).catch(() => ({
       signalsTotal: 0, signals24h: 0, signals7d: 0, signals30d: 0,
@@ -92,6 +166,24 @@ export default async function EntityDossierPage(
     getEntityTimeline(entityName, 25).catch(() => [] as TimelineItem[]),
     getEntityMomentum(entityName).catch(() => null),
   ]);
+
+  // Rank signals by significance + recency via composeFeed
+  const signals = composeFeed(rawSignals, { minSignificance: 0 });
+
+  // Derive per-signal explanations (pure, no I/O)
+  const signalsWithExplanations = signals.map((sig) => ({
+    ...sig,
+    explanation: explainSignal(sig),
+  }));
+
+  // Derived intelligence
+  const entitySummary = buildEntitySummary(entityName, signals, metrics.lastActivity);
+  const categoryBreakdown = getCategoryBreakdown(rawSignals);
+
+  // Top-priority signals for the summary section
+  const topSignals = signalsWithExplanations.filter(
+    (s) => s._significanceTier === 'critical' || s._significanceTier === 'high',
+  ).slice(0, 3);
 
   const riskColor = entity.riskLevel === 'high'
     ? 'var(--amber-l)'
@@ -193,8 +285,8 @@ export default async function EntityDossierPage(
             </span>
           )}
           {metrics.lastActivity && (
-            <span style={{ fontFamily: 'var(--fm)', fontSize: 10, color: 'var(--text3)' }}>
-              Last active {formatDate(metrics.lastActivity)}
+            <span style={{ fontFamily: 'var(--fm)', fontSize: 10, color: 'var(--text2)' }}>
+              Last active {timeAgo(metrics.lastActivity)}
             </span>
           )}
           {entity.financialScale && (
@@ -239,6 +331,70 @@ export default async function EntityDossierPage(
         </div>
       </div>
 
+      {/* ── Intelligence Summary ────────────────────────────────────────────── */}
+      {(entitySummary || topSignals.length > 0) && (
+        <div style={{ ...GLASS_CARD, marginBottom: 16, borderLeft: '2px solid rgba(79,70,229,0.5)' }}>
+          <div style={SECTION_HEADER}>Intelligence Summary</div>
+
+          {entitySummary && (
+            <p style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.7, marginBottom: topSignals.length > 0 ? 16 : 0 }}>
+              {entitySummary}
+            </p>
+          )}
+
+          {/* Top priority signals at a glance */}
+          {topSignals.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {topSignals.map((sig) => (
+                <Link
+                  key={sig.id}
+                  href={`/signals/${sig.id}`}
+                  style={{ textDecoration: 'none' }}
+                >
+                  <div style={{
+                    padding: '12px 14px', borderRadius: 8,
+                    background: sig._significanceTier === 'critical'
+                      ? 'rgba(217,119,6,0.06)'
+                      : 'rgba(79,70,229,0.06)',
+                    border: sig._significanceTier === 'critical'
+                      ? '1px solid rgba(217,119,6,0.2)'
+                      : '1px solid rgba(79,70,229,0.2)',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+                      <span style={{
+                        fontFamily: 'var(--fm)', fontSize: 8, letterSpacing: '0.1em',
+                        textTransform: 'uppercase',
+                        color: sig._significanceTier === 'critical' ? 'var(--amber-l)' : 'var(--indigo-l)',
+                        padding: '1px 6px', borderRadius: 6,
+                        border: sig._significanceTier === 'critical'
+                          ? '1px solid rgba(217,119,6,0.35)'
+                          : '1px solid rgba(79,70,229,0.35)',
+                      }}>
+                        {sig.explanation?.importanceLabel ?? (sig._significanceTier === 'critical' ? 'Critical' : 'High')}
+                      </span>
+                      <span className={`badge ${sig.category}`} style={{ fontSize: 8 }}>
+                        {sig.category}
+                      </span>
+                      <span style={{ fontFamily: 'var(--fm)', fontSize: 9, color: 'var(--text3)', marginLeft: 'auto' }}>
+                        {formatDate(sig.date)}
+                      </span>
+                    </div>
+                    <p style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.5, margin: 0, marginBottom: 4 }}>
+                      {sig.title}
+                    </p>
+                    {(sig.whyThisMatters ?? sig.explanation?.whyThisMatters) && (
+                      <p style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.55, margin: 0 }}>
+                        {sig.whyThisMatters ?? sig.explanation?.whyThisMatters}
+                      </p>
+                    )}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Entity Timeline */}
       <div style={{ ...GLASS_CARD, marginBottom: 16 }}>
         <div style={SECTION_HEADER}>Entity Timeline</div>
@@ -251,67 +407,114 @@ export default async function EntityDossierPage(
         {/* Left column — signals + events */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-          {/* Recent signals */}
+          {/* Recent signals — significance-ranked */}
           <div style={GLASS_CARD}>
-            <div style={SECTION_HEADER}>Recent Signals</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <span style={{ ...SECTION_HEADER, marginBottom: 0 }}>Recent Signals</span>
+              {signals.length > 0 && (
+                <span style={{ fontFamily: 'var(--fm)', fontSize: 9, color: 'var(--text3)' }}>
+                  ranked by significance
+                </span>
+              )}
+            </div>
 
-            {signals.length === 0 ? (
+            {signalsWithExplanations.length === 0 ? (
               <p style={EMPTY_TEXT}>No recent signals available yet</p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                {signals.map((sig) => {
-                  const isHighlight = (sig.significanceScore ?? 0) >= 65;
+                {signalsWithExplanations.map((sig) => {
+                  const tier = sig._significanceTier ?? 'standard';
+                  const isCritical = tier === 'critical';
+                  const isHigh = tier === 'high';
+                  const catColors = CATEGORY_COLORS[sig.category] ?? { color: 'var(--text3)', dot: 'rgba(100,116,139,0.6)' };
+
                   return (
                     <Link
                       key={sig.id}
                       href={`/signals/${sig.id}`}
                       style={{
                         display: 'block',
-                        padding: '12px 0 12px 12px',
+                        padding: '14px 0 14px 14px',
                         borderBottom: '1px solid var(--border)',
-                        borderLeft: isHighlight ? '2px solid var(--amber-l)' : '2px solid transparent',
+                        borderLeft: isCritical
+                          ? '2px solid var(--amber-l)'
+                          : isHigh
+                            ? '2px solid var(--indigo-l)'
+                            : '2px solid transparent',
                         textDecoration: 'none',
                         transition: 'background 0.15s',
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                        <span style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.5 }}>
+                      {/* Title row */}
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
+                        <span style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.5, flex: 1 }}>
                           {sig.title}
                         </span>
-                        {isHighlight && (
+                        {isCritical && (
                           <span style={{
                             fontFamily: 'var(--fm)', fontSize: 8, letterSpacing: '0.08em',
                             textTransform: 'uppercase', color: 'var(--amber-l)',
                             padding: '1px 6px', borderRadius: 8,
                             border: '1px solid rgba(217,119,6,0.4)',
-                            whiteSpace: 'nowrap',
+                            whiteSpace: 'nowrap', flexShrink: 0,
                           }}>
-                            major
+                            critical
+                          </span>
+                        )}
+                        {isHigh && !isCritical && (
+                          <span style={{
+                            fontFamily: 'var(--fm)', fontSize: 8, letterSpacing: '0.08em',
+                            textTransform: 'uppercase', color: 'var(--indigo-l)',
+                            padding: '1px 6px', borderRadius: 8,
+                            border: '1px solid rgba(79,70,229,0.35)',
+                            whiteSpace: 'nowrap', flexShrink: 0,
+                          }}>
+                            high
                           </span>
                         )}
                       </div>
-                      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                        {sig.category && (
+
+                      {/* Why this matters — when available */}
+                      {(sig.whyThisMatters ?? sig.explanation?.whyThisMatters) && (
+                        <p style={{
+                          fontSize: 12, color: 'var(--text3)', lineHeight: 1.55,
+                          margin: '0 0 6px 0',
+                        }}>
+                          {sig.whyThisMatters ?? sig.explanation?.whyThisMatters}
+                        </p>
+                      )}
+
+                      {/* Meta row */}
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                        {/* Category */}
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 4,
+                          fontFamily: 'var(--fm)', fontSize: 9, letterSpacing: '0.1em',
+                          textTransform: 'uppercase', color: catColors.color,
+                          padding: '2px 8px', borderRadius: 10,
+                          border: `1px solid ${catColors.dot}`,
+                          background: 'transparent',
+                        }}>
                           <span style={{
-                            fontFamily: 'var(--fm)', fontSize: 9, letterSpacing: '0.1em',
-                            textTransform: 'uppercase', color: 'var(--text3)',
-                            padding: '2px 8px', borderRadius: 10,
-                            border: '1px solid var(--border2)',
-                          }}>
-                            {sig.category}
-                          </span>
-                        )}
+                            width: 5, height: 5, borderRadius: '50%',
+                            background: catColors.dot, flexShrink: 0,
+                          }} />
+                          {sig.category}
+                        </span>
+
                         <span style={{ fontFamily: 'var(--fm)', fontSize: 10, color: 'var(--text3)' }}>
                           {formatDate(sig.date)}
                         </span>
+
                         {sig.confidence >= 80 && (
                           <span style={{ fontFamily: 'var(--fm)', fontSize: 9, color: 'var(--emerald-l)' }}>
-                            {sig.confidence}%
+                            {sig.confidence}% conf
                           </span>
                         )}
-                        {sig.significanceScore != null && (
+
+                        {sig.sourceSupportCount != null && sig.sourceSupportCount > 1 && (
                           <span style={{ fontFamily: 'var(--fm)', fontSize: 9, color: 'var(--text3)' }}>
-                            sig {sig.significanceScore}
+                            {sig.sourceSupportCount} sources
                           </span>
                         )}
                       </div>
@@ -340,6 +543,20 @@ export default async function EntityDossierPage(
 
         {/* Right column — sidebar */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          {/* Watchlist prompt card */}
+          <div style={{ ...GLASS_CARD, borderColor: 'rgba(79,70,229,0.2)' }}>
+            <div style={SECTION_HEADER}>Track this Entity</div>
+            <p style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.6, marginBottom: 14 }}>
+              Add {entity.name} to your watchlist to get signals in your digest and stay updated on key developments.
+            </p>
+            <WatchlistButton
+              slug={slug}
+              name={entity.name}
+              sector={entity.sector ?? undefined}
+              country={entity.country ?? undefined}
+            />
+          </div>
 
           {/* Entity profile card */}
           <div style={GLASS_CARD}>
@@ -419,18 +636,61 @@ export default async function EntityDossierPage(
                   {metrics.avgConfidence > 0 ? `${metrics.avgConfidence.toFixed(0)}%` : '—'}
                 </span>
               </div>
+              {metrics.lastActivity && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontFamily: 'var(--fm)', fontSize: 10, color: 'var(--text3)' }}>Last Activity</span>
+                  <span style={{ fontFamily: 'var(--fm)', fontSize: 11, color: 'var(--text2)' }}>
+                    {timeAgo(metrics.lastActivity)}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Future sections placeholder */}
-          <div style={GLASS_CARD}>
-            <div style={SECTION_HEADER}>Coming Soon</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <span style={EMPTY_TEXT}>Related entities graph</span>
-              <span style={EMPTY_TEXT}>Funding history</span>
-              <span style={EMPTY_TEXT}>Timeline grouping &amp; date ranges</span>
+          {/* Signal category breakdown */}
+          {categoryBreakdown.length > 0 && (
+            <div style={GLASS_CARD}>
+              <div style={SECTION_HEADER}>Signals by Category</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {categoryBreakdown.map(({ category, count }) => {
+                  const catColors = CATEGORY_COLORS[category] ?? { color: 'var(--text3)', dot: 'rgba(100,116,139,0.5)' };
+                  const pct = Math.round((count / rawSignals.length) * 100);
+                  return (
+                    <div key={category}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 5,
+                          fontFamily: 'var(--fm)', fontSize: 10, letterSpacing: '0.08em',
+                          textTransform: 'uppercase', color: catColors.color,
+                        }}>
+                          <span style={{
+                            width: 6, height: 6, borderRadius: '50%',
+                            background: catColors.dot, flexShrink: 0,
+                          }} />
+                          {category}
+                        </span>
+                        <span style={{ fontFamily: 'var(--fm)', fontSize: 11, color: 'var(--text)' }}>
+                          {count}
+                        </span>
+                      </div>
+                      {/* Mini bar */}
+                      <div style={{
+                        height: 2, borderRadius: 2, background: 'var(--border)',
+                        overflow: 'hidden',
+                      }}>
+                        <div style={{
+                          height: '100%', borderRadius: 2,
+                          background: catColors.dot,
+                          width: `${pct}%`,
+                          transition: 'width 0.3s ease',
+                        }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>
