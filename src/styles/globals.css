@@ -435,6 +435,13 @@ body {
 .ph-left h1 { font-family: var(--fd); font-size: 30px; font-style: italic; font-weight: 500; letter-spacing: -0.02em; color: var(--text); margin-bottom: 6px; }
 .ph-left p { font-family: var(--fm); font-size: 11px; font-weight: 400; color: var(--text2); letter-spacing: 0.04em; }
 .ph-divider { height: 1px; background: linear-gradient(90deg, var(--border2), transparent); margin: 18px 0; }
+/* Live indicator aligned to the right of page headers */
+.ph-live {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 11px; border-radius: 20px;
+  background: rgba(5,150,105,0.07); border: 1px solid rgba(5,150,105,0.18);
+  margin-bottom: 8px; flex-shrink: 0;
+}
 
 /* Page header title — reusable heading style for .ph children */
 .ph-title {
@@ -683,6 +690,9 @@ body {
 .hm { border-left: 2px solid var(--indigo); padding-left: 14px; }
 .hm-n { font-family: var(--fd); font-size: 28px; font-style: italic; font-weight: 700; color: var(--indigo-l); line-height: 1; }
 .hm-l { font-family: var(--fm); font-size: 10px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--text3); margin-top: 4px; }
+/* Live "New in 24h" hero metric variant */
+.hm-live { border-left-color: var(--emerald); }
+.hm-n-live { color: var(--emerald-l); display: flex; align-items: center; gap: 7px; }
 
 /* Feature grid */
 .feature-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin-bottom: 20px; }
@@ -931,8 +941,52 @@ body {
   font-family: var(--fm); font-size: 11px; color: var(--text3);
 }
 .nc-src { display: flex; align-items: center; gap: 6px; color: rgba(136,136,168,0.85); }
-.nc-date { color: rgba(136,136,168,0.7); }
+.nc-date { color: rgba(136,136,168,0.7); display: flex; align-items: center; gap: 5px; }
 .nc-date--recent { color: var(--indigo-l); font-weight: 600; }
+.nc-date--hot { color: var(--emerald-l); font-weight: 600; }
+
+/* Tiny pulsing dot shown next to "Just now" / "X min ago" timestamps */
+.nc-date-live-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--emerald-l); flex-shrink: 0;
+  animation: ping 1.6s ease-in-out infinite;
+  box-shadow: 0 0 0 0 rgba(52,211,153,0.5);
+}
+
+/* Hot signal card — subtle brightness lift for signals < 1h old */
+.nc-hot {
+  border-color: rgba(52,211,153,0.14);
+  background: linear-gradient(160deg, rgba(52,211,153,0.03), var(--glass));
+}
+.nc-hot .nc-title { color: #f4f4ff; }
+
+/* ══════════════════════════════════════
+   LIVE COUNT BADGE
+   Used on signals page header, signals browser, and dashboard
+══════════════════════════════════════ */
+.live-count-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: 20px;
+  background: rgba(5,150,105,0.07); border: 1px solid rgba(5,150,105,0.18);
+  margin-bottom: 16px;
+}
+.live-count-badge--inline {
+  padding: 3px 9px; margin-bottom: 0;
+}
+.live-count-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--emerald-l); flex-shrink: 0;
+  animation: ping 1.6s ease-in-out infinite;
+  box-shadow: 0 0 0 0 rgba(52,211,153,0.5);
+}
+.live-count-label {
+  font-family: var(--fm); font-size: 9px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--emerald-l);
+}
+.live-count-num {
+  font-family: var(--fm); font-size: 10.5px; color: rgba(52,211,153,0.75);
+  letter-spacing: 0.03em;
+}
 .nc-why {
   font-family: var(--f); font-size: 13px; color: rgba(180,180,210,0.9); line-height: 1.65;
   padding: 10px 14px; margin-bottom: 14px;

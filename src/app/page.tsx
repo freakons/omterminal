@@ -6,6 +6,7 @@ import RequestAccessButton from '@/components/RequestAccessButton';
 import { TrendRadar } from '@/components/TrendRadar';
 import { IntelligenceSnapshot } from '@/components/signals/IntelligenceSnapshot';
 import { TopInsight } from '@/components/TopInsight';
+import { countRecentSignals } from '@/lib/signals/signalAge';
 
 /** ISR: revalidate every hour */
 export const revalidate = 3600;
@@ -20,6 +21,7 @@ export default async function HomePage() {
   const signals     = live.signals;
   const companies   = live.companies;
   const regulations = live.regulations;
+  const recentCount = countRecentSignals(dbSignals, 24);
 
   // Top signals for the snapshot: prefer live DB data, fall back to mock in dev
   const snapshotSignals =
@@ -52,7 +54,16 @@ export default async function HomePage() {
           {signals > 0 && <div className="hm"><div className="hm-n">{signals}</div><div className="hm-l">Signals tracked</div></div>}
           {companies > 0 && <div className="hm"><div className="hm-n">{companies}</div><div className="hm-l">Companies tracked</div></div>}
           {regulations > 0 && <div className="hm"><div className="hm-n">{regulations}</div><div className="hm-l">Active regulations</div></div>}
-          {signals === 0 && companies === 0 && regulations === 0 && (
+          {recentCount > 0 && (
+            <div className="hm hm-live">
+              <div className="hm-n hm-n-live">
+                <span className="live-count-dot" aria-hidden="true" />
+                {recentCount}
+              </div>
+              <div className="hm-l">New in 24h</div>
+            </div>
+          )}
+          {signals === 0 && companies === 0 && regulations === 0 && recentCount === 0 && (
             <div className="hm"><div className="hm-n">Live</div><div className="hm-l">Intelligence platform</div></div>
           )}
         </div>

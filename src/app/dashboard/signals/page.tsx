@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { formatSignalAge, isHot, isRecent, countRecentSignals } from '@/lib/signals/signalAge';
 
 export const metadata: Metadata = {
   title: 'Signals — Omterminal Intelligence',
@@ -17,19 +18,6 @@ interface Signal {
   date?: string | null;
 }
 
-function formatDate(value: string | null | undefined): string {
-  if (!value) return '—';
-  try {
-    return new Date(value).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-  } catch {
-    return value;
-  }
-}
-
 export default async function SignalsPage() {
   let signals: Signal[] = [];
 
@@ -45,13 +33,24 @@ export default async function SignalsPage() {
     // Render empty state if API is unavailable
   }
 
+  const recentCount = countRecentSignals(signals, 24);
+
   return (
     <div>
       {/* Section header */}
       <div className="feed-section-header" style={{ marginBottom: 20 }}>
         <span className="feed-section-accent feed-section-accent--top" />
         <span className="feed-section-label">Latest Signals</span>
-        <span className="feed-section-count">{signals.length} total</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {recentCount > 0 && (
+            <span className="live-count-badge live-count-badge--inline">
+              <span className="live-count-dot" aria-hidden="true" />
+              <span className="live-count-label">LIVE</span>
+              <span className="live-count-num">{recentCount} in 24h</span>
+            </span>
+          )}
+          <span className="feed-section-count">{signals.length} total</span>
+        </div>
       </div>
 
       {signals.length === 0 ? (
@@ -63,7 +62,10 @@ export default async function SignalsPage() {
         <ul className="dash-list">
           {signals.map((signal) => {
             const category = (signal.category ?? signal.signal_type ?? 'unknown').toLowerCase();
-            const date = formatDate(signal.published_at ?? signal.date ?? signal.created_at);
+            const rawDate = signal.published_at ?? signal.date ?? signal.created_at;
+            const ageLabel = rawDate ? formatSignalAge(rawDate) : '—';
+            const hot = rawDate ? isHot(rawDate) : false;
+            const recent = rawDate ? isRecent(rawDate) : false;
 
             return (
               <li key={signal.id} className="dash-row">
@@ -78,7 +80,10 @@ export default async function SignalsPage() {
                     )}
                   </div>
                 </div>
-                <span className="dash-row-date">{date}</span>
+                <span className={`dash-row-date${hot ? ' nc-date--hot' : recent ? ' nc-date--recent' : ''}`}>
+                  {hot && <span className="nc-date-live-dot" aria-hidden="true" />}
+                  {ageLabel}
+                </span>
               </li>
             );
           })}
