@@ -20,6 +20,7 @@ import type { Signal, SignalCategory } from '@/data/mockSignals';
 import { buildEntitySchema, buildBreadcrumbSchema } from '@/lib/seo/jsonld';
 import { siteConfig } from '@/config/site';
 import { IntelligenceGraph } from '@/ui/graph/IntelligenceGraph';
+import { CopyInsightButton } from '@/components/ui/CopyInsightButton';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -462,7 +463,19 @@ export default async function EntityDossierPage(
       {/* ── Intelligence Summary ────────────────────────────────────────────── */}
       {(entitySummary || topSignals.length > 0) && (
         <div style={{ ...GLASS_CARD, marginBottom: 16, borderLeft: '2px solid rgba(79,70,229,0.5)' }}>
-          <h2 style={{ ...SECTION_HEADER, margin: 0, marginBottom: 16 }}>Intelligence Summary</h2>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <h2 style={{ ...SECTION_HEADER, margin: 0 }}>Intelligence Summary</h2>
+            <CopyInsightButton text={[
+              `${entityName} — Intelligence Summary`,
+              '',
+              ...(entitySummary ? [entitySummary, ''] : []),
+              ...topSignals.map(sig =>
+                `• ${sig.title}${(sig.whyThisMatters ?? sig.explanation?.whyThisMatters) ? ` — ${sig.whyThisMatters ?? sig.explanation?.whyThisMatters}` : ''}`
+              ),
+              '',
+              'via OM Terminal',
+            ].join('\n')} />
+          </div>
 
           {entitySummary && (
             <p style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.7, marginBottom: topSignals.length > 0 ? 16 : 0 }}>

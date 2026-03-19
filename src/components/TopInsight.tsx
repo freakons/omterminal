@@ -14,6 +14,7 @@
  */
 
 import type { Signal, SignalCategory } from '@/data/mockSignals';
+import { CopyInsightButton } from '@/components/ui/CopyInsightButton';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Category colours (mirrors IntelligenceSnapshot palette)
@@ -89,6 +90,8 @@ export function TopInsight({ signals }: TopInsightProps) {
   const accent    = CATEGORY_COLOR[cat] ?? '#8888a8';
   const score     = top.significanceScore ?? top.confidence;
 
+  const copyText  = `${top.entityName} — ${sentence}\n\nvia OM Terminal`;
+
   return (
     <section
       aria-label="Today's Top Insight"
@@ -132,16 +135,19 @@ export function TopInsight({ signals }: TopInsightProps) {
         }}>
           Today&apos;s Top Insight
         </span>
-        {score != null && (
-          <span style={{
-            fontFamily: 'var(--fm)',
-            fontSize: 9,
-            color: accent,
-            letterSpacing: '0.06em',
-          }}>
-            {score}
-          </span>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {score != null && (
+            <span style={{
+              fontFamily: 'var(--fm)',
+              fontSize: 9,
+              color: accent,
+              letterSpacing: '0.06em',
+            }}>
+              {score}
+            </span>
+          )}
+          <CopyInsightButton text={copyText} />
+        </div>
       </div>
 
       {/* Insight row */}
