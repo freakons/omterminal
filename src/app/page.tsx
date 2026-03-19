@@ -65,14 +65,12 @@ export default async function HomePage() {
       <IntelligenceSnapshot signals={snapshotSignals} />
 
       {/* Trend Radar */}
-      <div style={{ marginBottom: 32 }}>
+      <div style={{ marginBottom: 36 }}>
         <TrendRadar />
       </div>
 
       {/* Features */}
-      <div style={{ fontFamily: 'var(--fm)', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: 'var(--text3)', marginBottom: 12 }}>
-        TERMINAL CAPABILITIES
-      </div>
+      <div className="section-eyebrow">TERMINAL CAPABILITIES</div>
       <div className="feature-grid">
         {siteConfig.features.map((feat) => (
           <div key={feat.title} className="feat-card">

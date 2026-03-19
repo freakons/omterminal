@@ -25,17 +25,19 @@ export default function AlertsPage() {
       </div>
 
       {/* Header */}
-      <div className="ph" style={{ marginBottom: 24 }}>
-        <h1 className="ph-title">
-          Your <span className="ph-hi">Alerts</span>
-        </h1>
-        <p style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.7, maxWidth: 560 }}>
-          High-impact signals, rising momentum, and emerging trends — curated
-          for your watched entities. Grouped by entity, latest first.
-        </p>
+      <div className="ph" style={{ marginBottom: 28 }}>
+        <div>
+          <h1 className="ph-title">
+            Your <span className="ph-hi">Alerts</span>
+          </h1>
+          <p style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.75, maxWidth: 560, marginTop: 10 }}>
+            High-impact signals, rising momentum, and emerging trends — curated
+            for your watched entities. Grouped by entity, latest first.
+          </p>
+        </div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
         <AlertsPanel />
         <AlertPreferencesCard />
         <EmailDigestCard />

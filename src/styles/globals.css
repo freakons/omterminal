@@ -701,6 +701,132 @@ body {
 .feat-body { font-size: 13.5px; color: var(--text2); line-height: 1.7; }
 
 /* ══════════════════════════════════════
+   SECTION EYEBROW — reusable section label
+   Used above feature grids, content blocks, etc.
+══════════════════════════════════════ */
+.section-eyebrow {
+  font-family: var(--fm); font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--text3); margin-bottom: 14px;
+  display: flex; align-items: center; gap: 8px;
+}
+.section-eyebrow::before {
+  content: ''; display: block; width: 16px; height: 1px;
+  background: var(--border2); flex-shrink: 0;
+}
+
+/* ══════════════════════════════════════
+   DASHBOARD TAB NAV — active-state tabs
+══════════════════════════════════════ */
+.dash-tab-nav {
+  display: flex; gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 32px;
+}
+.dash-tab {
+  display: inline-block; padding: 9px 20px;
+  font-family: var(--f); font-size: 13px; font-weight: 500;
+  color: var(--text2); text-decoration: none;
+  border-radius: 7px 7px 0 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color var(--t), background var(--t), border-color var(--t);
+  letter-spacing: 0.01em;
+}
+.dash-tab:hover { color: var(--text); background: var(--glass); }
+.dash-tab.active {
+  color: var(--text); font-weight: 600;
+  border-bottom-color: var(--indigo-l);
+  background: rgba(79,70,229,0.06);
+}
+
+/* Dashboard page heading */
+.dash-heading {
+  font-family: var(--fd); font-size: 28px; font-style: italic; font-weight: 500;
+  letter-spacing: -0.02em; color: var(--text); line-height: 1.15;
+  margin-bottom: 4px;
+}
+.dash-heading-sub {
+  font-family: var(--fm); font-size: 11px; font-weight: 400;
+  color: var(--text3); letter-spacing: 0.04em; margin-bottom: 20px;
+}
+
+/* Dashboard signal / trend / insight row list */
+.dash-list {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.dash-row {
+  background: var(--glass); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 16px 20px;
+  display: grid; grid-template-columns: 1fr auto;
+  gap: 6px 16px; align-items: start;
+  transition: background var(--t), border-color var(--t);
+}
+.dash-row:hover { background: var(--glass2); border-color: var(--border2); }
+.dash-row-title {
+  font-family: var(--fd); font-size: 16px; font-style: italic; font-weight: 500;
+  color: var(--text); line-height: 1.35; margin: 0 0 6px;
+}
+.dash-row-meta {
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+}
+.dash-row-date {
+  font-family: var(--fm); font-size: 11px;
+  color: var(--text3); white-space: nowrap; margin-top: 2px;
+}
+.dash-count-label {
+  font-family: var(--fm); font-size: 12px; color: var(--text2);
+  margin-bottom: 20px;
+}
+
+/* Confidence bar for trends */
+.conf-bar-wrap {
+  margin-top: 10px; height: 3px;
+  background: var(--border); border-radius: 2px; overflow: hidden;
+}
+.conf-bar { height: 100%; border-radius: 2px; transition: width 0.3s ease; }
+.conf-value {
+  font-family: var(--fd); font-size: 20px; font-style: italic; font-weight: 700;
+  font-variant-numeric: tabular-nums; line-height: 1;
+}
+.conf-label {
+  font-family: var(--fm); font-size: 10px;
+  color: var(--text3); margin-top: 2px; letter-spacing: 0.04em;
+}
+
+/* Insight card grid */
+.dash-insight-grid {
+  list-style: none; padding: 0; margin: 0;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+}
+.dash-insight-card {
+  background: var(--glass); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 18px 20px;
+  display: flex; flex-direction: column; gap: 10px;
+  transition: background var(--t), border-color var(--t);
+}
+.dash-insight-card:hover { background: var(--glass2); border-color: var(--border2); }
+.dash-insight-title {
+  font-family: var(--fd); font-size: 16px; font-style: italic; font-weight: 500;
+  color: var(--text); line-height: 1.35; margin: 0; flex: 1;
+}
+.dash-insight-summary {
+  font-size: 13px; color: var(--text2); line-height: 1.65;
+  margin: 0; flex-grow: 1;
+}
+.conf-badge {
+  flex-shrink: 0; font-family: var(--fm); font-size: 11px; font-weight: 700;
+  padding: 3px 9px; border-radius: 5px;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid;
+}
+.conf-badge--high { color: var(--emerald-l); background: rgba(5,150,105,0.1); border-color: rgba(5,150,105,0.2); }
+.conf-badge--mid  { color: var(--amber-l);   background: rgba(217,119,6,0.1);  border-color: rgba(217,119,6,0.2);  }
+.conf-badge--low  { color: var(--rose-l);    background: rgba(225,29,72,0.1);  border-color: rgba(225,29,72,0.2);  }
+
+/* ══════════════════════════════════════
    FEED SECTIONS
 ══════════════════════════════════════ */
 .feed-section {
