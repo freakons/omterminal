@@ -4,6 +4,7 @@ import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { mockGraphData, type GraphNode, type GraphLink, type GraphData } from '@/data/mockGraph';
+import { ConnectionExplanationPanel } from './ConnectionExplanationPanel';
 
 // Disable SSR — ForceGraph2D uses canvas and window APIs
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -186,6 +187,18 @@ export function IntelligenceGraph() {
     }
     return s;
   }, [hoveredId, displayGraphData.links]);
+
+  /**
+   * Top 2–3 entity↔entity links for the explanation panel.
+   * displayGraphData.links is already sorted strongest-first; we keep only
+   * links that carry relationship metadata (tier / strength).
+   */
+  const topConnections = useMemo<GraphLink[]>(() => {
+    if (!focusedNodeId) return [];
+    return displayGraphData.links
+      .filter((l) => l.tier != null || l.strength != null)
+      .slice(0, 3);
+  }, [focusedNodeId, displayGraphData.links]);
 
   /** Custom canvas renderer — draws glowing nodes with labels */
   const paintNode = useCallback(
@@ -531,6 +544,13 @@ export function IntelligenceGraph() {
 
       {/* Focus mode indicator */}
       {focusIndicator}
+
+      {/* Connection explanation panel — visible only in focus mode */}
+      <ConnectionExplanationPanel
+        focusedNode={focusedNode}
+        topLinks={topConnections}
+        nodes={graphData.nodes}
+      />
 
     <div
       ref={containerRef}
