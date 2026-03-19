@@ -3,14 +3,18 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import { getSignalById, getRelatedSignals, getSupportingEventsForSignal, getSourceArticlesForSignal, getSignalMomentum } from '@/db/queries';
 import { Badge } from '@/components/ui/Badge';
-import { SupportingEventRow } from '@/components/events/SupportingEventRow';
 import { EvidencePanel } from '@/components/signals/EvidencePanel';
 import { CorroborationIndicator, computeCorroboration } from '@/components/signals/CorroborationIndicator';
 import { ConfidenceBreakdown } from '@/components/signals/ConfidenceBreakdown';
 import { SourceArticlesPanel } from '@/components/signals/SourceArticlesPanel';
 import { SignalImpactBadge } from '@/components/signals/SignalImpactBadge';
 import { SignalMomentumBadge } from '@/components/signals/SignalMomentumBadge';
+import { SignalInsightBlock } from '@/components/signals/SignalInsightBlock';
+import { KeyEntities } from '@/components/signals/KeyEntities';
+import { RelatedSignalsSection } from '@/components/signals/RelatedSignalsSection';
+import { SignalTimeline } from '@/components/signals/SignalTimeline';
 import { getSignificanceTier } from '@/lib/signals/feedComposer';
+import { generateSignalInsightData } from '@/lib/signals/insightGenerator';
 import { slugify } from '@/utils/sanitize';
 import { buildArticleSchema, buildBreadcrumbSchema, buildSignalFAQSchema } from '@/lib/seo/jsonld';
 import { siteConfig } from '@/config/site';
@@ -95,7 +99,7 @@ export default async function SignalDetailPage(
 
   const tier = getSignificanceTier(signal.significanceScore);
   const [relatedSignals, supportingEvents, sourceArticles, momentumData] = await Promise.all([
-    getRelatedSignals(signal.id, signal.entityName, 5).catch(() => []),
+    getRelatedSignals(signal.id, signal.entityName, 6).catch(() => []),
     getSupportingEventsForSignal(signal.id, signal.entityName, 10).catch(() => []),
     getSourceArticlesForSignal(signal.id, signal.entityName, 10).catch(() => []),
     getSignalMomentum(signal.id, signal.entityName).catch(() => null),
@@ -103,6 +107,14 @@ export default async function SignalDetailPage(
 
   // Fallback: if momentum query failed, use safe defaults (stable)
   const momentum = momentumData ?? { recentCount: 0, previousCount: 0 };
+
+  // Generate intelligence insight (heuristic fallback when LLM context missing)
+  const insightData = generateSignalInsightData(signal);
+
+  // Normalize affected entities for KeyEntities component
+  const affectedEntities = (signal.context?.affectedEntities ?? []).map((e) =>
+    typeof e === 'string' ? { name: e } : e,
+  );
 
   const jsonLd = buildArticleSchema({
     headline: signal.title,
@@ -178,7 +190,9 @@ export default async function SignalDetailPage(
         </span>
       </div>
 
-      {/* Signal header */}
+      {/* ================================================================== */}
+      {/* 1. TITLE + METADATA                                                */}
+      {/* ================================================================== */}
       <div className="hero" style={{ padding: '32px 40px', marginBottom: 20 }}>
         {/* Meta row */}
         <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -257,12 +271,15 @@ export default async function SignalDetailPage(
         </div>
       </div>
 
+      {/* ================================================================== */}
+      {/* INTELLIGENCE LAYOUT                                                */}
+      {/* ================================================================== */}
       <div className="detail-grid">
 
-        {/* Main content column */}
+        {/* Main content column — intelligence-first ordering */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-          {/* Summary */}
+          {/* Signal Summary */}
           <div style={GLASS_CARD}>
             <h2 style={{ ...SECTION_HEADER, margin: 0, marginBottom: 16 }}>Signal Summary</h2>
             <p style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.8 }}>
@@ -270,34 +287,38 @@ export default async function SignalDetailPage(
             </p>
           </div>
 
-          {/* Why it matters */}
-          {signal.context?.whyItMatters && (
-            <div style={GLASS_CARD}>
-              <h2 style={{ ...SECTION_HEADER, margin: 0, marginBottom: 16 }}>Why It Matters</h2>
-              <p style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.8 }}>
-                {signal.context.whyItMatters}
-              </p>
-            </div>
-          )}
+          {/* ────────────────────────────────────────────────────────────── */}
+          {/* 2. WHY THIS MATTERS + 3. KEY IMPLICATIONS                     */}
+          {/* ────────────────────────────────────────────────────────────── */}
+          <SignalInsightBlock insight={insightData} />
 
-          {/* Implications */}
-          {signal.context?.implications && signal.context.implications.length > 0 && (
-            <div style={GLASS_CARD}>
-              <h2 style={{ ...SECTION_HEADER, margin: 0, marginBottom: 16 }}>Implications</h2>
-              <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {signal.context.implications.map((item, i) => (
-                  <li key={i} style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.7 }}>
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          {/* ────────────────────────────────────────────────────────────── */}
+          {/* 4. KEY ENTITIES                                               */}
+          {/* ────────────────────────────────────────────────────────────── */}
+          <KeyEntities
+            primaryEntity={signal.entityName}
+            affectedEntities={affectedEntities}
+          />
 
-          {/* Evidence Panel — structured evidence chain */}
+          {/* ────────────────────────────────────────────────────────────── */}
+          {/* 5. RELATED SIGNALS                                            */}
+          {/* ────────────────────────────────────────────────────────────── */}
+          <RelatedSignalsSection signals={relatedSignals} />
+
+          {/* ────────────────────────────────────────────────────────────── */}
+          {/* 6. TIMELINE                                                   */}
+          {/* ────────────────────────────────────────────────────────────── */}
+          <SignalTimeline
+            signal={signal}
+            events={supportingEvents}
+            relatedSignals={relatedSignals}
+          />
+
+          {/* ────────────────────────────────────────────────────────────── */}
+          {/* EVIDENCE & CORROBORATION (deep analysis below intelligence)   */}
+          {/* ────────────────────────────────────────────────────────────── */}
           <EvidencePanel signal={signal} supportingEvents={supportingEvents} />
 
-          {/* Signal Corroboration — at-a-glance strength indicator */}
           <CorroborationIndicator
             data={computeCorroboration({
               sourceSupportCount: signal.sourceSupportCount,
@@ -307,103 +328,13 @@ export default async function SignalDetailPage(
             })}
           />
 
-          {/* Confidence Breakdown — score explanation with factors */}
           <ConfidenceBreakdown signal={signal} />
 
-          {/* Source Articles — article-level provenance */}
           <SourceArticlesPanel articles={sourceArticles} />
         </div>
 
         {/* Sidebar */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-
-          {/* Supporting entities */}
-          {signal.context?.affectedEntities && signal.context.affectedEntities.length > 0 ? (
-            <div style={GLASS_CARD}>
-              <div style={SECTION_HEADER}>Supporting Entities</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {signal.context.affectedEntities.map((entity) => {
-                  const name = typeof entity === 'string' ? entity : entity.name;
-                  const type = typeof entity === 'string' ? undefined : entity.type;
-                  return (
-                    <Link
-                      key={name}
-                      href={`/entity/${slugify(name)}`}
-                      style={{
-                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                        padding: '8px 12px', borderRadius: 8,
-                        border: '1px solid var(--border2)', background: 'var(--glass2)',
-                        textDecoration: 'none', transition: 'border-color 0.15s',
-                      }}
-                    >
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        <span style={{ fontFamily: 'var(--fm)', fontSize: 12, color: 'var(--text2)' }}>
-                          {name}
-                        </span>
-                        {type && (
-                          <span style={{ fontFamily: 'var(--fm)', fontSize: 8, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text3)' }}>
-                            {type}
-                          </span>
-                        )}
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
-          ) : (
-            <div style={GLASS_CARD}>
-              <div style={SECTION_HEADER}>Supporting Entities</div>
-              <p style={{ fontSize: 13, color: 'var(--text3)' }}>
-                No supporting entities identified yet
-              </p>
-            </div>
-          )}
-
-          {/* Related signals */}
-          {relatedSignals.length > 0 ? (
-            <div style={GLASS_CARD}>
-              <div style={SECTION_HEADER}>Related Signals</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {relatedSignals.map((rel) => (
-                  <Link
-                    key={rel.id}
-                    href={`/signals/${rel.id}`}
-                    style={{
-                      display: 'block',
-                      padding: '10px 12px', borderRadius: 8,
-                      border: '1px solid var(--border2)', background: 'var(--glass2)',
-                      textDecoration: 'none', transition: 'border-color 0.15s',
-                    }}
-                  >
-                    <span style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.5 }}>
-                      {rel.title}
-                    </span>
-                    <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                      <span style={{
-                        fontFamily: 'var(--fm)', fontSize: 8, letterSpacing: '0.1em',
-                        textTransform: 'uppercase', color: 'var(--text3)',
-                        padding: '1px 6px', borderRadius: 8,
-                        border: '1px solid var(--border2)',
-                      }}>
-                        {rel.category}
-                      </span>
-                      <span style={{ fontFamily: 'var(--fm)', fontSize: 9, color: 'var(--text3)' }}>
-                        {formatDate(rel.date)}
-                      </span>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div style={GLASS_CARD}>
-              <div style={SECTION_HEADER}>Related Signals</div>
-              <p style={{ fontSize: 13, color: 'var(--text3)' }}>
-                No related signals found
-              </p>
-            </div>
-          )}
 
           {/* Entity link */}
           {signal.entityName && (
@@ -425,6 +356,54 @@ export default async function SignalDetailPage(
                   View entity →
                 </span>
               </Link>
+            </div>
+          )}
+
+          {/* Strategic context (prediction + who should care) */}
+          {(signal.strategicImpact || signal.prediction || signal.whoShouldCare) && (
+            <div style={GLASS_CARD}>
+              <div style={SECTION_HEADER}>Strategic Context</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {signal.strategicImpact && (
+                  <div>
+                    <div style={{
+                      fontFamily: 'var(--fm)', fontSize: 8, letterSpacing: '0.1em',
+                      textTransform: 'uppercase', color: 'var(--indigo-l)', marginBottom: 4,
+                    }}>
+                      Strategic Impact
+                    </div>
+                    <p style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.7, margin: 0 }}>
+                      {signal.strategicImpact}
+                    </p>
+                  </div>
+                )}
+                {signal.prediction && (
+                  <div>
+                    <div style={{
+                      fontFamily: 'var(--fm)', fontSize: 8, letterSpacing: '0.1em',
+                      textTransform: 'uppercase', color: 'var(--amber-l)', marginBottom: 4,
+                    }}>
+                      Prediction
+                    </div>
+                    <p style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.7, margin: 0 }}>
+                      {signal.prediction}
+                    </p>
+                  </div>
+                )}
+                {signal.whoShouldCare && (
+                  <div>
+                    <div style={{
+                      fontFamily: 'var(--fm)', fontSize: 8, letterSpacing: '0.1em',
+                      textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 4,
+                    }}>
+                      Who Should Care
+                    </div>
+                    <p style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.7, margin: 0 }}>
+                      {signal.whoShouldCare}
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
