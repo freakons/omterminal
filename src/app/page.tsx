@@ -5,6 +5,7 @@ import { MOCK_SIGNALS } from '@/data/mockSignals';
 import RequestAccessButton from '@/components/RequestAccessButton';
 import { TrendRadar } from '@/components/TrendRadar';
 import { IntelligenceSnapshot } from '@/components/signals/IntelligenceSnapshot';
+import { TopInsight } from '@/components/TopInsight';
 
 /** ISR: revalidate every hour */
 export const revalidate = 3600;
@@ -56,6 +57,9 @@ export default async function HomePage() {
           )}
         </div>
       </div>
+
+      {/* Today's Top Insight */}
+      <TopInsight signals={snapshotSignals} />
 
       {/* Intelligence Snapshot */}
       <IntelligenceSnapshot signals={snapshotSignals} />
