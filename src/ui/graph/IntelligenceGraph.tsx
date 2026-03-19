@@ -3,7 +3,7 @@
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { mockGraphData, type GraphNode, type GraphLink, type GraphData } from '@/data/mockGraph';
+import { staticSanityGraph, type GraphNode, type GraphLink, type GraphData } from '@/data/mockGraph';
 import { ConnectionExplanationPanel } from './ConnectionExplanationPanel';
 
 // Disable SSR — ForceGraph2D uses canvas and window APIs
@@ -61,10 +61,13 @@ async function fetchGraphData(): Promise<{ data: GraphData; isDemo: boolean; sou
       return { data: graph, isDemo: true, source };
     }
 
-    // No graph data at all — fall back to static mock so the canvas isn't blank
-    return { data: mockGraphData, isDemo: true, source: 'fallback' };
+    // No usable graph data — render the static sanity graph so the canvas
+    // proves the renderer works even when live data and mocks are absent.
+    // Source 'static-sanity' triggers the "Example ecosystem map" label.
+    return { data: staticSanityGraph, isDemo: true, source: 'static-sanity' };
   } catch {
-    return { data: mockGraphData, isDemo: true, source: 'fallback' };
+    // Network / parse error — same static fallback so the page is never blank
+    return { data: staticSanityGraph, isDemo: true, source: 'static-sanity' };
   }
 }
 
@@ -203,9 +206,9 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
   const [hoveredNode, setHoveredNode] = useState<RuntimeNode | null>(null);
   const [hoveredLink, setHoveredLink] = useState<RuntimeLink | null>(null);
   const [mousePos, setMousePos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [graphData, setGraphData] = useState<GraphData>(() => sanitizeGraphData(mockGraphData));
+  const [graphData, setGraphData] = useState<GraphData>(() => sanitizeGraphData(staticSanityGraph));
   const [isDemo, setIsDemo] = useState(true);
-  const [dataSource, setDataSource] = useState<string>('fallback');
+  const [dataSource, setDataSource] = useState<string>('static-sanity');
   const [isLoading, setIsLoading] = useState(true);
 
   // Focus mode state — pre-seed focusedNodeId when initialFocusId is provided
@@ -221,7 +224,7 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
         setDataSource(source);
       })
       .catch(() => {
-        setGraphData(sanitizeGraphData(mockGraphData));
+        setGraphData(sanitizeGraphData(staticSanityGraph));
       })
       .finally(() => {
         setIsLoading(false);
@@ -478,8 +481,8 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
   }, []);
 
   const demoBannerText =
-    dataSource === 'fallback'
-      ? 'Graph unavailable — showing static demo'
+    dataSource === 'static-sanity'
+      ? 'Example ecosystem map — live data unavailable'
       : 'Demo data — live graph populates once the ingestion pipeline runs';
 
   // ── Tooltip render helpers ────────────────────────────────────────────────
