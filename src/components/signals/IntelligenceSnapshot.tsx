@@ -11,6 +11,7 @@
  */
 
 import type { Signal, SignalCategory } from '@/data/mockSignals';
+import { CopyInsightButton } from '@/components/ui/CopyInsightButton';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Category colours (matches existing SignalsBrowser palette)
@@ -98,6 +99,19 @@ export function IntelligenceSnapshot({ signals }: IntelligenceSnapshotProps) {
     year: 'numeric',
   });
 
+  const copyText = [
+    `Today's Intelligence Snapshot — ${today}`,
+    '',
+    ...top3.map((signal, idx) => {
+      const line = buildSnapshotLine(signal);
+      const score = signal.significanceScore ?? signal.confidence;
+      const scoreStr = score != null ? ` [${score}]` : '';
+      return `${idx + 1}. ${signal.entityName} — ${line}${scoreStr}`;
+    }),
+    '',
+    'via OM Terminal',
+  ].join('\n');
+
   return (
     <section
       aria-label="Today's Intelligence Snapshot"
@@ -120,14 +134,17 @@ export function IntelligenceSnapshot({ signals }: IntelligenceSnapshotProps) {
         }}>
           Today&apos;s Intelligence Snapshot
         </span>
-        <span style={{
-          fontFamily: 'var(--fm)',
-          fontSize: 9,
-          color: 'var(--text3)',
-          letterSpacing: '0.06em',
-        }}>
-          {today}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{
+            fontFamily: 'var(--fm)',
+            fontSize: 9,
+            color: 'var(--text3)',
+            letterSpacing: '0.06em',
+          }}>
+            {today}
+          </span>
+          <CopyInsightButton text={copyText} />
+        </div>
       </div>
 
       {/* Signal rows */}
