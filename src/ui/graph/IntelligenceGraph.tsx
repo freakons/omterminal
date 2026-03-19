@@ -378,6 +378,28 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
   }, [hoveredId, displayGraphData.links]);
 
   /**
+   * Top connections for the hovered node — used for tooltip relationship explanation.
+   * Returns up to 3 connected nodes with their link metadata, sorted strongest-first.
+   */
+  const hoveredNodeConnections = useMemo<Array<{ node: GraphNode; link: RuntimeLink }>>(() => {
+    if (!hoveredId) return [];
+    const connections: Array<{ node: GraphNode; link: RuntimeLink }> = [];
+    for (const link of displayGraphData.links) {
+      const src = nodeId(link.source as string | RuntimeNode);
+      const tgt = nodeId(link.target as string | RuntimeNode);
+      if (src === hoveredId || tgt === hoveredId) {
+        const otherId = src === hoveredId ? tgt : src;
+        const otherNode = displayGraphData.nodes.find(n => n.id === otherId);
+        if (otherNode) {
+          connections.push({ node: otherNode, link: link as RuntimeLink });
+        }
+      }
+    }
+    connections.sort((a, b) => (b.link.strength ?? 0) - (a.link.strength ?? 0));
+    return connections.slice(0, 3);
+  }, [hoveredId, displayGraphData]);
+
+  /**
    * Top 2–3 entity↔entity links for the explanation panel.
    * displayGraphData.links is already sorted strongest-first; we keep only
    * links that carry relationship metadata (tier / strength).
@@ -581,18 +603,23 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
 
   const handleNodeClick = useCallback((node: RuntimeNode) => {
     if (node.type === 'entity') {
-      // Toggle focus: clicking the already-focused node exits focus mode
-      if (focusedNodeId === node.id) {
-        resetFocus();
+      if (initialFocusId) {
+        // Embedded mode (on entity page): toggle focus/neighborhood mode for ecosystem exploration
+        if (focusedNodeId === node.id) {
+          resetFocus();
+        } else {
+          setFocusedNodeId(node.id);
+          setFocusedNode(node);
+        }
       } else {
-        setFocusedNodeId(node.id);
-        setFocusedNode(node);
+        // Standalone graph: navigate directly to the entity page
+        router.push(`/entity/${node.id}`);
       }
     } else if (node.type === 'signal') {
       router.push(`/signals/${node.id}`);
     }
     // event nodes: graceful no-op
-  }, [router, focusedNodeId, resetFocus]);
+  }, [router, focusedNodeId, resetFocus, initialFocusId]);
 
   const handleNodeHover = useCallback((node: RuntimeNode | null) => {
     setHoveredId(node?.id ?? null);
@@ -643,11 +670,13 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
 
   const nodeTooltip = hoveredNode && (
     <div style={{ ...TOOLTIP_STYLE, left: tooltipX, top: tooltipY }}>
+      {/* Label */}
       <div style={{ fontWeight: 600, color: nodeColor(hoveredNode), marginBottom: 3 }}>
         {hoveredNode.label}
       </div>
+
+      {/* Type badge with shape indicator */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-        {/* Shape indicator in tooltip */}
         {hoveredNode.type === 'event' ? (
           <svg width={9} height={9} viewBox="0 0 9 9">
             <polygon points="4.5,0 9,4.5 4.5,9 0,4.5" fill={nodeColor(hoveredNode)} />
@@ -667,14 +696,70 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
             : NODE_TYPE_LABELS[hoveredNode.type]}
         </span>
       </div>
+
+      {/* Relationship explanation — top connections with edge context */}
+      {hoveredNodeConnections.length > 0 && (
+        <div style={{
+          marginTop: 7,
+          borderTop: '1px solid rgba(255,255,255,0.07)',
+          paddingTop: 6,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 5,
+        }}>
+          {hoveredNodeConnections.slice(0, 2).map(({ node: connNode, link: connLink }, idx) => {
+            const es = getEdgeStyle(connLink);
+            const sigs = connLink.sharedSignals;
+            const connColor = nodeColor(connNode as RuntimeNode);
+            return (
+              <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                  <span style={{ color: 'rgba(238,238,248,0.3)', fontSize: '0.65rem' }}>↔</span>
+                  <span style={{ color: connColor, fontSize: '0.71rem', fontWeight: 500 }}>
+                    {connNode.label}
+                  </span>
+                  {es && (
+                    <span style={{
+                      fontSize: '0.6rem',
+                      color: es.color,
+                      background: `${es.color}1a`,
+                      border: `1px solid ${es.color}35`,
+                      borderRadius: 3,
+                      padding: '0 4px',
+                      letterSpacing: '0.04em',
+                      flexShrink: 0,
+                    }}>
+                      {es.label}
+                    </span>
+                  )}
+                </div>
+                {sigs != null && (
+                  <span style={{ color: 'rgba(238,238,248,0.28)', fontSize: '0.63rem', paddingLeft: 13 }}>
+                    {sigs} shared signal{sigs !== 1 ? 's' : ''}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Click action hint */}
       {hoveredNode.type === 'entity' && (
-        <div style={{ marginTop: 6, color: 'rgba(238,238,248,0.4)', fontSize: '0.68rem' }}>
-          {focusedNodeId === hoveredNode.id ? 'Click to exit focus' : 'Click to focus ecosystem →'}
+        <div style={{ marginTop: 6, color: 'rgba(238,238,248,0.38)', fontSize: '0.67rem' }}>
+          {initialFocusId
+            ? (focusedNodeId === hoveredNode.id ? 'Click to exit focus' : 'Click to explore neighbors →')
+            : 'Click to open entity page →'}
         </div>
       )}
       {hoveredNode.type === 'signal' && (
-        <div style={{ marginTop: 6, color: 'rgba(238,238,248,0.4)', fontSize: '0.68rem' }}>
-          Click to open →
+        <div style={{ marginTop: 6, color: 'rgba(238,238,248,0.38)', fontSize: '0.67rem' }}>
+          Click to open signal →
+        </div>
+      )}
+      {hoveredNode.type === 'event' && (
+        <div style={{ marginTop: 6, color: 'rgba(238,238,248,0.28)', fontSize: '0.67rem' }}>
+          Event · no detail page
         </div>
       )}
     </div>
