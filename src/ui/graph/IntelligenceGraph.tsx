@@ -438,9 +438,29 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
     const signals   = strongest.sharedSignals;
     const timeframe = strongest.lastInteraction ? relativeTimeframe(strongest.lastInteraction) : null;
 
+    const EDGE_TYPE_LABELS: Partial<Record<EdgeType, string>> = {
+      'funding':       'funding',
+      'competition':   'competitive dynamics',
+      'partnership':   'a partnership',
+      'model-release': 'model release activity',
+      'regulation':    'regulatory overlap',
+    };
+    const EDGE_TYPE_COLORS_MAP: Partial<Record<EdgeType, string>> = {
+      'funding':       '#4ade80',
+      'competition':   '#f87171',
+      'partnership':   '#60a5fa',
+      'model-release': '#c084fc',
+      'regulation':    '#fb923c',
+    };
+
+    const edgeLabel = strongest.edgeType ? EDGE_TYPE_LABELS[strongest.edgeType] : null;
+    const edgeColor = strongest.edgeType ? EDGE_TYPE_COLORS_MAP[strongest.edgeType] : null;
+
     const signalPart = signals != null
       ? `through ${signals} shared signal${signals !== 1 ? 's' : ''}`
-      : null;
+      : edgeLabel
+        ? `via ${edgeLabel}`
+        : null;
     const timePart = timeframe ? `in ${timeframe}` : null;
     const suffix   = [signalPart, timePart].filter(Boolean).join(' ');
 
@@ -469,6 +489,11 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
         {' is most strongly connected to '}
         <span style={{ color: 'rgba(238,238,248,0.78)', fontWeight: 500 }}>{otherLabel}</span>
         {suffix ? ` ${suffix}` : ''}
+        {strongest.edgeType && edgeColor && !signalPart?.startsWith('via') && (
+          <span style={{ color: edgeColor, marginLeft: 5, opacity: 0.75 }}>
+            · {strongest.edgeType.replace('-', ' ')}
+          </span>
+        )}
         {'.'}
       </div>
     );
