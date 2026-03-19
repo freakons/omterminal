@@ -47,67 +47,38 @@ export default async function SignalsPage() {
 
   return (
     <div>
-      <div style={{ marginBottom: 20 }}>
-        <span style={{ fontSize: 13, color: 'var(--text2)' }}>
-          {signals.length} signal{signals.length !== 1 ? 's' : ''} · latest first
-        </span>
+      {/* Section header */}
+      <div className="feed-section-header" style={{ marginBottom: 20 }}>
+        <span className="feed-section-accent feed-section-accent--top" />
+        <span className="feed-section-label">Latest Signals</span>
+        <span className="feed-section-count">{signals.length} total</span>
       </div>
 
       {signals.length === 0 ? (
-        <p style={{ color: 'var(--text2)', fontSize: 14 }}>No signals available.</p>
+        <div className="feed-empty">
+          <p className="feed-empty-title">No signals available</p>
+          <p className="feed-empty-sub">Check back soon — signals update every hour.</p>
+        </div>
       ) : (
-        <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <ul className="dash-list">
           {signals.map((signal) => {
-            const category = signal.category ?? signal.signal_type ?? 'unknown';
+            const category = (signal.category ?? signal.signal_type ?? 'unknown').toLowerCase();
             const date = formatDate(signal.published_at ?? signal.date ?? signal.created_at);
 
             return (
-              <li
-                key={signal.id}
-                style={{
-                  background: 'var(--glass)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius-surface-sm)',
-                  padding: '14px 18px',
-                  display: 'grid',
-                  gridTemplateColumns: '1fr auto',
-                  gap: '6px 16px',
-                  alignItems: 'start',
-                }}
-              >
+              <li key={signal.id} className="dash-row">
                 <div>
-                  <p style={{
-                    margin: 0,
-                    fontSize: 14,
-                    fontWeight: 500,
-                    color: 'var(--text)',
-                    lineHeight: 1.4,
-                  }}>
-                    {signal.title}
-                  </p>
-                  <div style={{ display: 'flex', gap: 12, marginTop: 6, flexWrap: 'wrap' }}>
+                  <p className="dash-row-title">{signal.title}</p>
+                  <div className="dash-row-meta">
+                    <span className={`badge ${category}`}>{category}</span>
                     {signal.source && (
-                      <span style={{ fontSize: 12, color: 'var(--text2)' }}>
+                      <span style={{ fontSize: 12, color: 'var(--text3)', fontFamily: 'var(--fm)' }}>
                         {signal.source}
                       </span>
                     )}
-                    <span style={{
-                      fontSize: 11,
-                      fontWeight: 600,
-                      letterSpacing: '0.04em',
-                      textTransform: 'uppercase',
-                      color: 'var(--signal-cyan, #06b6d4)',
-                      background: 'rgba(6,182,212,0.1)',
-                      padding: '2px 7px',
-                      borderRadius: 4,
-                    }}>
-                      {category}
-                    </span>
                   </div>
                 </div>
-                <span style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap', marginTop: 2 }}>
-                  {date}
-                </span>
+                <span className="dash-row-date">{date}</span>
               </li>
             );
           })}

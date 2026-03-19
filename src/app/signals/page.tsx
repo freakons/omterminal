@@ -54,7 +54,7 @@ export default async function SignalsPage() {
       />
       <div className="ph">
         <div className="ph-left">
-          <h1>Signals</h1>
+          <h1><span className="ph-hi">Signals</span></h1>
           <p>INTELLIGENCE SIGNALS  ·  AI ECOSYSTEM  ·  REAL-TIME DETECTION</p>
         </div>
       </div>
@@ -62,38 +62,25 @@ export default async function SignalsPage() {
       {/* AI search-optimized introduction — server-rendered, fact-dense, structured for LLM parsing */}
       <section
         aria-label="About AI Signals"
-        style={{
-          padding: '16px 24px',
-          borderRadius: 'var(--r)',
-          background: 'var(--glass)',
-          border: '1px solid var(--border)',
-          marginBottom: 20,
-        }}
+        className="gc"
+        style={{ padding: '18px 24px', marginBottom: 24 }}
       >
-        <h2 style={{
-          fontFamily: 'var(--fm)', fontSize: 9, letterSpacing: '0.12em',
-          textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 10,
-        }}>
-          What Are AI Signals?
-        </h2>
-        <p style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.7, marginBottom: 10 }}>
+        <h2 className="section-eyebrow" style={{ marginBottom: 10 }}>What Are AI Signals?</h2>
+        <p style={{ fontSize: 13.5, color: 'var(--text2)', lineHeight: 1.75, marginBottom: 12 }}>
           AI signals are structured intelligence events detected across the global AI ecosystem — including
           model releases, funding rounds, regulatory changes, research breakthroughs, and strategic partnerships.
-          Each signal is scored by <strong style={{ color: 'var(--text)' }}>significance</strong> and{' '}
-          <strong style={{ color: 'var(--text)' }}>confidence</strong>, corroborated by multiple sources,
+          Each signal is scored by <strong style={{ color: 'var(--text)', fontWeight: 600 }}>significance</strong> and{' '}
+          <strong style={{ color: 'var(--text)', fontWeight: 600 }}>confidence</strong>, corroborated by multiple sources,
           and linked to the entities involved.
         </p>
-        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-          <span style={{ fontFamily: 'var(--fm)', fontSize: 10, color: 'var(--text3)' }}>
-            Categories:{' '}
-            <a href="/models" style={{ color: 'var(--indigo-l)', textDecoration: 'none' }}>Models</a>
-            {' · '}
-            <a href="/funding" style={{ color: 'var(--amber-l)', textDecoration: 'none' }}>Funding</a>
-            {' · '}
-            <a href="/regulation" style={{ color: 'var(--rose-l)', textDecoration: 'none' }}>Regulation</a>
-            {' · '}
-            <span style={{ color: 'var(--text3)' }}>Research · Agents · Product</span>
-          </span>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ fontFamily: 'var(--fm)', fontSize: 9.5, color: 'var(--text3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Categories:</span>
+          <a href="/models" className="badge models" style={{ textDecoration: 'none' }}>Models</a>
+          <a href="/funding" className="badge funding" style={{ textDecoration: 'none' }}>Funding</a>
+          <a href="/regulation" className="badge regulation" style={{ textDecoration: 'none' }}>Regulation</a>
+          <span className="badge agents">Agents</span>
+          <span className="badge research">Research</span>
+          <span className="badge product">Product</span>
         </div>
       </section>
 
