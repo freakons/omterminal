@@ -7,6 +7,7 @@ import { SignalImpactBadge } from '@/components/signals/SignalImpactBadge';
 import { HeatIndicator } from '@/components/intelligence/HeatIndicator';
 import { EntityMomentumBadge } from '@/components/entity/EntityMomentumBadge';
 import { computeSectionHeat } from '@/lib/intelligence/heatScore';
+import { slugify } from '@/utils/sanitize';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sub-section renderers
@@ -34,28 +35,28 @@ function SignalRow({ signal }: { signal: Signal }) {
 
 function EntityRow({ entity }: { entity: ActiveEntity }) {
   return (
-    <div className="eco-row">
+    <Link href={`/entity/${slugify(entity.name)}`} className="eco-row">
       <span className="eco-title">{entity.name}</span>
       <span className="eco-count">{entity.signalCount} signals</span>
-    </div>
+    </Link>
   );
 }
 
 function FundingRow({ round }: { round: FundingRound }) {
   return (
-    <div className="eco-row">
+    <Link href={`/entity/${slugify(round.company)}`} className="eco-row">
       <span className="eco-title">{round.company}</span>
       <span className="eco-meta">{round.amount} · {round.round}</span>
-    </div>
+    </Link>
   );
 }
 
 function ModelRow({ model }: { model: AIModel }) {
   return (
-    <div className="eco-row">
+    <Link href={`/entity/${slugify(model.company)}`} className="eco-row">
       <span className="eco-title">{model.name}</span>
       <span className="eco-meta">{model.company} · {model.releaseDate}</span>
-    </div>
+    </Link>
   );
 }
 
