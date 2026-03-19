@@ -92,7 +92,9 @@ export function buildGraphData({ entities = [], events = [], signals = [] }: Gra
   }
 
   // Remove links where either endpoint has no node (referential safety)
-  const validLinks = links.filter(l => seen.has(l.source) && seen.has(l.target));
+  const validLinks = links.filter(l =>
+    seen.has(l.source) && seen.has(l.target) && l.source !== l.target,
+  );
 
   return { nodes, links: validLinks };
 }
