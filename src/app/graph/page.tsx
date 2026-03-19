@@ -80,7 +80,8 @@ export default function GraphPage() {
           maxWidth: 520,
         }}>
           Intelligence map of AI companies, models, investors, and regulatory signals.
-          Hover to highlight connections. Click an entity to open its page, or a signal to view details.
+          Click any entity to focus and explore its ecosystem. Hover to highlight connections.
+          Press <kbd style={{ fontFamily: 'monospace', fontSize: '0.78rem', padding: '0 4px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 3 }}>Esc</kbd> or click Reset to return to full view.
         </p>
       </div>
 
