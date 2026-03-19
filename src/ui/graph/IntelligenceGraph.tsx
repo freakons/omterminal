@@ -84,6 +84,19 @@ function baseLinkAlpha(link: RuntimeLink): number {
 // Tooltip helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Returns a human-readable relative timeframe for an ISO timestamp. */
+function relativeTimeframe(iso: string): string | null {
+  try {
+    const days = (Date.now() - new Date(iso).getTime()) / 86_400_000;
+    if (days < 7)  return 'the last week';
+    if (days < 31) return 'the last month';
+    if (days < 91) return 'the last 3 months';
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function formatDate(iso: string): string {
   try {
     return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
@@ -214,6 +227,60 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
       .filter((l) => l.tier != null || l.strength != null)
       .slice(0, 3);
   }, [focusedNodeId, displayGraphData.links]);
+
+  /**
+   * One-line insight summarising the strongest relationship.
+   * Rendered above the graph canvas; hidden when no connections are available.
+   */
+  const insightHighlight = useMemo(() => {
+    if (!focusedNodeId || topConnections.length === 0) return null;
+
+    const strongest = topConnections[0];
+    const srcId = nodeId(strongest.source as string | RuntimeNode);
+    const tgtId = nodeId(strongest.target as string | RuntimeNode);
+    const otherNodeId = srcId === focusedNodeId ? tgtId : srcId;
+
+    const focusedLabel = graphData.nodes.find(n => n.id === focusedNodeId)?.label ?? focusedNodeId;
+    const otherLabel   = graphData.nodes.find(n => n.id === otherNodeId)?.label   ?? otherNodeId;
+
+    const signals   = strongest.sharedSignals;
+    const timeframe = strongest.lastInteraction ? relativeTimeframe(strongest.lastInteraction) : null;
+
+    const signalPart = signals != null
+      ? `through ${signals} shared signal${signals !== 1 ? 's' : ''}`
+      : null;
+    const timePart = timeframe ? `in ${timeframe}` : null;
+    const suffix   = [signalPart, timePart].filter(Boolean).join(' ');
+
+    return (
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 8,
+          padding: '9px 20px',
+          fontSize: '0.78rem',
+          color: 'rgba(238,238,248,0.48)',
+          pointerEvents: 'none',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          letterSpacing: '0.01em',
+          borderBottom: '1px solid rgba(255,255,255,0.05)',
+          background: 'rgba(10,10,20,0.35)',
+          backdropFilter: 'blur(4px)',
+        }}
+      >
+        <span style={{ color: 'rgba(238,238,248,0.78)', fontWeight: 500 }}>{focusedLabel}</span>
+        {' is most strongly connected to '}
+        <span style={{ color: 'rgba(238,238,248,0.78)', fontWeight: 500 }}>{otherLabel}</span>
+        {suffix ? ` ${suffix}` : ''}
+        {'.'}
+      </div>
+    );
+  }, [focusedNodeId, topConnections, graphData.nodes]);
 
   /** Custom canvas renderer — draws glowing nodes with labels */
   const paintNode = useCallback(
@@ -552,6 +619,9 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
           live
         </div>
       )}
+
+      {/* Insight highlight — strongest relationship in plain language */}
+      {insightHighlight}
 
       {/* Node tooltip */}
       {nodeTooltip}
