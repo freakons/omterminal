@@ -19,6 +19,7 @@ import { explainSignal } from '@/lib/signals/explanationLayer';
 import type { Signal, SignalCategory } from '@/data/mockSignals';
 import { buildEntitySchema, buildBreadcrumbSchema } from '@/lib/seo/jsonld';
 import { siteConfig } from '@/config/site';
+import { IntelligenceGraph } from '@/ui/graph/IntelligenceGraph';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -521,6 +522,60 @@ export default async function EntityDossierPage(
           )}
         </div>
       )}
+
+      {/* ── Ecosystem Graph ──────────────────────────────────────────────────── */}
+      <div style={{ ...GLASS_CARD, marginBottom: 16, padding: 0, overflow: 'hidden' }}>
+        {/* Card header */}
+        <div style={{ padding: '16px 24px 12px', borderBottom: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+            <h2 style={{ ...SECTION_HEADER, margin: 0 }}>Ecosystem Graph</h2>
+
+            {/* Legend */}
+            <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+              {[
+                { label: 'Entity',  color: '#3b82f6' },
+                { label: 'Event',   color: '#f59e0b' },
+                { label: 'Signal',  color: '#10b981' },
+              ].map(({ label, color }) => (
+                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <span style={{
+                    display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
+                    background: color, boxShadow: `0 0 6px ${color}`, flexShrink: 0,
+                  }} />
+                  <span style={{ fontFamily: 'var(--fm)', fontSize: 9, color: 'var(--text3)', letterSpacing: '0.06em' }}>
+                    {label}
+                  </span>
+                </div>
+              ))}
+              <span style={{ width: 1, height: 10, background: 'var(--border)', flexShrink: 0 }} />
+              {[
+                { label: 'Strong', width: 3, opacity: 0.85 },
+                { label: 'Moderate', width: 1.8, opacity: 0.55 },
+                { label: 'Weak', width: 1, opacity: 0.3 },
+              ].map(({ label, width, opacity }) => (
+                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <svg width={18} height={8} style={{ flexShrink: 0 }}>
+                    <line x1={0} y1={4} x2={18} y2={4}
+                      stroke="#93c5fd" strokeWidth={width}
+                      strokeOpacity={opacity} strokeLinecap="round" />
+                  </svg>
+                  <span style={{ fontFamily: 'var(--fm)', fontSize: 9, color: 'var(--text3)', letterSpacing: '0.06em' }}>
+                    {label}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--text3)', lineHeight: 1.5 }}>
+            Focused ecosystem for {entityName}. Click any entity node to explore its connections.
+          </p>
+        </div>
+
+        {/* Graph canvas */}
+        <div style={{ height: 360, position: 'relative' }}>
+          <IntelligenceGraph initialFocusId={entity.id} compact />
+        </div>
+      </div>
 
       {/* Entity Timeline */}
       <div style={{ ...GLASS_CARD, marginBottom: 16 }}>

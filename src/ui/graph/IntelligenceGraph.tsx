@@ -103,7 +103,14 @@ function tierLabel(tier: string): string {
 // Component
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function IntelligenceGraph() {
+interface IntelligenceGraphProps {
+  /** Pre-focus the graph on this entity node ID (matches entity.id) on load. */
+  initialFocusId?: string;
+  /** Compact mode reduces canvas height for embedding inside other pages. */
+  compact?: boolean;
+}
+
+export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraphProps = {}) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -114,8 +121,8 @@ export function IntelligenceGraph() {
   const [isDemo, setIsDemo] = useState(true);
   const [dataSource, setDataSource] = useState<string>('fallback');
 
-  // Focus mode state
-  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
+  // Focus mode state — pre-seed focusedNodeId when initialFocusId is provided
+  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(initialFocusId ?? null);
   const [focusedNode, setFocusedNode] = useState<RuntimeNode | null>(null);
 
   // Fetch live relationship graph on mount; fall back to mock data if unavailable
@@ -126,6 +133,14 @@ export function IntelligenceGraph() {
       setDataSource(source);
     });
   }, []);
+
+  // Once graph data loads, resolve the initialFocusId to a full RuntimeNode
+  useEffect(() => {
+    if (initialFocusId && !focusedNode && graphData.nodes.length > 0) {
+      const node = graphData.nodes.find(n => n.id === initialFocusId) as RuntimeNode | undefined;
+      if (node) setFocusedNode(node);
+    }
+  }, [initialFocusId, graphData.nodes, focusedNode]);
 
   // Track mouse position for tooltip placement
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -457,9 +472,9 @@ export function IntelligenceGraph() {
         </span>
       </span>
 
-      {/* Open entity link */}
+      {/* In embedded mode navigate to full graph; otherwise open the entity page */}
       <button
-        onClick={() => router.push(`/entity/${focusedNode.id}`)}
+        onClick={() => router.push(initialFocusId ? '/graph' : `/entity/${focusedNode.id}`)}
         style={{
           background: 'rgba(59,130,246,0.15)',
           border: '1px solid rgba(59,130,246,0.3)',
@@ -471,7 +486,7 @@ export function IntelligenceGraph() {
           letterSpacing: '0.03em',
         }}
       >
-        Open →
+        {initialFocusId ? 'Full graph →' : 'Open →'}
       </button>
 
       {/* Reset button */}
@@ -493,8 +508,10 @@ export function IntelligenceGraph() {
     </div>
   );
 
+  const minH = compact ? 350 : 600;
+
   return (
-    <div style={{ width: '100%', height: '100%', minHeight: 600, position: 'relative' }}>
+    <div style={{ width: '100%', height: '100%', minHeight: minH, position: 'relative' }}>
       {isDemo && (
         <div style={{
           position: 'absolute',
@@ -554,7 +571,7 @@ export function IntelligenceGraph() {
 
     <div
       ref={containerRef}
-      style={{ width: '100%', height: '100%', minHeight: 600 }}
+      style={{ width: '100%', height: '100%', minHeight: minH }}
       onMouseMove={handleMouseMove}
     >
       <ForceGraph2D
