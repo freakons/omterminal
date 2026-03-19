@@ -22,6 +22,33 @@ export type GraphData = {
   links: GraphLink[];
 };
 
+/**
+ * Minimal static graph for renderer sanity checks.
+ *
+ * 4 nodes · 3 links — a known-valid dataset that proves ForceGraph2D can
+ * render entity / event / signal types and directed links correctly,
+ * independently of live data or the relationship-intelligence pipeline.
+ *
+ * Use only as:
+ *   - last-resort fallback when the API returns nothing usable
+ *   - a gated sanity path (e.g. ?sanity=1) during debugging
+ *
+ * Never let it mask real production data.
+ */
+export const staticSanityGraph: GraphData = {
+  nodes: [
+    { id: 'openai',        type: 'entity', label: 'OpenAI' },
+    { id: 'anthropic',     type: 'entity', label: 'Anthropic' },
+    { id: 'claude-4',      type: 'event',  label: 'Claude 4 Release' },
+    { id: 'frontier-race', type: 'signal', label: 'Frontier model race' },
+  ],
+  links: [
+    { source: 'openai',    target: 'frontier-race' },
+    { source: 'anthropic', target: 'claude-4' },
+    { source: 'claude-4',  target: 'frontier-race' },
+  ],
+};
+
 export const mockGraphData: GraphData = {
   nodes: [
     // Entities
