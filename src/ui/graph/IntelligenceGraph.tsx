@@ -44,7 +44,7 @@ function nodeLabel(n: string | RuntimeNode): string {
 
 async function fetchGraphData(): Promise<{ data: GraphData; isDemo: boolean; source: string }> {
   try {
-    const res = await fetch('/api/graph/relationships', { next: { revalidate: 120 } });
+    const res = await fetch('/api/graph/relationships', { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
 

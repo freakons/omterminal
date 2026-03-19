@@ -173,7 +173,7 @@ function rowToSignal(row: SignalRow): Signal {
     id:         row.id,
     title:      row.title,
     category,
-    entityId:   row.entity_id ?? row.id,
+    entityId:   row.entity_id ?? '',
     entityName: row.entity_name ?? '',
     summary:    row.summary ?? row.description,
     date:       row.date ?? row.created_at,
