@@ -7,23 +7,61 @@ export const metadata: Metadata = {
     'Interactive force-directed map of relationships between AI companies, events, and signals.',
 };
 
+// ── Node legend ────────────────────────────────────────────────────────────────
+
 const NODE_LEGEND = [
-  { label: 'Entity',  color: '#3b82f6' },
-  { label: 'Event',   color: '#f59e0b' },
-  { label: 'Signal',  color: '#10b981' },
+  // Entity subtypes — circles
+  { label: 'Company',   color: '#3b82f6', shape: 'circle'   as const },
+  { label: 'Investor',  color: '#a855f7', shape: 'circle'   as const },
+  { label: 'Regulator', color: '#f97316', shape: 'circle'   as const },
+  // Events — diamond
+  { label: 'Event',     color: '#f59e0b', shape: 'diamond'  as const },
+  // Signals — triangle
+  { label: 'Signal',    color: '#10b981', shape: 'triangle' as const },
 ] as const;
 
+// ── Edge type legend ───────────────────────────────────────────────────────────
+
 const EDGE_LEGEND = [
-  { label: 'Strong',   width: 3,   opacity: 0.85, color: '#93c5fd' },
-  { label: 'Moderate', width: 2,   opacity: 0.6,  color: '#93c5fd' },
-  { label: 'Weak',     width: 1.2, opacity: 0.35, color: '#93c5fd' },
+  { label: 'Funding',       color: '#4ade80', dash: '',      width: 2   },
+  { label: 'Partnership',   color: '#60a5fa', dash: '',      width: 2   },
+  { label: 'Model Release', color: '#c084fc', dash: '',      width: 2   },
+  { label: 'Competition',   color: '#f87171', dash: '5,3',   width: 2   },
+  { label: 'Regulation',    color: '#fb923c', dash: '7,4',   width: 2   },
+  { label: 'Co-occurrence', color: '#93c5fd', dash: '',      width: 1.5 },
 ] as const;
+
+// ── Shape SVG helpers ──────────────────────────────────────────────────────────
+
+function NodeShape({ shape, color }: { shape: 'circle' | 'diamond' | 'triangle'; color: string }) {
+  const s = 12;
+  const glow = `drop-shadow(0 0 4px ${color})`;
+  if (shape === 'diamond') {
+    return (
+      <svg width={s} height={s} viewBox="0 0 12 12" style={{ filter: glow, flexShrink: 0 }}>
+        <polygon points="6,0 12,6 6,12 0,6" fill={color} />
+      </svg>
+    );
+  }
+  if (shape === 'triangle') {
+    return (
+      <svg width={s} height={s} viewBox="0 0 12 12" style={{ filter: glow, flexShrink: 0 }}>
+        <polygon points="6,1 11,11 1,11" fill={color} />
+      </svg>
+    );
+  }
+  return (
+    <svg width={s} height={s} viewBox="0 0 12 12" style={{ filter: glow, flexShrink: 0 }}>
+      <circle cx={6} cy={6} r={5.5} fill={color} />
+    </svg>
+  );
+}
 
 export default function GraphPage() {
   return (
     <>
       {/* Page header */}
-      <div style={{ marginBottom: 24 }}>
+      <div style={{ marginBottom: 20 }}>
         <h1 style={{
           fontFamily: 'Instrument Serif, Georgia, serif',
           fontSize: 'clamp(1.6rem, 3vw, 2.25rem)',
@@ -41,53 +79,71 @@ export default function GraphPage() {
           margin: 0,
           maxWidth: 520,
         }}>
-          Force-directed map of AI companies, events, and signals.
+          Intelligence map of AI companies, models, investors, and regulatory signals.
           Hover to highlight connections. Click an entity to focus its ecosystem.
         </p>
       </div>
 
-      {/* Legend */}
+      {/* Legend panel */}
       <div style={{
         display: 'flex',
         gap: 24,
         marginBottom: 16,
+        padding: '10px 16px',
+        background: 'rgba(255,255,255,0.025)',
+        border: '1px solid rgba(255,255,255,0.06)',
+        borderRadius: 8,
         flexWrap: 'wrap',
         alignItems: 'center',
+        rowGap: 10,
       }}>
-        {/* Node types */}
-        {NODE_LEGEND.map(({ label, color }) => (
-          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-            <span style={{
-              display: 'inline-block',
-              width: 10,
-              height: 10,
-              borderRadius: '50%',
-              background: color,
-              boxShadow: `0 0 8px ${color}`,
-              flexShrink: 0,
-            }} />
-            <span style={{ fontSize: '0.78rem', color: 'var(--text2)', letterSpacing: '0.04em' }}>
+
+        {/* ── Nodes section ── */}
+        <span style={{
+          fontSize: '0.65rem',
+          color: 'rgba(238,238,248,0.3)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+          flexShrink: 0,
+        }}>
+          Nodes
+        </span>
+
+        {NODE_LEGEND.map(({ label, color, shape }) => (
+          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <NodeShape shape={shape} color={color} />
+            <span style={{ fontSize: '0.76rem', color: 'var(--text2)', letterSpacing: '0.03em' }}>
               {label}
             </span>
           </div>
         ))}
 
         {/* Divider */}
-        <span style={{ width: 1, height: 14, background: 'rgba(255,255,255,0.1)', flexShrink: 0 }} />
+        <span style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.08)', flexShrink: 0, alignSelf: 'center' }} />
 
-        {/* Edge strength */}
-        {EDGE_LEGEND.map(({ label, width, opacity, color }) => (
-          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-            <svg width={22} height={10} style={{ flexShrink: 0 }}>
+        {/* ── Edges section ── */}
+        <span style={{
+          fontSize: '0.65rem',
+          color: 'rgba(238,238,248,0.3)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+          flexShrink: 0,
+        }}>
+          Edges
+        </span>
+
+        {EDGE_LEGEND.map(({ label, color, dash, width }) => (
+          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <svg width={20} height={8} style={{ flexShrink: 0 }}>
               <line
-                x1={0} y1={5} x2={22} y2={5}
+                x1={0} y1={4} x2={20} y2={4}
                 stroke={color}
                 strokeWidth={width}
-                strokeOpacity={opacity}
+                strokeDasharray={dash || undefined}
                 strokeLinecap="round"
               />
             </svg>
-            <span style={{ fontSize: '0.78rem', color: 'var(--text2)', letterSpacing: '0.04em' }}>
+            <span style={{ fontSize: '0.76rem', color: 'var(--text2)', letterSpacing: '0.03em' }}>
               {label}
             </span>
           </div>
