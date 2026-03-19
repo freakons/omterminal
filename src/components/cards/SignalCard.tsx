@@ -9,6 +9,7 @@ import { SignalContextPreview } from '@/components/signals/SignalContextPreview'
 import { EntityQuickProfile } from '@/components/entity/EntityQuickProfile';
 import type { SignalWithRankMeta } from '@/lib/signals/feedComposer';
 import type { SignalExplanation } from '@/lib/signals/explanationLayer';
+import { isHot, isRecent, formatSignalAge } from '@/lib/signals/signalAge';
 
 interface SignalWithExplanation extends SignalWithRankMeta {
   explanation?: SignalExplanation;
@@ -40,8 +41,10 @@ export function SignalCard({ signal }: SignalCardProps) {
   // Route to signal detail page
   const href = `/signals/${encodeURIComponent(signal.id)}`;
 
+  const hot = isHot(signal.date);
+
   return (
-    <div className={`nc${tier === 'critical' ? ' nc-critical' : tier === 'high' ? ' nc-high' : ''}`}>
+    <div className={`nc${tier === 'critical' ? ' nc-critical' : tier === 'high' ? ' nc-high' : ''}${hot ? ' nc-hot' : ''}`}>
       {/* Clickable area for navigation */}
       <Link href={href} className="nc-link">
         {/* Top meta row */}
@@ -166,8 +169,9 @@ export function SignalCard({ signal }: SignalCardProps) {
           )}
         </span>
         <Link href={href} className="nc-link">
-          <span className={`nc-date${isRecent(signal.date) ? ' nc-date--recent' : ''}`}>
-            {formatSignalDate(signal.date)}
+          <span className={`nc-date${hot ? ' nc-date--hot' : isRecent(signal.date) ? ' nc-date--recent' : ''}`}>
+            {hot && <span className="nc-date-live-dot" aria-hidden="true" />}
+            {formatSignalAge(signal.date)}
           </span>
         </Link>
       </div>
@@ -180,27 +184,3 @@ export function SignalCard({ signal }: SignalCardProps) {
   );
 }
 
-function isRecent(dateStr: string): boolean {
-  try {
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return false;
-    return Date.now() - d.getTime() < 3 * 24 * 60 * 60 * 1000;
-  } catch {
-    return false;
-  }
-}
-
-function formatSignalDate(dateStr: string): string {
-  try {
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return dateStr;
-    const diffMs = Date.now() - d.getTime();
-    const diffH = diffMs / (1000 * 60 * 60);
-    if (diffH < 24) return 'Today';
-    if (diffH < 48) return 'Yesterday';
-    if (diffH < 72) return '2 days ago';
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  } catch {
-    return dateStr;
-  }
-}

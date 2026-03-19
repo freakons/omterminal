@@ -5,6 +5,7 @@ import { type Signal, type SignalCategory, type SignalContext } from '@/data/moc
 import { SignalImpactBadge } from '@/components/signals/SignalImpactBadge';
 import { SignalMomentumBadge } from '@/components/signals/SignalMomentumBadge';
 import { CommandBar } from '@/ui/layout/CommandBar';
+import { formatSignalAge, isHot, isRecent, countRecentSignals } from '@/lib/signals/signalAge';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types & constants
@@ -42,15 +43,6 @@ function confidenceColor(pct: number): string {
   return 'var(--text3)';
 }
 
-function formatDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleDateString('en-US', {
-      month: 'short', day: 'numeric', year: 'numeric',
-    });
-  } catch {
-    return iso;
-  }
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Data fetching — refreshes on the client after SSR initial load
@@ -219,10 +211,11 @@ function SignalItem({ signal }: { signal: Signal }) {
   const confColor = confidenceColor(signal.confidence);
   const [ctxOpen, setCtxOpen] = useState(false);
   const ctx = signal.context ?? null;
+  const hot = isHot(signal.date);
 
   return (
     <div
-      className="nc"
+      className={`nc${hot ? ' nc-hot' : ''}`}
       style={{ '--cc': grad } as React.CSSProperties}
     >
       {/* Top row: category badge + confidence */}
@@ -331,8 +324,9 @@ function SignalItem({ signal }: { signal: Signal }) {
           }} />
           {signal.entityName}
         </span>
-        <span style={{ fontFamily: 'var(--fm)', fontSize: '10.5px', color: 'var(--text3)' }}>
-          {formatDate(signal.date)}
+        <span className={`nc-date${isHot(signal.date) ? ' nc-date--hot' : isRecent(signal.date) ? ' nc-date--recent' : ''}`}>
+          {isHot(signal.date) && <span className="nc-date-live-dot" aria-hidden="true" />}
+          {formatSignalAge(signal.date)}
         </span>
       </div>
     </div>
@@ -414,8 +408,19 @@ export function SignalsBrowser({ initialSignals }: SignalsBrowserProps) {
     ? signals
     : signals.filter((s) => s.category === active);
 
+  const recentCount = countRecentSignals(signals, 24);
+
   return (
     <>
+      {/* LIVE count badge */}
+      {recentCount > 0 && (
+        <div className="live-count-badge">
+          <span className="live-count-dot" aria-hidden="true" />
+          <span className="live-count-label">LIVE</span>
+          <span className="live-count-num">{recentCount} in 24h</span>
+        </div>
+      )}
+
       <SignalStats signals={signals} />
 
       {/* Category filters */}

@@ -4,6 +4,7 @@ import { MOCK_SIGNALS } from '@/data/mockSignals';
 import { SignalsBrowser } from './SignalsBrowser';
 import { buildDatasetSchema } from '@/lib/seo/jsonld';
 import { IntelligenceSnapshot } from '@/components/signals/IntelligenceSnapshot';
+import { countRecentSignals } from '@/lib/signals/signalAge';
 
 export const metadata: Metadata = {
   title: 'AI Signals — Latest Models, Funding & Regulation',
@@ -44,6 +45,8 @@ export default async function SignalsPage() {
         ? []
         : MOCK_SIGNALS;
 
+  const recentCount = countRecentSignals(initialSignals, 24);
+
   const jsonLd = buildDatasetSchema();
 
   return (
@@ -57,6 +60,13 @@ export default async function SignalsPage() {
           <h1><span className="ph-hi">Signals</span></h1>
           <p>INTELLIGENCE SIGNALS  ·  AI ECOSYSTEM  ·  REAL-TIME DETECTION</p>
         </div>
+        {recentCount > 0 && (
+          <div className="ph-live">
+            <span className="live-count-dot" aria-hidden="true" />
+            <span className="live-count-label">LIVE</span>
+            <span className="live-count-num">{recentCount} in 24h</span>
+          </div>
+        )}
       </div>
 
       {/* AI search-optimized introduction — server-rendered, fact-dense, structured for LLM parsing */}
