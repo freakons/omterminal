@@ -59,12 +59,10 @@ export async function GET(req: NextRequest) {
       }, { headers: { 'x-data-origin': source } });
     }
 
-    // Adapt mock signals to match the shape expected by relationship engine
-    // (mock Signal uses entityId/entityName, DB Signal uses the same via rowToSignal)
-    const adaptedSignals = signals.map(s => ({
-      ...s,
-      entityId: s.entityId ?? s.id,
-    }));
+    // Shallow-copy signals before passing to graph builder so the original
+    // mock/DB objects are not mutated. Do NOT fall back entityId to s.id —
+    // that would create self-loop links (signal → itself) which crash D3.
+    const adaptedSignals = signals.map(s => ({ ...s }));
 
     const { graph, relationships } = buildIntelligentGraph({
       entities,

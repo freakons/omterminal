@@ -113,6 +113,79 @@ function tierLabel(tier: string): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Data sanitization — prevents D3/ForceGraph crashes from bad data
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Deep-copies and validates graph data so ForceGraph2D always receives:
+ *   - fresh objects (prevents D3 mutation of shared singletons)
+ *   - deduplicated nodes with required fields
+ *   - links with string IDs pointing to known nodes (no self-loops)
+ *
+ * Also handles already-mutated D3 links (where source/target are node objects
+ * instead of strings) so re-sanitising is always safe.
+ */
+function sanitizeGraphData(raw: unknown): GraphData {
+  const empty: GraphData = { nodes: [], links: [] };
+  if (!raw || typeof raw !== 'object') return empty;
+  const d = raw as Record<string, unknown>;
+  if (!Array.isArray(d.nodes) || !Array.isArray(d.links)) return empty;
+
+  const seen = new Set<string>();
+  const nodes: GraphNode[] = [];
+
+  for (const n of d.nodes as unknown[]) {
+    if (
+      n != null &&
+      typeof n === 'object' &&
+      typeof (n as GraphNode).id === 'string' &&
+      (n as GraphNode).id.length > 0 &&
+      typeof (n as GraphNode).label === 'string' &&
+      (['entity', 'event', 'signal'] as string[]).includes((n as GraphNode).type) &&
+      !seen.has((n as GraphNode).id)
+    ) {
+      seen.add((n as GraphNode).id);
+      // Shallow copy strips D3-added x/y/vx/vy so force sim starts fresh
+      nodes.push({
+        id: (n as GraphNode).id,
+        type: (n as GraphNode).type,
+        label: (n as GraphNode).label,
+      });
+    }
+  }
+
+  const links: GraphLink[] = [];
+
+  for (const l of d.links as unknown[]) {
+    if (l == null || typeof l !== 'object') continue;
+    const link = l as GraphLink;
+    // D3 mutates source/target from strings to node objects — handle both
+    const rawSrc = link.source as string | RuntimeNode;
+    const rawTgt = link.target as string | RuntimeNode;
+    const src = typeof rawSrc === 'string' ? rawSrc : rawSrc?.id;
+    const tgt = typeof rawTgt === 'string' ? rawTgt : rawTgt?.id;
+    if (
+      typeof src === 'string' && src.length > 0 &&
+      typeof tgt === 'string' && tgt.length > 0 &&
+      src !== tgt &&       // reject self-loops
+      seen.has(src) &&
+      seen.has(tgt)
+    ) {
+      links.push({
+        source: src,
+        target: tgt,
+        ...(link.strength   != null ? { strength: link.strength }           : {}),
+        ...(link.tier                ? { tier: link.tier }                   : {}),
+        ...(link.sharedSignals != null ? { sharedSignals: link.sharedSignals } : {}),
+        ...(link.lastInteraction     ? { lastInteraction: link.lastInteraction } : {}),
+      });
+    }
+  }
+
+  return { nodes, links };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Component
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -130,9 +203,10 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
   const [hoveredNode, setHoveredNode] = useState<RuntimeNode | null>(null);
   const [hoveredLink, setHoveredLink] = useState<RuntimeLink | null>(null);
   const [mousePos, setMousePos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [graphData, setGraphData] = useState<GraphData>(mockGraphData);
+  const [graphData, setGraphData] = useState<GraphData>(() => sanitizeGraphData(mockGraphData));
   const [isDemo, setIsDemo] = useState(true);
   const [dataSource, setDataSource] = useState<string>('fallback');
+  const [isLoading, setIsLoading] = useState(true);
 
   // Focus mode state — pre-seed focusedNodeId when initialFocusId is provided
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(initialFocusId ?? null);
@@ -140,11 +214,18 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
 
   // Fetch live relationship graph on mount; fall back to mock data if unavailable
   useEffect(() => {
-    fetchGraphData().then(({ data, isDemo: demo, source }) => {
-      setGraphData(data);
-      setIsDemo(demo);
-      setDataSource(source);
-    });
+    fetchGraphData()
+      .then(({ data, isDemo: demo, source }) => {
+        setGraphData(sanitizeGraphData(data));
+        setIsDemo(demo);
+        setDataSource(source);
+      })
+      .catch(() => {
+        setGraphData(sanitizeGraphData(mockGraphData));
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
   }, []);
 
   // Once graph data loads, resolve the initialFocusId to a full RuntimeNode
@@ -644,21 +725,49 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
       style={{ width: '100%', height: '100%', minHeight: minH }}
       onMouseMove={handleMouseMove}
     >
-      <ForceGraph2D
-        graphData={displayGraphData}
-        backgroundColor="transparent"
-        nodeCanvasObject={paintNode}
-        nodeCanvasObjectMode={() => 'replace'}
-        nodeLabel={() => ''}
-        onNodeClick={handleNodeClick}
-        onNodeHover={handleNodeHover}
-        onLinkHover={handleLinkHover}
-        linkColor={getLinkColor}
-        linkWidth={getLinkWidth}
-        cooldownTicks={120}
-        d3AlphaDecay={0.02}
-        d3VelocityDecay={0.3}
-      />
+      {isLoading && displayGraphData.nodes.length === 0 ? (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100%',
+          minHeight: minH,
+          color: 'rgba(238,238,248,0.35)',
+          fontSize: '0.82rem',
+          letterSpacing: '0.04em',
+        }}>
+          Loading graph…
+        </div>
+      ) : displayGraphData.nodes.length === 0 ? (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100%',
+          minHeight: minH,
+          color: 'rgba(238,238,248,0.35)',
+          fontSize: '0.82rem',
+          letterSpacing: '0.04em',
+        }}>
+          No graph data available.
+        </div>
+      ) : (
+        <ForceGraph2D
+          graphData={displayGraphData}
+          backgroundColor="transparent"
+          nodeCanvasObject={paintNode}
+          nodeCanvasObjectMode={() => 'replace'}
+          nodeLabel={() => ''}
+          onNodeClick={handleNodeClick}
+          onNodeHover={handleNodeHover}
+          onLinkHover={handleLinkHover}
+          linkColor={getLinkColor}
+          linkWidth={getLinkWidth}
+          cooldownTicks={120}
+          d3AlphaDecay={0.02}
+          d3VelocityDecay={0.3}
+        />
+      )}
     </div>
     </div>
   );
