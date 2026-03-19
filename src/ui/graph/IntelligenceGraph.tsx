@@ -3,7 +3,7 @@
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { staticSanityGraph, type GraphNode, type GraphLink, type GraphData } from '@/data/mockGraph';
+import { staticSanityGraph, type GraphNode, type GraphLink, type GraphData, type NodeSubtype, type EdgeType } from '@/data/mockGraph';
 import { ConnectionExplanationPanel } from './ConnectionExplanationPanel';
 
 // Disable SSR — ForceGraph2D uses canvas and window APIs
@@ -13,18 +13,90 @@ const ForceGraph2D = dynamic<any>(
   { ssr: false },
 );
 
-/** Colour per node type */
+// ─────────────────────────────────────────────────────────────────────────────
+// Visual meaning system — node and edge styling by semantic type
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Colour per node base type (fallback when subtype is absent) */
 const NODE_COLORS: Record<GraphNode['type'], string> = {
   entity: '#3b82f6', // blue
   event:  '#f59e0b', // amber
   signal: '#10b981', // emerald
 };
 
+/** Colour per entity subtype — overrides NODE_COLORS for entity nodes */
+const NODE_SUBTYPE_COLORS: Record<NodeSubtype, string> = {
+  company:   '#3b82f6', // blue      — AI companies / labs
+  investor:  '#a855f7', // purple    — VCs / funds
+  model:     '#06b6d4', // cyan      — AI model entities
+  regulator: '#f97316', // orange    — government / policy bodies
+};
+
+/** Human-readable label per node type / subtype */
 const NODE_TYPE_LABELS: Record<GraphNode['type'], string> = {
   entity: 'Entity',
   event:  'Event',
   signal: 'Signal',
 };
+
+const NODE_SUBTYPE_LABELS: Record<NodeSubtype, string> = {
+  company:   'Company',
+  investor:  'Investor',
+  model:     'Model',
+  regulator: 'Regulator',
+};
+
+/** Returns the display colour for a node, respecting subtype overrides */
+function nodeColor(node: GraphNode): string {
+  if (node.type === 'entity' && node.subtype) {
+    return NODE_SUBTYPE_COLORS[node.subtype] ?? NODE_COLORS.entity;
+  }
+  return NODE_COLORS[node.type] ?? '#6366f1';
+}
+
+// ── Edge type styling ─────────────────────────────────────────────────────────
+
+interface EdgeStyle {
+  color: string;
+  /** Canvas lineDash pattern — undefined means solid */
+  dash?: number[];
+  /** Display label for the legend */
+  label: string;
+}
+
+const EDGE_STYLES: Record<EdgeType, EdgeStyle> = {
+  'funding':       { color: '#4ade80', dash: undefined,  label: 'Funding' },
+  'competition':   { color: '#f87171', dash: [5, 3],     label: 'Competition' },
+  'partnership':   { color: '#60a5fa', dash: undefined,  label: 'Partnership' },
+  'model-release': { color: '#c084fc', dash: undefined,  label: 'Model Release' },
+  'regulation':    { color: '#fb923c', dash: [7, 4],     label: 'Regulation' },
+};
+
+/** Returns the resolved edge style or undefined if edgeType is absent */
+function getEdgeStyle(link: GraphLink): EdgeStyle | undefined {
+  return link.edgeType ? EDGE_STYLES[link.edgeType] : undefined;
+}
+
+// ── Node shape helpers (canvas) ───────────────────────────────────────────────
+
+/** Diamond shape for event nodes */
+function drawDiamond(ctx: CanvasRenderingContext2D, x: number, y: number, r: number) {
+  ctx.beginPath();
+  ctx.moveTo(x, y - r);
+  ctx.lineTo(x + r, y);
+  ctx.lineTo(x, y + r);
+  ctx.lineTo(x - r, y);
+  ctx.closePath();
+}
+
+/** Upward triangle for signal nodes */
+function drawTriangle(ctx: CanvasRenderingContext2D, x: number, y: number, r: number) {
+  ctx.beginPath();
+  ctx.moveTo(x, y - r);
+  ctx.lineTo(x + r * 0.866, y + r * 0.5);
+  ctx.lineTo(x - r * 0.866, y + r * 0.5);
+  ctx.closePath();
+}
 
 /** Node as enriched by force-graph at runtime */
 type RuntimeNode = GraphNode & { x?: number; y?: number };
@@ -77,10 +149,12 @@ async function fetchGraphData(): Promise<{ data: GraphData; isDemo: boolean; sou
 
 /** Base link opacity scaled by relationship strength (0–100). */
 function baseLinkAlpha(link: RuntimeLink): number {
-  if (link.tier === 'strong')   return 0.45;
-  if (link.tier === 'moderate') return 0.25;
-  if (link.strength != null)    return Math.max(0.06, link.strength / 100 * 0.4);
-  return 0.1; // generic edge (entity→event, event→signal)
+  if (link.tier === 'strong')   return 0.55;
+  if (link.tier === 'moderate') return 0.35;
+  if (link.strength != null)    return Math.max(0.08, link.strength / 100 * 0.5);
+  // Semantic edge types get a slightly higher base opacity for readability
+  if (link.edgeType)            return 0.3;
+  return 0.12; // structural connection (entity→event, event→signal)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -149,10 +223,12 @@ function sanitizeGraphData(raw: unknown): GraphData {
     ) {
       seen.add((n as GraphNode).id);
       // Shallow copy strips D3-added x/y/vx/vy so force sim starts fresh
+      const gn = n as GraphNode;
       nodes.push({
-        id: (n as GraphNode).id,
-        type: (n as GraphNode).type,
-        label: (n as GraphNode).label,
+        id: gn.id,
+        type: gn.type,
+        label: gn.label,
+        ...(gn.subtype ? { subtype: gn.subtype } : {}),
       });
     }
   }
@@ -177,10 +253,11 @@ function sanitizeGraphData(raw: unknown): GraphData {
       links.push({
         source: src,
         target: tgt,
-        ...(link.strength   != null ? { strength: link.strength }           : {}),
-        ...(link.tier                ? { tier: link.tier }                   : {}),
-        ...(link.sharedSignals != null ? { sharedSignals: link.sharedSignals } : {}),
-        ...(link.lastInteraction     ? { lastInteraction: link.lastInteraction } : {}),
+        ...(link.strength      != null ? { strength: link.strength }             : {}),
+        ...(link.tier                  ? { tier: link.tier }                     : {}),
+        ...(link.sharedSignals != null ? { sharedSignals: link.sharedSignals }   : {}),
+        ...(link.lastInteraction       ? { lastInteraction: link.lastInteraction }: {}),
+        ...(link.edgeType              ? { edgeType: link.edgeType }             : {}),
       });
     }
   }
@@ -366,47 +443,71 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
     );
   }, [focusedNodeId, topConnections, graphData.nodes]);
 
-  /** Custom canvas renderer — draws glowing nodes with labels */
+  /** Custom canvas renderer — draws glowing nodes with labels and semantic shapes */
   const paintNode = useCallback(
     (node: RuntimeNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
-      const color      = NODE_COLORS[node.type] ?? '#6366f1';
+      const color      = nodeColor(node);
       const isHovered  = node.id === hoveredId;
       const isNeighbor = neighbors.has(node.id);
       const isFocused  = node.id === focusedNodeId;
       const isDimmed   = !!hoveredId && !isHovered && !isNeighbor;
       const r          = isFocused ? 10 : isHovered ? 9 : 6;
 
-      ctx.save();
-      ctx.globalAlpha = isDimmed ? 0.18 : 1;
+      const x = node.x ?? 0;
+      const y = node.y ?? 0;
 
-      // Glow
-      ctx.shadowBlur  = isFocused ? 36 : isHovered ? 28 : 14;
+      ctx.save();
+      ctx.globalAlpha = isDimmed ? 0.15 : 1;
+
+      // Glow — intensity reflects importance
+      ctx.shadowBlur  = isFocused ? 40 : isHovered ? 32 : 16;
       ctx.shadowColor = color;
 
-      // Circle fill
-      ctx.beginPath();
-      ctx.arc(node.x ?? 0, node.y ?? 0, r, 0, 2 * Math.PI);
+      // ── Shape by node type ──────────────────────────────────────────────
+      // entity  → circle  (stable, central actors)
+      // event   → diamond (moment in time, sharp angles)
+      // signal  → triangle (directional trend / insight)
+
       ctx.fillStyle = color;
+
+      if (node.type === 'event') {
+        drawDiamond(ctx, x, y, r);
+      } else if (node.type === 'signal') {
+        drawTriangle(ctx, x, y, r);
+      } else {
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, 2 * Math.PI);
+      }
+
       ctx.fill();
 
-      // Border ring — focused node gets a bright white ring
+      // Border ring — focused gets bright white, hovered gets semi-bright
+      ctx.shadowBlur = 0;
       ctx.strokeStyle = isFocused
         ? 'rgba(255,255,255,1)'
         : isHovered
-          ? 'rgba(255,255,255,0.9)'
-          : 'rgba(255,255,255,0.2)';
+          ? 'rgba(255,255,255,0.85)'
+          : 'rgba(255,255,255,0.18)';
       ctx.lineWidth = isFocused ? 2 : isHovered ? 1.5 : 0.75;
+
+      if (node.type === 'event') {
+        drawDiamond(ctx, x, y, r);
+      } else if (node.type === 'signal') {
+        drawTriangle(ctx, x, y, r);
+      } else {
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, 2 * Math.PI);
+      }
+
       ctx.stroke();
 
-      ctx.shadowBlur = 0;
-
       // Label
-      const fontSize       = Math.max(10, 11 / globalScale);
-      ctx.font             = `500 ${fontSize}px DM Sans, sans-serif`;
-      ctx.textAlign        = 'center';
-      ctx.textBaseline     = 'top';
-      ctx.fillStyle        = isFocused || isHovered ? '#ffffff' : 'rgba(238,238,248,0.78)';
-      ctx.fillText(node.label, node.x ?? 0, (node.y ?? 0) + r + 3);
+      const fontSize   = Math.max(10, 11 / globalScale);
+      ctx.font         = `500 ${fontSize}px DM Sans, sans-serif`;
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillStyle    = isFocused || isHovered ? '#ffffff' : 'rgba(238,238,248,0.78)';
+      ctx.fillText(node.label, x, y + r + 3);
 
       ctx.restore();
     },
@@ -417,14 +518,31 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
     (link: RuntimeLink) => {
       const src = nodeId(link.source as string | RuntimeNode);
       const tgt = nodeId(link.target as string | RuntimeNode);
+
       if (hoveredId) {
+        // On hover: highlight connected edges in white, dim everything else
         return src === hoveredId || tgt === hoveredId
-          ? 'rgba(255,255,255,0.6)'
-          : 'rgba(255,255,255,0.03)';
+          ? 'rgba(255,255,255,0.65)'
+          : 'rgba(255,255,255,0.025)';
       }
+
       const alpha = baseLinkAlpha(link);
-      // Tint strong entity↔entity edges with a subtle blue hue
+
+      // Semantic edge type → use type colour
+      const edgeStyle = getEdgeStyle(link);
+      if (edgeStyle) {
+        // Convert hex color to rgba — parse #rrggbb manually for canvas compat
+        const hex = edgeStyle.color.replace('#', '');
+        const r = parseInt(hex.substring(0, 2), 16);
+        const g = parseInt(hex.substring(2, 4), 16);
+        const b = parseInt(hex.substring(4, 6), 16);
+        return `rgba(${r},${g},${b},${alpha})`;
+      }
+
+      // Tier-based entity↔entity edge — subtle blue tint
       if (link.tier) return `rgba(147,197,253,${alpha})`;
+
+      // Structural edge (entity→event, event→signal)
       return `rgba(255,255,255,${alpha})`;
     },
     [hoveredId],
@@ -434,15 +552,31 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
     (link: RuntimeLink) => {
       const src = nodeId(link.source as string | RuntimeNode);
       const tgt = nodeId(link.target as string | RuntimeNode);
+
       if (hoveredId) {
-        return src === hoveredId || tgt === hoveredId ? 2.5 : 0.3;
+        return src === hoveredId || tgt === hoveredId ? 2.5 : 0.25;
       }
-      if (link.tier === 'strong')   return 1.8;
-      if (link.tier === 'moderate') return 1.2;
-      if (link.strength != null)    return Math.max(0.4, link.strength / 100 * 1.5);
-      return 0.6;
+
+      // Strength-scaled width when strength data is available
+      if (link.strength != null) return Math.max(0.6, link.strength / 100 * 2.2);
+      if (link.tier === 'strong')   return 2.0;
+      if (link.tier === 'moderate') return 1.4;
+
+      // Semantic edges without strength get a moderate base width
+      if (link.edgeType) return 1.2;
+
+      return 0.6; // structural connections
     },
     [hoveredId],
+  );
+
+  /** Dashed line patterns per edge type — undefined means solid */
+  const getLinkDash = useCallback(
+    (link: RuntimeLink): number[] | null => {
+      const edgeStyle = getEdgeStyle(link);
+      return edgeStyle?.dash ?? null;
+    },
+    [],
   );
 
   const handleNodeClick = useCallback((node: RuntimeNode) => {
@@ -509,11 +643,29 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
 
   const nodeTooltip = hoveredNode && (
     <div style={{ ...TOOLTIP_STYLE, left: tooltipX, top: tooltipY }}>
-      <div style={{ fontWeight: 600, color: NODE_COLORS[hoveredNode.type] ?? '#fff', marginBottom: 3 }}>
+      <div style={{ fontWeight: 600, color: nodeColor(hoveredNode), marginBottom: 3 }}>
         {hoveredNode.label}
       </div>
-      <div style={{ color: 'rgba(238,238,248,0.5)', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-        {NODE_TYPE_LABELS[hoveredNode.type]}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+        {/* Shape indicator in tooltip */}
+        {hoveredNode.type === 'event' ? (
+          <svg width={9} height={9} viewBox="0 0 9 9">
+            <polygon points="4.5,0 9,4.5 4.5,9 0,4.5" fill={nodeColor(hoveredNode)} />
+          </svg>
+        ) : hoveredNode.type === 'signal' ? (
+          <svg width={9} height={9} viewBox="0 0 9 9">
+            <polygon points="4.5,0 9,9 0,9" fill={nodeColor(hoveredNode)} />
+          </svg>
+        ) : (
+          <svg width={9} height={9} viewBox="0 0 9 9">
+            <circle cx={4.5} cy={4.5} r={4.5} fill={nodeColor(hoveredNode)} />
+          </svg>
+        )}
+        <span style={{ color: 'rgba(238,238,248,0.5)', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          {hoveredNode.type === 'entity' && hoveredNode.subtype
+            ? NODE_SUBTYPE_LABELS[hoveredNode.subtype]
+            : NODE_TYPE_LABELS[hoveredNode.type]}
+        </span>
       </div>
       {hoveredNode.type === 'entity' && (
         <div style={{ marginTop: 6, color: 'rgba(238,238,248,0.4)', fontSize: '0.68rem' }}>
@@ -529,9 +681,10 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
   );
 
   const linkTooltip = hoveredLink && (() => {
-    const srcLabel = nodeLabel(hoveredLink.source as string | RuntimeNode);
-    const tgtLabel = nodeLabel(hoveredLink.target as string | RuntimeNode);
+    const srcLabel   = nodeLabel(hoveredLink.source as string | RuntimeNode);
+    const tgtLabel   = nodeLabel(hoveredLink.target as string | RuntimeNode);
     const hasRelData = hoveredLink.tier || hoveredLink.strength != null;
+    const edgeStyle  = getEdgeStyle(hoveredLink);
 
     return (
       <div style={{ ...TOOLTIP_STYLE, left: tooltipX, top: tooltipY }}>
@@ -540,6 +693,33 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
           <span style={{ color: 'rgba(238,238,248,0.35)' }}>→</span>{' '}
           {tgtLabel}
         </div>
+
+        {/* Edge type badge */}
+        {edgeStyle && (
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 5,
+            background: `${edgeStyle.color}18`,
+            border: `1px solid ${edgeStyle.color}40`,
+            borderRadius: 4,
+            padding: '2px 7px',
+            marginBottom: 6,
+          }}>
+            <svg width={14} height={3} style={{ flexShrink: 0 }}>
+              <line x1={0} y1={1.5} x2={14} y2={1.5}
+                stroke={edgeStyle.color}
+                strokeWidth={2}
+                strokeDasharray={edgeStyle.dash?.join(',') ?? ''}
+                strokeLinecap="round"
+              />
+            </svg>
+            <span style={{ color: edgeStyle.color, fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              {edgeStyle.label}
+            </span>
+          </div>
+        )}
+
         {hasRelData && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             {hoveredLink.tier && (
@@ -573,7 +753,7 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
             )}
           </div>
         )}
-        {!hasRelData && (
+        {!hasRelData && !edgeStyle && (
           <div style={{ color: 'rgba(238,238,248,0.4)', fontSize: '0.7rem' }}>
             Structural connection
           </div>
@@ -766,6 +946,7 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
           onLinkHover={handleLinkHover}
           linkColor={getLinkColor}
           linkWidth={getLinkWidth}
+          linkLineDash={getLinkDash}
           cooldownTicks={120}
           d3AlphaDecay={0.02}
           d3VelocityDecay={0.3}
