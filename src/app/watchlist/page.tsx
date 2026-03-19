@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { siteConfig } from '@/config/site';
 import { useWatchlist, type WatchedEntity } from '@/hooks/useWatchlist';
 import { Badge } from '@/components/ui/Badge';
 import { SignalImpactBadge } from '@/components/signals/SignalImpactBadge';
@@ -88,7 +89,7 @@ export default function WatchlistPage() {
           Your <span className="ph-hi">Watchlist</span>
         </h1>
         <p style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.7, maxWidth: 560 }}>
-          Entities you&apos;re tracking. Your watchlist syncs across devices automatically.
+          Curated intelligence for entities you&apos;re tracking. Signals, digests, and alerts — all in one feed.
         </p>
       </div>
 
@@ -356,32 +357,55 @@ function EntityRow({
 function EmptyState() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ ...GLASS_CARD, textAlign: 'center', padding: '32px 24px 24px' }}>
+      {/* Hero empty state */}
+      <div className="hero" style={{ padding: '36px 32px' }}>
         <svg
           viewBox="0 0 24 24"
-          width={28}
-          height={28}
+          width={24}
+          height={24}
           fill="none"
-          stroke="var(--text3)"
+          stroke="var(--cyan-l)"
           strokeWidth={1.25}
           strokeLinecap="round"
           strokeLinejoin="round"
-          style={{ marginBottom: 12, opacity: 0.5 }}
+          style={{ marginBottom: 14, opacity: 0.7 }}
         >
           <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
         </svg>
-        <p style={{
-          fontFamily: 'var(--fd)', fontSize: 17, fontStyle: 'italic',
-          color: 'var(--text2)', marginBottom: 6,
+        <h2 style={{
+          fontFamily: 'var(--fd)', fontSize: 22, fontStyle: 'italic',
+          color: 'var(--text)', letterSpacing: '-0.02em', marginBottom: 10,
         }}>
-          No watched entities yet
+          Your personal intelligence feed
+        </h2>
+        <p style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.75, maxWidth: 480, marginBottom: 20 }}>
+          Watch entities to build a curated signal feed tailored to what matters in your portfolio.
+          No noise — only intelligence from the companies you care about.
         </p>
-        <p style={{
-          fontSize: 13, color: 'var(--text3)', lineHeight: 1.7, maxWidth: 380, margin: '0 auto',
-        }}>
-          Add entities below to build your personal intelligence feed, or visit any entity dossier to watch it.
-        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 440 }}>
+          {[
+            { label: 'Signal feed', body: 'See all signals from watched entities in one place.' },
+            { label: 'Daily digest', body: 'A summarized briefing of the day\'s activity across your watchlist.' },
+            { label: 'Email alerts', body: 'Get notified when something significant happens.' },
+          ].map((item) => (
+            <div key={item.label} style={{
+              display: 'flex', gap: 12, alignItems: 'flex-start',
+              padding: '10px 14px', borderRadius: 8,
+              background: 'rgba(255,255,255,0.025)', border: '1px solid var(--border)',
+            }}>
+              <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="var(--emerald-l)" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}>
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              <span style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.6 }}>
+                <strong style={{ color: 'var(--text)', fontWeight: 500 }}>{item.label}</strong>
+                {' — '}{item.body}
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
+
+      {/* Discovery panel open by default */}
       <DiscoveryPanel defaultOpen />
     </div>
   );
@@ -427,8 +451,8 @@ function DiscoveryPanel({ defaultOpen = false }: { defaultOpen?: boolean }) {
       </button>
       {open && <WatchlistDiscovery />}
       {!open && (
-        <p style={{ fontSize: 12, color: 'var(--text3)' }}>
-          Browse and add tracked entities to your watchlist.
+        <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>
+          Search across {siteConfig.stats.companies}+ tracked entities and add them to your feed.
         </p>
       )}
     </div>

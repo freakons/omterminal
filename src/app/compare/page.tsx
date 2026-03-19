@@ -4,6 +4,17 @@ import { getEntityComparison } from '@/db/queries';
 import type { EntityComparisonEntry } from '@/db/queries';
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Suggested comparisons shown in the empty state
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SUGGESTED_COMPARISONS = [
+  { label: 'Labs', slugs: 'openai,anthropic,deepseek' },
+  { label: 'Labs + Google', slugs: 'openai,anthropic,google-deepmind' },
+  { label: 'Frontier vs Open', slugs: 'openai,meta-ai,mistral' },
+  { label: 'Cloud AI', slugs: 'microsoft,google,amazon' },
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -252,30 +263,55 @@ export default async function ComparePage(
           <span style={{ ...BREADCRUMB, color: 'var(--text)' }}>Compare</span>
         </div>
 
-        <div className="hero" style={{ padding: '40px', textAlign: 'center' }}>
+        <div className="hero" style={{ padding: '40px 40px 32px', marginBottom: 16 }}>
           <h1 style={{
             fontFamily: 'var(--fd)', fontSize: 30, fontStyle: 'italic',
-            color: 'var(--text)', letterSpacing: '-0.02em', margin: '0 0 12px',
+            color: 'var(--text)', letterSpacing: '-0.02em', margin: '0 0 10px',
           }}>
             Entity Compare
           </h1>
-          <p style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.7, maxWidth: 520, margin: '0 auto 24px' }}>
-            Compare intelligence activity across 2–4 entities side-by-side.
-            Pass entity slugs in the URL to get started.
+          <p style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.75, maxWidth: 520, marginBottom: 24 }}>
+            Compare intelligence activity — signals, events, confidence, and activity — across
+            2–4 entities side-by-side. Pass entity slugs in the URL to get started.
           </p>
-          <div style={{ ...GLASS_CARD, maxWidth: 480, margin: '0 auto', textAlign: 'left' }}>
-            <div style={SECTION_HEADER}>Usage</div>
+          <div style={{ ...GLASS_CARD, maxWidth: 500, textAlign: 'left' }}>
+            <div style={SECTION_HEADER}>URL format</div>
             <code style={{
               fontFamily: 'var(--fm)', fontSize: 12, color: 'var(--cyan-l)',
-              display: 'block', padding: '12px 16px',
+              display: 'block', padding: '10px 14px',
               background: 'var(--glass2)', borderRadius: 8,
               overflowX: 'auto',
             }}>
               /compare?entities=openai,anthropic,deepseek
             </code>
-            <p style={{ ...EMPTY_TEXT, marginTop: 12 }}>
-              Use comma-separated entity slugs. Supports 2–4 entities.
+            <p style={{ ...EMPTY_TEXT, marginTop: 10 }}>
+              Use comma-separated slugs. Supports 2–4 entities.
             </p>
+          </div>
+        </div>
+
+        <div style={{ ...GLASS_CARD }}>
+          <div style={SECTION_HEADER}>Suggested comparisons</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {SUGGESTED_COMPARISONS.map((s) => (
+              <Link
+                key={s.slugs}
+                href={`/compare?entities=${s.slugs}`}
+                style={{
+                  fontFamily: 'var(--fm)', fontSize: 11, letterSpacing: '0.05em',
+                  color: 'var(--text2)', textDecoration: 'none',
+                  padding: '6px 14px', borderRadius: 7,
+                  border: '1px solid var(--border2)',
+                  background: 'var(--glass)',
+                  transition: 'all 0.15s',
+                }}
+              >
+                {s.label}
+                <span style={{ color: 'var(--text3)', marginLeft: 6, fontSize: 10 }}>
+                  {s.slugs.split(',').join(', ')}
+                </span>
+              </Link>
+            ))}
           </div>
         </div>
       </div>
@@ -292,22 +328,44 @@ export default async function ComparePage(
           <span style={{ ...BREADCRUMB, color: 'var(--text)' }}>Compare</span>
         </div>
 
-        <div className="hero" style={{ padding: '40px', textAlign: 'center' }}>
+        <div className="hero" style={{ padding: '40px', marginBottom: 16 }}>
           <h1 style={{
-            fontFamily: 'var(--fd)', fontSize: 30, fontStyle: 'italic',
-            color: 'var(--text)', letterSpacing: '-0.02em', margin: '0 0 12px',
+            fontFamily: 'var(--fd)', fontSize: 28, fontStyle: 'italic',
+            color: 'var(--text)', letterSpacing: '-0.02em', margin: '0 0 10px',
           }}>
-            Need at least 2 entities
+            Add at least one more entity
           </h1>
-          <p style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.7, maxWidth: 520, margin: '0 auto 24px' }}>
-            You selected only <strong style={{ color: 'var(--text)' }}>{slugs[0]}</strong>.
-            Add at least one more entity to compare.
+          <p style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.75, maxWidth: 520, marginBottom: 20 }}>
+            You selected <strong style={{ color: 'var(--text)' }}>{slugs[0]}</strong> — add one
+            more to start the comparison. Try pairing it with a related entity:
           </p>
-          <p style={EMPTY_TEXT}>
-            Try: <Link href={`/compare?entities=${slugs[0]},anthropic`} style={{ color: 'var(--cyan-l)', textDecoration: 'none' }}>
-              /compare?entities={slugs[0]},anthropic
-            </Link>
-          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {['anthropic', 'deepseek', 'google-deepmind', 'meta-ai', 'microsoft'].map((suggestion) => (
+              <Link
+                key={suggestion}
+                href={`/compare?entities=${slugs[0]},${suggestion}`}
+                style={{
+                  fontFamily: 'var(--fm)', fontSize: 11, letterSpacing: '0.05em',
+                  color: 'var(--cyan-l)', textDecoration: 'none',
+                  padding: '6px 14px', borderRadius: 7,
+                  border: '1px solid rgba(103,232,249,0.2)',
+                  background: 'rgba(103,232,249,0.05)',
+                }}
+              >
+                + {suggestion}
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        <div style={GLASS_CARD}>
+          <div style={SECTION_HEADER}>Or view the entity dossier</div>
+          <Link
+            href={`/entity/${slugs[0]}`}
+            style={{ color: 'var(--text2)', fontSize: 13, textDecoration: 'none' }}
+          >
+            View full profile for <strong style={{ color: 'var(--text)' }}>{slugs[0]}</strong> →
+          </Link>
         </div>
       </div>
     );
@@ -326,17 +384,51 @@ export default async function ComparePage(
           <span style={{ ...BREADCRUMB, color: 'var(--text)' }}>Compare</span>
         </div>
 
-        <div className="hero" style={{ padding: '40px', textAlign: 'center' }}>
+        <div className="hero" style={{ padding: '40px', marginBottom: 16 }}>
           <h1 style={{
-            fontFamily: 'var(--fd)', fontSize: 30, fontStyle: 'italic',
-            color: 'var(--text)', letterSpacing: '-0.02em', margin: '0 0 12px',
+            fontFamily: 'var(--fd)', fontSize: 28, fontStyle: 'italic',
+            color: 'var(--text)', letterSpacing: '-0.02em', margin: '0 0 10px',
           }}>
             No entities found
           </h1>
-          <p style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.7, maxWidth: 520, margin: '0 auto' }}>
-            None of the requested entities were recognized: <strong style={{ color: 'var(--text)' }}>{slugs.join(', ')}</strong>.
-            Check your entity slugs and try again.
+          <p style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.75, maxWidth: 520, marginBottom: 16 }}>
+            None of the requested entities were recognized:{' '}
+            <strong style={{ color: 'var(--amber-l)' }}>{slugs.join(', ')}</strong>.
+            Entity slugs must match tracked entities in the terminal.
           </p>
+          <Link
+            href="/compare"
+            style={{
+              fontFamily: 'var(--fm)', fontSize: 11, letterSpacing: '0.06em',
+              color: 'var(--cyan-l)', textDecoration: 'none',
+              padding: '6px 14px', borderRadius: 6,
+              border: '1px solid rgba(103,232,249,0.2)',
+              background: 'rgba(103,232,249,0.05)',
+            }}
+          >
+            ← Back to Compare
+          </Link>
+        </div>
+
+        <div style={GLASS_CARD}>
+          <div style={SECTION_HEADER}>Try a suggested comparison</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {SUGGESTED_COMPARISONS.map((s) => (
+              <Link
+                key={s.slugs}
+                href={`/compare?entities=${s.slugs}`}
+                style={{
+                  fontFamily: 'var(--fm)', fontSize: 11, letterSpacing: '0.05em',
+                  color: 'var(--text2)', textDecoration: 'none',
+                  padding: '6px 14px', borderRadius: 7,
+                  border: '1px solid var(--border2)',
+                  background: 'var(--glass)',
+                }}
+              >
+                {s.label}
+              </Link>
+            ))}
+          </div>
         </div>
       </div>
     );

@@ -9,6 +9,12 @@ interface ThreadPreviewProps {
   stats: Record<string, number>;
 }
 
+const STAT_LABELS: Record<string, string> = {
+  tweets: 'tweets',
+  signals: 'signals',
+  chars: 'chars',
+};
+
 export function ThreadPreview({ platform, label, items, stats }: ThreadPreviewProps) {
   const [copied, setCopied] = useState(false);
 
@@ -28,12 +34,14 @@ export function ThreadPreview({ platform, label, items, stats }: ThreadPreviewPr
         <div className="thread-preview-stats">
           {Object.entries(stats).map(([key, val]) => (
             <span key={key} className="thread-stat">
-              {val} {key}
+              <span className="thread-stat-val">{val}</span>
+              {' '}
+              <span className="thread-stat-key">{STAT_LABELS[key] ?? key}</span>
             </span>
           ))}
         </div>
         <button className="thread-copy-btn" onClick={handleCopy}>
-          {copied ? 'Copied' : 'Copy'}
+          {copied ? '✓ Copied' : 'Copy all'}
         </button>
       </div>
 
@@ -41,7 +49,7 @@ export function ThreadPreview({ platform, label, items, stats }: ThreadPreviewPr
         {items.map((item, i) => (
           <div key={i} className="thread-item">
             {platform === 'twitter' && items.length > 1 && (
-              <span className="thread-item-num">{i + 1}/{items.length}</span>
+              <span className="thread-item-num">{i + 1} / {items.length}</span>
             )}
             <pre className="thread-item-text">{item}</pre>
           </div>
