@@ -42,7 +42,7 @@ export default function GraphPage() {
           maxWidth: 520,
         }}>
           Force-directed map of AI companies, events, and signals.
-          Hover a node to highlight its connections. Click to inspect.
+          Hover to highlight connections. Click an entity to focus its ecosystem.
         </p>
       </div>
 
