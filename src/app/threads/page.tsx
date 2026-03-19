@@ -29,12 +29,29 @@ export default async function ThreadsPage() {
   const twitter = generateTwitterThread(top, date);
   const linkedin = generateLinkedInPost(top, date);
 
+  const formattedDate = new Date(date).toLocaleDateString('en-US', {
+    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+  });
+
   return (
     <div className="threads-page">
       <header className="threads-header">
-        <h1 className="threads-title">Daily Intelligence Threads</h1>
+        <div style={{
+          fontFamily: 'var(--fm)', fontSize: 9, letterSpacing: '0.12em',
+          textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 8,
+        }}>
+          Daily Intelligence
+        </div>
+        <h1 className="threads-title">Intelligence Threads</h1>
         <p className="threads-subtitle">
-          Auto-generated from today&apos;s top {top.length} signals &middot; {date}
+          {formattedDate} &middot; {top.length} signals selected
+        </p>
+        <p style={{
+          fontFamily: 'var(--fm)', fontSize: 12, color: 'var(--text3)',
+          lineHeight: 1.6, maxWidth: 520, marginTop: 10,
+        }}>
+          Auto-generated from today&apos;s highest-impact signals. Copy to publish directly
+          to Twitter/X or LinkedIn — editorial tone, analytical framing, ready to post.
         </p>
       </header>
 
