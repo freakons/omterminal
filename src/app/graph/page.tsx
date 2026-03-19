@@ -80,7 +80,7 @@ export default function GraphPage() {
           maxWidth: 520,
         }}>
           Intelligence map of AI companies, models, investors, and regulatory signals.
-          Hover to highlight connections. Click an entity to focus its ecosystem.
+          Hover to highlight connections. Click an entity to open its page, or a signal to view details.
         </p>
       </div>
 
