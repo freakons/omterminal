@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import { getSignals } from '@/db/queries';
-import { MOCK_SIGNALS } from '@/data/mockSignals';
 import { SignalsBrowser } from './SignalsBrowser';
 import { buildDatasetSchema } from '@/lib/seo/jsonld';
 import { IntelligenceSnapshot } from '@/components/signals/IntelligenceSnapshot';
@@ -36,14 +35,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function SignalsPage() {
   // Pre-fetch signals server-side; pass as initial prop to the client component.
-  // Falls back to mock in development when DB is empty, and to [] in production.
-  const dbSignals = await getSignals(200).catch(() => []);
-  const initialSignals =
-    dbSignals.length > 0
-      ? dbSignals
-      : process.env.NODE_ENV === 'production'
-        ? []
-        : MOCK_SIGNALS;
+  const initialSignals = await getSignals(200).catch(() => []);
 
   const recentCount = countRecentSignals(initialSignals, 24);
 

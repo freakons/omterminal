@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { type Signal, type SignalCategory, type SignalContext } from '@/data/mockSignals';
 import { SignalImpactBadge } from '@/components/signals/SignalImpactBadge';
 import { SignalMomentumBadge } from '@/components/signals/SignalMomentumBadge';
@@ -212,72 +213,79 @@ function SignalItem({ signal }: { signal: Signal }) {
   const [ctxOpen, setCtxOpen] = useState(false);
   const ctx = signal.context ?? null;
   const hot = isHot(signal.date);
+  const href = `/signals/${encodeURIComponent(signal.id)}`;
 
   return (
     <div
       className={`nc${hot ? ' nc-hot' : ''}`}
       style={{ '--cc': grad } as React.CSSProperties}
     >
-      {/* Top row: category badge + confidence */}
-      <div className="nc-top">
-        <span className={`badge ${signal.category}`}>
-          {signal.category.toUpperCase()}
-        </span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <SignalImpactBadge
-            signal={{
-              significanceScore: signal.significanceScore,
-              confidenceScore: signal.confidence,
-              sourceSupportCount: signal.sourceSupportCount,
-              affectedEntitiesCount: signal.context?.affectedEntities?.length ?? null,
-            }}
-            showLabel={false}
-          />
-          {signal.momentum && (
-            <SignalMomentumBadge momentum={signal.momentum} showLabel={false} />
-          )}
-          <span style={{
-            fontFamily: 'var(--fm)',
-            fontSize: '10.5px',
-            color: confColor,
-            letterSpacing: '0.05em',
-          }}
-          title={`Confidence: ${signal.confidence}% — Overall trust level for this signal.`}
-          >
-            {signal.confidence}%
+      {/* Clickable area for navigation */}
+      <Link href={href} className="nc-link">
+        {/* Top row: category badge + confidence */}
+        <div className="nc-top">
+          <span className={`badge ${signal.category}`}>
+            {signal.category.toUpperCase()}
           </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <SignalImpactBadge
+              signal={{
+                significanceScore: signal.significanceScore,
+                confidenceScore: signal.confidence,
+                sourceSupportCount: signal.sourceSupportCount,
+                affectedEntitiesCount: signal.context?.affectedEntities?.length ?? null,
+              }}
+              showLabel={false}
+            />
+            {signal.momentum && (
+              <SignalMomentumBadge momentum={signal.momentum} showLabel={false} />
+            )}
+            <span style={{
+              fontFamily: 'var(--fm)',
+              fontSize: '10.5px',
+              color: confColor,
+              letterSpacing: '0.05em',
+            }}
+            title={`Confidence: ${signal.confidence}% — Overall trust level for this signal.`}
+            >
+              {signal.confidence}%
+            </span>
+          </div>
         </div>
-      </div>
 
-      {/* Title */}
-      <div className="nc-title">{signal.title}</div>
+        {/* Title */}
+        <div className="nc-title">{signal.title}</div>
 
-      {/* Summary */}
-      <div className="nc-body">{signal.summary}</div>
+        {/* Summary */}
+        <div className="nc-body">{signal.summary}</div>
 
-      {/* Confidence bar */}
-      <div style={{ marginBottom: ctx ? 10 : 14 }}>
-        <div style={{
-          height: 3,
-          borderRadius: 2,
-          background: 'rgba(255,255,255,0.07)',
-          overflow: 'hidden',
-        }}>
+        {/* Confidence bar */}
+        <div style={{ marginBottom: ctx ? 10 : 14 }}>
           <div style={{
-            height: '100%',
-            width: `${signal.confidence}%`,
+            height: 3,
             borderRadius: 2,
-            background: confColor,
-            transition: 'width 0.6s cubic-bezier(.4,0,.2,1)',
-          }} />
+            background: 'rgba(255,255,255,0.07)',
+            overflow: 'hidden',
+          }}>
+            <div style={{
+              height: '100%',
+              width: `${signal.confidence}%`,
+              borderRadius: 2,
+              background: confColor,
+              transition: 'width 0.6s cubic-bezier(.4,0,.2,1)',
+            }} />
+          </div>
         </div>
-      </div>
+      </Link>
 
-      {/* Intelligence context — only rendered when a ready context exists */}
+      {/* Intelligence context — outside the Link to avoid navigation on toggle */}
       {ctx && (
         <div style={{ marginBottom: 10 }}>
           <button
-            onClick={() => setCtxOpen((o: boolean) => !o)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setCtxOpen((o: boolean) => !o);
+            }}
             aria-expanded={ctxOpen}
             style={{
               display: 'inline-flex',
@@ -324,11 +332,18 @@ function SignalItem({ signal }: { signal: Signal }) {
           }} />
           {signal.entityName}
         </span>
-        <span className={`nc-date${isHot(signal.date) ? ' nc-date--hot' : isRecent(signal.date) ? ' nc-date--recent' : ''}`}>
-          {isHot(signal.date) && <span className="nc-date-live-dot" aria-hidden="true" />}
-          {formatSignalAge(signal.date)}
-        </span>
+        <Link href={href} className="nc-link">
+          <span className={`nc-date${isHot(signal.date) ? ' nc-date--hot' : isRecent(signal.date) ? ' nc-date--recent' : ''}`}>
+            {isHot(signal.date) && <span className="nc-date-live-dot" aria-hidden="true" />}
+            {formatSignalAge(signal.date)}
+          </span>
+        </Link>
       </div>
+
+      {/* Open signal affordance */}
+      <Link href={href} className="nc-link">
+        <span className="nc-open-hint">Open signal</span>
+      </Link>
     </div>
   );
 }
@@ -447,11 +462,34 @@ export function SignalsBrowser({ initialSignals }: SignalsBrowserProps) {
       </div>
 
       {/* Signal grid */}
-      <div className="news-grid" style={{ marginBottom: 24 }}>
-        {filtered.map((signal) => (
-          <SignalItem key={signal.id} signal={signal} />
-        ))}
-      </div>
+      {filtered.length > 0 ? (
+        <div className="news-grid" style={{ marginBottom: 24 }}>
+          {filtered.map((signal) => (
+            <SignalItem key={signal.id} signal={signal} />
+          ))}
+        </div>
+      ) : signals.length > 0 ? (
+        <div className="feed-empty">
+          <p className="feed-empty-title">No signals in this category</p>
+          <p className="feed-empty-sub">
+            Try selecting a different filter, or check back — new intelligence is ingested continuously.
+          </p>
+          <button
+            className="fp on"
+            style={{ marginTop: 12 }}
+            onClick={() => setActive('all')}
+          >
+            Show all signals
+          </button>
+        </div>
+      ) : (
+        <div className="feed-empty">
+          <p className="feed-empty-title">No intelligence data yet</p>
+          <p className="feed-empty-sub">
+            The intelligence feed will populate automatically as the pipeline ingests data.
+          </p>
+        </div>
+      )}
 
       {/* Terminal command bar */}
       <CommandBar />
