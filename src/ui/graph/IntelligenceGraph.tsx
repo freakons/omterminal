@@ -364,6 +364,15 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
     setFocusedNode(null);
   }, []);
 
+  // Escape key exits focus mode — defined after resetFocus to avoid temporal dead zone
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && focusedNodeId) resetFocus();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [focusedNodeId, resetFocus]);
+
   /** Set of node IDs connected to the hovered node */
   const neighbors = useMemo<Set<string>>(() => {
     if (!hoveredId) return new Set();
@@ -603,23 +612,18 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
 
   const handleNodeClick = useCallback((node: RuntimeNode) => {
     if (node.type === 'entity') {
-      if (initialFocusId) {
-        // Embedded mode (on entity page): toggle focus/neighborhood mode for ecosystem exploration
-        if (focusedNodeId === node.id) {
-          resetFocus();
-        } else {
-          setFocusedNodeId(node.id);
-          setFocusedNode(node);
-        }
+      // Always enter focus mode on entity click — toggle off if already focused
+      if (focusedNodeId === node.id) {
+        resetFocus();
       } else {
-        // Standalone graph: navigate directly to the entity page
-        router.push(`/entity/${node.id}`);
+        setFocusedNodeId(node.id);
+        setFocusedNode(node);
       }
     } else if (node.type === 'signal') {
       router.push(`/signals/${node.id}`);
     }
     // event nodes: graceful no-op
-  }, [router, focusedNodeId, resetFocus, initialFocusId]);
+  }, [router, focusedNodeId, resetFocus]);
 
   const handleNodeHover = useCallback((node: RuntimeNode | null) => {
     setHoveredId(node?.id ?? null);
@@ -747,9 +751,7 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
       {/* Click action hint */}
       {hoveredNode.type === 'entity' && (
         <div style={{ marginTop: 6, color: 'rgba(238,238,248,0.38)', fontSize: '0.67rem' }}>
-          {initialFocusId
-            ? (focusedNodeId === hoveredNode.id ? 'Click to exit focus' : 'Click to explore neighbors →')
-            : 'Click to open entity page →'}
+          {focusedNodeId === hoveredNode.id ? 'Click to exit focus' : 'Click to focus →'}
         </div>
       )}
       {hoveredNode.type === 'signal' && (
@@ -888,7 +890,7 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
         </span>
       </span>
 
-      {/* In embedded mode navigate to full graph; otherwise open the entity page */}
+      {/* Open entity page or navigate to full graph in embedded mode */}
       <button
         onClick={() => router.push(initialFocusId ? '/graph' : `/entity/${focusedNode.id}`)}
         style={{
@@ -902,10 +904,10 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
           letterSpacing: '0.03em',
         }}
       >
-        {initialFocusId ? 'Full graph →' : 'Open →'}
+        {initialFocusId ? 'Full graph →' : 'Open page →'}
       </button>
 
-      {/* Reset button */}
+      {/* Reset / Escape hint */}
       <button
         onClick={resetFocus}
         style={{
@@ -918,9 +920,84 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
           cursor: 'pointer',
           letterSpacing: '0.03em',
         }}
+        title="Press Escape to reset"
       >
-        Reset view
+        Reset  <span style={{ opacity: 0.45, fontSize: '0.65rem' }}>Esc</span>
       </button>
+    </div>
+  );
+
+  // ── Entity selector panel — quick-pick for focus mode ──────────────────────
+  // Shows in full-graph mode (not in embedded mode) listing entity nodes so users
+  // can focus on any entity without having to locate it in the canvas first.
+
+  const entityNodes = useMemo(
+    () => graphData.nodes.filter(n => n.type === 'entity'),
+    [graphData.nodes],
+  );
+
+  const entitySelectorPanel = !focusedNodeId && !compact && entityNodes.length > 0 && (
+    <div style={{
+      position: 'absolute',
+      top: 16,
+      left: 16,
+      zIndex: 10,
+      maxWidth: 180,
+    }}>
+      <div style={{
+        fontSize: '0.62rem',
+        color: 'rgba(238,238,248,0.28)',
+        textTransform: 'uppercase',
+        letterSpacing: '0.08em',
+        marginBottom: 6,
+      }}>
+        Focus on
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {entityNodes.slice(0, 8).map(node => (
+          <button
+            key={node.id}
+            onClick={() => {
+              setFocusedNodeId(node.id);
+              setFocusedNode(node as RuntimeNode);
+            }}
+            style={{
+              background: 'rgba(15,15,25,0.75)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: 5,
+              color: 'rgba(238,238,248,0.65)',
+              fontSize: '0.72rem',
+              padding: '4px 9px',
+              cursor: 'pointer',
+              textAlign: 'left',
+              letterSpacing: '0.02em',
+              backdropFilter: 'blur(8px)',
+              transition: 'background 0.12s, border-color 0.12s, color 0.12s',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              maxWidth: '100%',
+            }}
+            onMouseEnter={e => {
+              (e.currentTarget as HTMLButtonElement).style.background = 'rgba(59,130,246,0.14)';
+              (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(59,130,246,0.3)';
+              (e.currentTarget as HTMLButtonElement).style.color = '#93c5fd';
+            }}
+            onMouseLeave={e => {
+              (e.currentTarget as HTMLButtonElement).style.background = 'rgba(15,15,25,0.75)';
+              (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(255,255,255,0.08)';
+              (e.currentTarget as HTMLButtonElement).style.color = 'rgba(238,238,248,0.65)';
+            }}
+          >
+            {node.label}
+          </button>
+        ))}
+        {entityNodes.length > 8 && (
+          <span style={{ fontSize: '0.65rem', color: 'rgba(238,238,248,0.22)', paddingLeft: 4 }}>
+            +{entityNodes.length - 8} more — click in graph
+          </span>
+        )}
+      </div>
     </div>
   );
 
@@ -977,6 +1054,9 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
 
       {/* Link tooltip */}
       {linkTooltip}
+
+      {/* Entity selector — quick-pick panel in full-graph mode */}
+      {entitySelectorPanel}
 
       {/* Focus mode indicator */}
       {focusIndicator}
