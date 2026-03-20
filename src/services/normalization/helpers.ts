@@ -349,6 +349,61 @@ export function generateTitleFingerprint(title: string): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Fuzzy title similarity (near-duplicate detection)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Computes Jaccard similarity of word-token sets between two normalized titles.
+ * Returns a score in [0, 1] where 1.0 = identical token sets.
+ *
+ * Short stop-words (≤2 chars) are excluded to reduce noise.
+ * Suitable for detecting near-duplicate headlines that share most content
+ * words but differ slightly in phrasing.
+ *
+ * Both inputs should be normalized via normalizeTitle() before comparison.
+ */
+export function titleSimilarity(a: string, b: string): number {
+  if (!a || !b) return 0;
+  const wordsA = new Set(a.split(' ').filter((w) => w.length > 2));
+  const wordsB = new Set(b.split(' ').filter((w) => w.length > 2));
+  if (wordsA.size === 0 || wordsB.size === 0) return 0;
+
+  let intersection = 0;
+  for (const word of wordsA) {
+    if (wordsB.has(word)) intersection++;
+  }
+  const union = wordsA.size + wordsB.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Content fingerprinting (cross-field near-duplicate detection)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Generates a deterministic fingerprint from title + leading description text.
+ * Catches near-duplicates that have slightly different titles but the same body
+ * content — common when a story is republished across sources with minor edits.
+ *
+ * Uses the first 150 characters of the normalized description so minor trailing
+ * differences (ads, "read more" text) do not affect the fingerprint.
+ *
+ * Returns empty string if there is insufficient content to produce a meaningful
+ * fingerprint (e.g. both title and description are empty).
+ */
+export function generateContentFingerprint(
+  title: string,
+  description: string,
+): string {
+  const normalizedTitle = normalizeTitle(title);
+  const normalizedDesc = normalizeTitle(description).slice(0, 150);
+  const combined = `${normalizedTitle}|${normalizedDesc}`;
+  // Require at least the title to be non-empty
+  if (!normalizedTitle) return '';
+  return `cfp_${stringHash(combined)}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Category mapping
 // ─────────────────────────────────────────────────────────────────────────────
 

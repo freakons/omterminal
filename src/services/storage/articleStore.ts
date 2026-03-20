@@ -9,18 +9,20 @@
  *   RSS/GNews ingestion → articleStore → eventStore → signals engine
  *
  * Deduplication strategy (layered):
- *   1. Exact URL match   — UNIQUE constraint on `url` column (DB-enforced)
- *   2. Near-duplicate     — title_fingerprint + 48h publish window (app-level)
+ *   1. Title fingerprint   — EXACT title match + 48h publish window (app-level)
+ *   2. Content fingerprint — title + leading description hash + 48h window (app-level)
+ *   3. Exact URL match     — UNIQUE constraint on `url` column (DB-enforced)
  *
- * articles table schema (src/db/schema.sql):
- *   id                TEXT PRIMARY KEY
- *   title             TEXT NOT NULL
- *   source            TEXT NOT NULL
- *   url               TEXT NOT NULL UNIQUE
- *   published_at      TIMESTAMPTZ NOT NULL
- *   category          TEXT NOT NULL
- *   title_fingerprint TEXT           -- nullable for backward compat
- *   created_at        TIMESTAMPTZ DEFAULT NOW()
+ * articles table schema (src/db/schema.sql + migration 022):
+ *   id                   TEXT PRIMARY KEY
+ *   title                TEXT NOT NULL
+ *   source               TEXT NOT NULL
+ *   url                  TEXT NOT NULL UNIQUE
+ *   published_at         TIMESTAMPTZ NOT NULL
+ *   category             TEXT NOT NULL
+ *   title_fingerprint    TEXT           -- nullable for backward compat
+ *   content_fingerprint  TEXT           -- nullable for backward compat (added migration 022)
+ *   created_at           TIMESTAMPTZ DEFAULT NOW()
  */
 
 import { dbQuery } from '@/db/client';
@@ -30,10 +32,10 @@ import { dbQuery } from '@/db/client';
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Time window (hours) for title-fingerprint near-duplicate detection.
- * Articles with the same title fingerprint published within this window
- * are considered duplicates. 48 hours is conservative enough to avoid
- * collapsing genuinely different stories that happen to share a title.
+ * Time window (hours) for fingerprint-based near-duplicate detection.
+ * Articles with the same fingerprint published within this window are
+ * considered duplicates. 48 hours is conservative enough to avoid collapsing
+ * genuinely different stories that happen to share a title or snippet.
  */
 const NEAR_DEDUP_WINDOW_HOURS = 48;
 
@@ -65,6 +67,13 @@ export interface ArticleInput {
    */
   titleFingerprint?: string;
   /**
+   * Content fingerprint for cross-field near-duplicate detection.
+   * Generated via generateContentFingerprint() in normalization/helpers.ts.
+   * Hash of normalized title + leading description text.
+   * Nullable for backward compatibility with older ingestion paths.
+   */
+  contentFingerprint?: string;
+  /**
    * Source tier (1 | 2 | 3) derived from the source's reliability score.
    * Nullable for backward compatibility with pre-weighting ingestion paths.
    */
@@ -80,36 +89,62 @@ export interface ArticleInput {
 // Near-duplicate detection
 // ─────────────────────────────────────────────────────────────────────────────
 
+type NearDupReason = 'title_fingerprint' | 'content_fingerprint' | null;
+
+interface NearDupResult {
+  existingUrl: string;
+  reason: NearDupReason;
+}
+
 /**
- * Checks if a near-duplicate article already exists based on title fingerprint
- * and publish-time proximity.
+ * Checks if a near-duplicate article already exists in the DB using:
+ *   1. Title fingerprint + 48h publish-time window
+ *   2. Content fingerprint + 48h publish-time window
  *
- * Returns the URL of the existing duplicate if found, or null if no match.
- * This is a conservative check — it requires BOTH:
- *   - Exact title fingerprint match
+ * Returns the URL of the existing article and the detection reason, or
+ * null if no near-duplicate was found.
+ *
+ * Both checks are conservative — they require BOTH:
+ *   - Fingerprint match (exact hash)
  *   - Published within ±NEAR_DEDUP_WINDOW_HOURS of the candidate
  */
 async function findNearDuplicate(
-  titleFingerprint: string,
-  publishedAt: string,
-): Promise<string | null> {
-  if (!titleFingerprint) return null;
-
-  // Compute the time window boundaries in JS to avoid SQL interval interpolation issues
-  const pubDate = new Date(publishedAt);
+  article: ArticleInput,
+): Promise<NearDupResult | null> {
+  const pubDate = new Date(article.publishedAt);
   const windowMs = NEAR_DEDUP_WINDOW_HOURS * 60 * 60 * 1000;
   const windowStart = new Date(pubDate.getTime() - windowMs).toISOString();
   const windowEnd = new Date(pubDate.getTime() + windowMs).toISOString();
 
-  const rows = await dbQuery<{ url: string }>`
-    SELECT url FROM articles
-    WHERE title_fingerprint = ${titleFingerprint}
-      AND published_at >= ${windowStart}
-      AND published_at <= ${windowEnd}
-    LIMIT 1
-  `;
+  // ── Check 1: Title fingerprint ───────────────────────────────────────────
+  if (article.titleFingerprint) {
+    const rows = await dbQuery<{ url: string }>`
+      SELECT url FROM articles
+      WHERE title_fingerprint = ${article.titleFingerprint}
+        AND published_at >= ${windowStart}
+        AND published_at <= ${windowEnd}
+      LIMIT 1
+    `;
+    if (rows.length > 0) {
+      return { existingUrl: rows[0].url, reason: 'title_fingerprint' };
+    }
+  }
 
-  return rows.length > 0 ? rows[0].url : null;
+  // ── Check 2: Content fingerprint ────────────────────────────────────────
+  if (article.contentFingerprint) {
+    const rows = await dbQuery<{ url: string }>`
+      SELECT url FROM articles
+      WHERE content_fingerprint = ${article.contentFingerprint}
+        AND published_at >= ${windowStart}
+        AND published_at <= ${windowEnd}
+      LIMIT 1
+    `;
+    if (rows.length > 0) {
+      return { existingUrl: rows[0].url, reason: 'content_fingerprint' };
+    }
+  }
+
+  return null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -120,8 +155,9 @@ async function findNearDuplicate(
  * Persist a single article to the articles table.
  *
  * Deduplication is layered:
- *   1. Near-duplicate check (title fingerprint + time window) — app-level
- *   2. Exact URL match — UNIQUE constraint on `url` (DB-enforced)
+ *   1. Title fingerprint + 48h window   — app-level near-dup detection
+ *   2. Content fingerprint + 48h window — app-level near-dup detection
+ *   3. Exact URL match                  — UNIQUE constraint (DB-enforced)
  *
  * Must be called BEFORE saveEvent() for the corresponding event so the
  * events.source_article_id FK reference is satisfied.
@@ -130,24 +166,22 @@ async function findNearDuplicate(
  *          was detected as a near-duplicate.
  */
 export async function saveArticle(article: ArticleInput): Promise<boolean> {
-  // Layer 1: Near-duplicate detection via title fingerprint
-  if (article.titleFingerprint) {
-    const existingUrl = await findNearDuplicate(
-      article.titleFingerprint,
-      article.publishedAt,
+  // Layers 1 & 2: Near-duplicate detection via fingerprints
+  const nearDup = await findNearDuplicate(article);
+  if (nearDup) {
+    console.log(
+      `[articleStore] Near-duplicate detected (${nearDup.reason}): ` +
+      `"${article.title}" matches existing article at ${nearDup.existingUrl}`,
     );
-    if (existingUrl) {
-      console.log(
-        `[articleStore] Near-duplicate detected: "${article.title}" ` +
-        `matches existing article at ${existingUrl}`
-      );
-      return false;
-    }
+    return false;
   }
 
-  // Layer 2: Exact URL dedup via DB UNIQUE constraint
+  // Layer 3: Exact URL dedup via DB UNIQUE constraint
   const rows = await dbQuery<{ id: string }>`
-    INSERT INTO articles (id, title, source, url, published_at, category, title_fingerprint, source_tier, source_weight)
+    INSERT INTO articles (
+      id, title, source, url, published_at, category,
+      title_fingerprint, content_fingerprint, source_tier, source_weight
+    )
     VALUES (
       ${article.id},
       ${article.title},
@@ -156,12 +190,17 @@ export async function saveArticle(article: ArticleInput): Promise<boolean> {
       ${article.publishedAt},
       ${article.category},
       ${article.titleFingerprint ?? null},
+      ${article.contentFingerprint ?? null},
       ${article.sourceTier ?? null},
       ${article.sourceWeight ?? null}
     )
     ON CONFLICT (url) DO NOTHING
     RETURNING id
   `;
+
+  if (rows.length === 0) {
+    console.log(`[articleStore] Exact URL duplicate skipped: "${article.url}"`);
+  }
   return rows.length > 0;
 }
 
@@ -190,6 +229,9 @@ export async function saveArticles(
     }
   }
 
-  console.log(`[articleStore] saveArticles: ${inserted} inserted, ${deduped} deduped (of ${articles.length} total)`);
+  console.log(
+    `[articleStore] saveArticles: ${inserted} inserted, ${deduped} near/exact duplicates dropped ` +
+    `(of ${articles.length} total)`,
+  );
   return { inserted, deduped };
 }
