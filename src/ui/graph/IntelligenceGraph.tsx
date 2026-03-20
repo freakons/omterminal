@@ -1220,6 +1220,108 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
     [entityNodes],
   );
 
+  // ── Cluster insight — deterministic label describing the dominant activity ──
+  //
+  // Analyzes entity links to detect a meaningful cluster theme.
+  // Labels are fully deterministic (no AI calls) — based on edge type counts
+  // and node subtype distributions in the current graph.
+  const clusterInsight = useMemo<string | null>(() => {
+    if (graphData.nodes.length < 3) return null;
+
+    const entities = graphData.nodes.filter(n => n.type === 'entity');
+    if (entities.length < 2) return null;
+
+    // Tally edge types across all links
+    const edgeCounts: Partial<Record<EdgeType, number>> = {};
+    for (const link of graphData.links) {
+      if (link.edgeType) {
+        edgeCounts[link.edgeType] = (edgeCounts[link.edgeType] ?? 0) + 1;
+      }
+    }
+
+    // Tally entity subtypes
+    const subtypeCounts: Partial<Record<NodeSubtype, number>> = {};
+    for (const node of entities) {
+      if (node.subtype) {
+        subtypeCounts[node.subtype] = (subtypeCounts[node.subtype] ?? 0) + 1;
+      }
+    }
+
+    const regulation  = edgeCounts['regulation']    ?? 0;
+    const funding     = edgeCounts['funding']        ?? 0;
+    const competition = edgeCounts['competition']    ?? 0;
+    const modelRel    = edgeCounts['model-release']  ?? 0;
+
+    const companies   = subtypeCounts['company']    ?? 0;
+    const investors   = subtypeCounts['investor']   ?? 0;
+    const regulators  = subtypeCounts['regulator']  ?? 0;
+
+    // Priority-ordered cluster detection
+    if (competition >= 2 && companies >= 3)        return 'AI lab competitive cluster';
+    if (modelRel >= 2 && companies >= 2)           return 'Model release wave';
+    if (regulation >= 2 && regulators >= 1)        return 'Regulation activity group';
+    if (funding >= 2 && investors >= 1)            return 'AI funding cluster';
+    if (modelRel >= 1 && competition >= 1)         return 'Frontier AI activity cluster';
+    if (companies >= 4)                            return 'AI infrastructure cluster';
+
+    return null;
+  }, [graphData]);
+
+  // ── Entry guidance — shown only when no node is focused ──────────────────
+  const entryGuidance = !focusedNodeId && !isLoading && !compact && (
+    <div style={{
+      position: 'absolute',
+      bottom: 14,
+      right: 14,
+      zIndex: 10,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 4,
+      alignItems: 'flex-end',
+      pointerEvents: 'none',
+    }}>
+      <div style={{
+        fontFamily: 'DM Mono, monospace',
+        fontSize: '0.65rem',
+        color: 'rgba(238,238,248,0.28)',
+        letterSpacing: '0.02em',
+      }}>
+        Start with high-signal entities
+      </div>
+      <div style={{
+        fontFamily: 'DM Mono, monospace',
+        fontSize: '0.6rem',
+        color: 'rgba(238,238,248,0.16)',
+        letterSpacing: '0.02em',
+      }}>
+        Click a node to explore its network
+      </div>
+    </div>
+  );
+
+  // ── Cluster insight badge — bottom-left, visible when no focus ───────────
+  const clusterInsightBadge = clusterInsight && !focusedNodeId && !compact && (
+    <div style={{
+      position: 'absolute',
+      bottom: 14,
+      left: 14,
+      zIndex: 10,
+      background: 'rgba(6,6,20,0.75)',
+      border: '1px solid rgba(255,255,255,0.08)',
+      borderRadius: 6,
+      padding: '4px 11px',
+      fontFamily: 'DM Mono, monospace',
+      fontSize: '0.65rem',
+      color: 'rgba(238,238,248,0.38)',
+      letterSpacing: '0.04em',
+      backdropFilter: 'blur(8px)',
+      pointerEvents: 'none',
+      whiteSpace: 'nowrap',
+    }}>
+      {clusterInsight}
+    </div>
+  );
+
   const entitySelectorPanel = !focusedNodeId && !compact && sortedEntityNodes.length > 0 && (
     <div style={{
       position: 'absolute',
@@ -1365,6 +1467,12 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
 
       {/* Entity selector — quick-pick panel in full-graph mode */}
       {entitySelectorPanel}
+
+      {/* Cluster insight badge — describes dominant activity group */}
+      {clusterInsightBadge}
+
+      {/* Entry guidance — onboarding hint when no node is focused */}
+      {entryGuidance}
 
       {/* Focus mode indicator */}
       {focusIndicator}

@@ -20,6 +20,15 @@ const EDGE_TYPE_COLORS: Record<EdgeType, string> = {
   'regulation':    '#fb923c',
 };
 
+/** Short display labels for edge type pills */
+const EDGE_TYPE_SHORT: Record<EdgeType, string> = {
+  'funding':       'funding',
+  'competition':   'competition',
+  'partnership':   'partnership',
+  'model-release': 'model release',
+  'regulation':    'regulation',
+};
+
 function relativeTimeframe(iso: string): string | null {
   try {
     const days = (Date.now() - new Date(iso).getTime()) / 86_400_000;
@@ -64,23 +73,72 @@ function resolveLabel(n: string | RuntimeNode, nodes: GraphNode[]): string {
 }
 
 /**
- * Generates a short natural-language explanation of the relationship.
+ * Returns node accent color based on subtype.
+ */
+function subtypeColor(node: GraphNode): string {
+  if (node.subtype === 'investor')  return '#a78bfa';
+  if (node.subtype === 'model')     return '#34d399';
+  if (node.subtype === 'regulator') return '#fb923c';
+  return '#60a5fa';
+}
+
+/**
+ * Generates a short natural-language explanation of why nodes are connected.
+ * Includes edge type context in parentheses when shared signals are present.
+ *
+ * Examples:
+ *   "14 shared signals (competition) · last month"
+ *   "3 shared signals (funding) · last 3 months"
+ *   "Connected via regulatory overlap"
+ *   "Strong connection"
  */
 function buildExplanation(link: GraphLink): string | null {
   const sigs      = link.sharedSignals;
   const timeframe = link.lastInteraction ? relativeTimeframe(link.lastInteraction) : null;
-  const edgeLabel = link.edgeType ? EDGE_TYPE_LABELS[link.edgeType] : null;
+  const edgeType  = link.edgeType;
 
   if (sigs != null) {
     const sigPart  = `${sigs} shared signal${sigs !== 1 ? 's' : ''}`;
+    // Include edge type context so the user understands the signal category
+    const edgePart = edgeType ? ` (${EDGE_TYPE_SHORT[edgeType]})` : '';
     const timePart = timeframe ? ` · ${timeframe}` : '';
-    return `${sigPart}${timePart}`;
+    return `${sigPart}${edgePart}${timePart}`;
   }
 
-  if (edgeLabel) return `Connected via ${edgeLabel}`;
+  if (edgeType) return `Connected via ${EDGE_TYPE_LABELS[edgeType]}`;
 
   if (link.tier) return `${tierLabel(link.tier)} connection`;
 
+  return null;
+}
+
+/**
+ * Builds a one-line summary of activity across all top connections.
+ * Aggregates total signals + lists unique edge types.
+ *
+ * Examples:
+ *   "17 signals · competition + funding"
+ *   "8 signals · model release"
+ *   "competition + regulation activity"
+ */
+function buildConnectionSummary(topLinks: GraphLink[]): string | null {
+  if (topLinks.length === 0) return null;
+
+  const totalSignals = topLinks.reduce((sum, l) => sum + (l.sharedSignals ?? 0), 0);
+  const uniqueTypes = [
+    ...new Set(topLinks.map(l => l.edgeType).filter((t): t is EdgeType => t != null)),
+  ];
+
+  if (totalSignals > 0 && uniqueTypes.length > 0) {
+    const typeLabels = uniqueTypes.slice(0, 2).map(t => EDGE_TYPE_SHORT[t]).join(' + ');
+    return `${totalSignals} signal${totalSignals !== 1 ? 's' : ''} · ${typeLabels}`;
+  }
+  if (totalSignals > 0) {
+    return `${totalSignals} shared signal${totalSignals !== 1 ? 's' : ''} across top connections`;
+  }
+  if (uniqueTypes.length > 0) {
+    return uniqueTypes.slice(0, 2).map(t => EDGE_TYPE_SHORT[t]).join(' + ') + ' activity';
+  }
   return null;
 }
 
@@ -98,6 +156,14 @@ export function ConnectionExplanationPanel({
 }: ConnectionExplanationPanelProps) {
   if (!focusedNode || topLinks.length === 0) return null;
 
+  const nodeAccent = subtypeColor(focusedNode);
+  const connectionSummary = buildConnectionSummary(topLinks);
+
+  // Unique edge types across top connections — shows activity profile at a glance
+  const topConnectionTypes = [
+    ...new Set(topLinks.map(l => l.edgeType).filter((t): t is EdgeType => t != null)),
+  ].slice(0, 3);
+
   return (
     <div
       style={{
@@ -113,6 +179,100 @@ export function ConnectionExplanationPanel({
         pointerEvents: 'none',
       }}
     >
+      {/* ── Focused node detail card ───────────────────────────────────────── */}
+      <div style={{
+        background: 'rgba(6,6,18,0.93)',
+        border: `1px solid ${nodeAccent}20`,
+        borderLeft: `2px solid ${nodeAccent}55`,
+        borderRadius: 8,
+        padding: '11px 13px',
+        backdropFilter: 'blur(14px)',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 7,
+      }}>
+        {/* Node label */}
+        <div style={{
+          fontWeight: 600,
+          fontSize: '0.76rem',
+          color: nodeAccent,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          lineHeight: 1.3,
+        }}>
+          {focusedNode.label}
+        </div>
+
+        {/* Signal count + momentum */}
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
+          {focusedNode.importance != null && focusedNode.importance > 0 && (
+            <span style={{
+              fontFamily: 'DM Mono, monospace',
+              fontSize: '0.62rem',
+              color: 'rgba(34,211,238,0.85)',
+              background: 'rgba(34,211,238,0.08)',
+              border: '1px solid rgba(34,211,238,0.2)',
+              borderRadius: 4,
+              padding: '0 5px',
+              letterSpacing: '0.02em',
+            }}>
+              {focusedNode.importance} signal{focusedNode.importance !== 1 ? 's' : ''}
+            </span>
+          )}
+          {focusedNode.momentum != null && focusedNode.momentum > 0 && (
+            <span style={{
+              fontFamily: 'DM Mono, monospace',
+              fontSize: '0.62rem',
+              color: 'rgba(251,191,36,0.85)',
+              background: 'rgba(251,191,36,0.07)',
+              border: '1px solid rgba(251,191,36,0.18)',
+              borderRadius: 4,
+              padding: '0 5px',
+              letterSpacing: '0.02em',
+            }}>
+              ↑ {Math.round(focusedNode.momentum)} momentum
+            </span>
+          )}
+        </div>
+
+        {/* Top connection types — activity profile at a glance */}
+        {topConnectionTypes.length > 0 && (
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+            {topConnectionTypes.map(t => (
+              <span key={t} style={{
+                fontFamily: 'DM Mono, monospace',
+                fontSize: '0.57rem',
+                color: EDGE_TYPE_COLORS[t],
+                background: `${EDGE_TYPE_COLORS[t]}11`,
+                border: `1px solid ${EDGE_TYPE_COLORS[t]}28`,
+                borderRadius: 3,
+                padding: '0 5px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+              }}>
+                {EDGE_TYPE_SHORT[t]}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Connection summary — aggregate signal count + types */}
+        {connectionSummary && (
+          <div style={{
+            fontFamily: 'DM Mono, monospace',
+            fontSize: '0.63rem',
+            color: 'rgba(238,238,248,0.35)',
+            borderTop: '1px solid rgba(255,255,255,0.05)',
+            paddingTop: 5,
+            lineHeight: 1.4,
+          }}>
+            {connectionSummary}
+          </div>
+        )}
+      </div>
+
       {/* Section label */}
       <div style={{
         fontFamily: 'DM Mono, monospace',
@@ -223,7 +383,7 @@ export function ConnectionExplanationPanel({
               )}
             </div>
 
-            {/* Intelligence explanation */}
+            {/* Intelligence explanation — why these nodes are connected */}
             {explanation && (
               <div style={{
                 fontFamily: 'DM Mono, monospace',
