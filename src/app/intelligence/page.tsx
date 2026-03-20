@@ -5,6 +5,7 @@ import { FeaturedCard } from '@/components/cards/FeaturedCard';
 import { StatCard } from '@/components/ui/StatCard';
 import { IntelligenceFeed } from './IntelligenceFeed';
 import { EcosystemActivity } from './EcosystemActivity';
+import { TopSignalHero } from './TopSignalHero';
 import { EmergingTrends } from '@/components/intelligence/EmergingTrends';
 import { CommandBar } from '@/ui/layout/CommandBar';
 import { composeFeed } from '@/lib/signals/feedComposer';
@@ -97,6 +98,10 @@ export default async function IntelligencePage() {
         <StatCard value={regulations} label="Regulations" delta="Active" color="var(--rose-l)" glowColor="rgba(225,29,72,0.4)" />
         <StatCard value={sources} label="Sources" delta="Verified" color="var(--emerald-l)" glowColor="rgba(5,150,105,0.4)" />
       </div>
+
+      {composedSignals.length > 0 && (
+        <TopSignalHero signal={composedSignals[0]} />
+      )}
 
       <EcosystemActivity
         snapshot={snapshot}
