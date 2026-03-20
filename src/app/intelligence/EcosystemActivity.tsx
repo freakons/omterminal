@@ -3,6 +3,8 @@ import type { Signal } from '@/data/mockSignals';
 import type { FundingRound } from '@/lib/data/funding';
 import type { AIModel } from '@/lib/data/models';
 import type { ActiveEntity, EcosystemSnapshot, EntityMomentumRecord } from '@/db/queries';
+import type { EntityMomentum } from '@/lib/intelligence/momentumIndex';
+import type { SignalStrategic } from '@/lib/intelligence/strategicIndex';
 import { SignalImpactBadge } from '@/components/signals/SignalImpactBadge';
 import { HeatIndicator } from '@/components/intelligence/HeatIndicator';
 import { EntityMomentumBadge } from '@/components/entity/EntityMomentumBadge';
@@ -69,6 +71,42 @@ function MomentumEntityRow({ record }: { record: EntityMomentumRecord }) {
   );
 }
 
+function scoreClass(score: number): string {
+  if (score >= 65) return 'eco-score eco-score--high';
+  if (score >= 35) return 'eco-score eco-score--mid';
+  return 'eco-score eco-score--low';
+}
+
+function MomentumLeaderRow({ entity }: { entity: EntityMomentum }) {
+  const deltaClass = entity.momentum_delta > 0
+    ? 'eco-delta eco-delta--up'
+    : entity.momentum_delta < 0
+      ? 'eco-delta eco-delta--down'
+      : 'eco-delta eco-delta--flat';
+  const deltaSymbol = entity.momentum_delta > 0 ? '↑' : entity.momentum_delta < 0 ? '↓' : '→';
+
+  return (
+    <Link href={`/entity/${slugify(entity.entity_name)}`} className="eco-row">
+      <span className="eco-title">{entity.entity_name}</span>
+      <span className={scoreClass(entity.momentum_score)}>{entity.momentum_score}</span>
+      <span className={deltaClass}>{deltaSymbol}</span>
+    </Link>
+  );
+}
+
+function StrategicSignalRow({ signal }: { signal: SignalStrategic }) {
+  const cat = signal.signal_type ?? 'signal';
+  return (
+    <Link href={`/intelligence/signal/${signal.signal_id}`} className="eco-row">
+      <span className="eco-cat" data-cat={cat}>{cat}</span>
+      <span className="eco-title">{signal.signal_title}</span>
+      <span className={scoreClass(signal.strategic_importance_score)}>
+        {signal.strategic_importance_score}
+      </span>
+    </Link>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Main component
 // ─────────────────────────────────────────────────────────────────────────────
@@ -76,9 +114,16 @@ function MomentumEntityRow({ record }: { record: EntityMomentumRecord }) {
 interface EcosystemActivityProps {
   snapshot: EcosystemSnapshot;
   topMomentumEntities?: EntityMomentumRecord[];
+  momentumLeaders?: EntityMomentum[];
+  strategicSignals?: SignalStrategic[];
 }
 
-export function EcosystemActivity({ snapshot, topMomentumEntities = [] }: EcosystemActivityProps) {
+export function EcosystemActivity({
+  snapshot,
+  topMomentumEntities = [],
+  momentumLeaders = [],
+  strategicSignals = [],
+}: EcosystemActivityProps) {
   const { topSignals, mostActiveEntities, recentFunding, modelReleases } = snapshot;
 
   const hasAnyData =
@@ -86,7 +131,9 @@ export function EcosystemActivity({ snapshot, topMomentumEntities = [] }: Ecosys
     mostActiveEntities.length > 0 ||
     recentFunding.length > 0 ||
     modelReleases.length > 0 ||
-    topMomentumEntities.length > 0;
+    topMomentumEntities.length > 0 ||
+    momentumLeaders.length > 0 ||
+    strategicSignals.length > 0;
 
   if (!hasAnyData) return null;
 
@@ -153,6 +200,32 @@ export function EcosystemActivity({ snapshot, topMomentumEntities = [] }: Ecosys
               <HeatIndicator level={heat.modelReleases} />
             </div>
             {modelReleases.map((m) => <ModelRow key={m.id} model={m} />)}
+          </div>
+        )}
+
+        {/* ── Momentum Leaders (Entity Momentum Index) ─────────────── */}
+        {momentumLeaders.length > 0 && (
+          <div className="eco-panel">
+            <div className="eco-panel-header">
+              <h3 className="eco-panel-title">Momentum Leaders</h3>
+              <span className="eco-badge" style={{ background: 'rgba(5,150,105,0.1)', color: 'var(--emerald-l)', borderColor: 'rgba(5,150,105,0.2)' }}>Index</span>
+            </div>
+            {momentumLeaders.map((e) => (
+              <MomentumLeaderRow key={e.entity_id} entity={e} />
+            ))}
+          </div>
+        )}
+
+        {/* ── Strategic Signals (Strategic Importance Index) ───────── */}
+        {strategicSignals.length > 0 && (
+          <div className="eco-panel">
+            <div className="eco-panel-header">
+              <h3 className="eco-panel-title">Strategic Signals</h3>
+              <span className="eco-badge" style={{ background: 'rgba(124,58,237,0.1)', color: '#c084fc', borderColor: 'rgba(124,58,237,0.2)' }}>Index</span>
+            </div>
+            {strategicSignals.map((s) => (
+              <StrategicSignalRow key={s.signal_id} signal={s} />
+            ))}
           </div>
         )}
       </div>

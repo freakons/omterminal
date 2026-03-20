@@ -9,6 +9,8 @@ import { EmergingTrends } from '@/components/intelligence/EmergingTrends';
 import { CommandBar } from '@/ui/layout/CommandBar';
 import { composeFeed } from '@/lib/signals/feedComposer';
 import { clusterSignals } from '@/lib/signals/clusterSignals';
+import { computeEntityMomentum } from '@/lib/intelligence/momentumIndex';
+import { rankSignalsByStrategic } from '@/lib/intelligence/strategicIndex';
 
 import type { Metadata } from 'next';
 
@@ -35,14 +37,18 @@ const STATS_FALLBACK = {
 };
 
 export default async function IntelligencePage() {
-  const [articles, featured, live, rawSignals, snapshot, topMomentumEntities] = await Promise.all([
+  const [articles, featured, live, rawSignals, snapshot, topMomentumEntities, momentumLeaders] = await Promise.all([
     fetchArticles(),
     fetchFeaturedArticle(),
     getSiteStats().catch(() => STATS_FALLBACK),
     getSignals(50, 'standard').catch(() => []),
     getEcosystemActivitySnapshot(),
     getTopMomentumEntities(5).catch(() => []),
+    computeEntityMomentum({ windowDays: 7, limit: 5 }).catch(() => []),
   ]);
+
+  // Strategic signals: pure computation over already-fetched rawSignals — no extra DB query.
+  const strategicSignals = rankSignalsByStrategic(rawSignals).slice(0, 5);
 
   // Compose the signal feed with diversity + dedup + ranking
   const composedSignals = composeFeed(rawSignals, { minSignificance: 30 });
@@ -92,7 +98,12 @@ export default async function IntelligencePage() {
         <StatCard value={sources} label="Sources" delta="Verified" color="var(--emerald-l)" glowColor="rgba(5,150,105,0.4)" />
       </div>
 
-      <EcosystemActivity snapshot={snapshot} topMomentumEntities={topMomentumEntities} />
+      <EcosystemActivity
+        snapshot={snapshot}
+        topMomentumEntities={topMomentumEntities}
+        momentumLeaders={momentumLeaders}
+        strategicSignals={strategicSignals}
+      />
 
       {featured && <FeaturedCard article={featured} />}
 
