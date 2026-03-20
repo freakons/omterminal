@@ -12,7 +12,7 @@ const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffec
 // Disable SSR — ForceGraph2D uses canvas and window APIs
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ForceGraph2D = dynamic<any>(
-  () => import('react-force-graph').then(mod => ({ default: mod.ForceGraph2D })),
+  () => import('react-force-graph-2d'),
   { ssr: false },
 );
 
