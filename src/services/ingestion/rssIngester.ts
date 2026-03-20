@@ -23,7 +23,7 @@ import { saveArticle } from '../storage/articleStore';
 import { saveEvent } from '../storage/eventStore';
 import { classifyArticle } from '../intelligence/classifier';
 import { INTELLIGENCE_SOURCES } from '../../config/intelligenceSources';
-import { getEnabledSources, getHighPrioritySources } from '../../config/sources/index';
+import { getEnabledSources, getHighPrioritySources, getSourceById } from '../../config/sources/index';
 import { trackSourceSuccess, trackSourceFailure } from './sourceHealthTracker';
 import type { Event } from '@/types/intelligence';
 import {
@@ -38,6 +38,7 @@ import {
   categoryToDbCategory,
 } from '../normalization/helpers';
 import { detectAndLinkEntities } from '@/lib/entityResolver';
+import { getSourceTierAndWeight } from '@/lib/sourceWeighting';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Primary source selection
@@ -187,6 +188,13 @@ export async function ingestRss(): Promise<RssIngestResult> {
       const eventId = generateStableEventId(cleanUrl);
       const titleFingerprint = generateTitleFingerprint(cleanTitle);
 
+      // Derive source tier and weight from the source's reliability score.
+      // Falls back to Tier 3 (weight 0.4) if the source is not in the registry.
+      const sourceDef = getSourceById(fetchResult.sourceId);
+      const { sourceTier, sourceWeight } = getSourceTierAndWeight(
+        sourceDef?.reliability ?? 5,
+      );
+
       // Step 1: Write to articles table first.
       // Must succeed before writing the event — events.source_article_id
       // has a FK reference to articles.id (ON DELETE SET NULL).
@@ -200,6 +208,8 @@ export async function ingestRss(): Promise<RssIngestResult> {
           publishedAt,
           category: dbCategory,
           titleFingerprint,
+          sourceTier,
+          sourceWeight,
         });
 
         if (articleInserted) {
