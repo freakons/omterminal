@@ -109,6 +109,16 @@ const AMBIGUOUS_SHORT_TOKENS = new Set([
   'pai',       // Partnership on AI alias - too short
   'fli',       // Future of Life Institute alias - too short
   'snow',      // Snowflake ticker - too short
+  // Model-specific ambiguous terms
+  'yi',        // 01.AI Yi - single-character, common in text
+  'kimi',      // Moonshot Kimi - common first name in many languages
+  'nova',      // Amazon Nova - common English word (Latin for "new")
+  'flux',      // FLUX.1 - common English word
+  'pika',      // Pika Labs - character name / small animal
+  'bard',      // Google Bard (legacy) - common English noun
+  'titan',     // Amazon Titan - common English noun
+  'falcon',    // TII Falcon - common English noun (also IBM Falcon)
+  'mj',        // Midjourney shorthand - too short to match safely
 ]);
 
 /**
