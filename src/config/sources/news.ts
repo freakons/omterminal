@@ -463,4 +463,151 @@ export const newsSources: SourceDefinition[] = [
     reliability: 6,
     enabled: false, // generic manufacturing trade publication, very low AI signal
   },
+
+  // ── Tier 2: Established tech & science journalism ─────────────────────────
+
+  {
+    id: 'ieee_spectrum_ai',
+    name: 'IEEE Spectrum AI',
+    type: 'rss',
+    category: 'news',
+    url: 'https://spectrum.ieee.org/feeds/topic/artificial-intelligence.rss',
+    reliability: 9,
+    enabled: true,
+  },
+  {
+    id: 'bloomberg_tech',
+    name: 'Bloomberg Technology',
+    type: 'rss',
+    category: 'news',
+    url: 'https://feeds.bloomberg.com/technology/news.rss',
+    reliability: 9,
+    enabled: true,
+  },
+  {
+    id: 'reuters_tech',
+    name: 'Reuters Technology',
+    type: 'rss',
+    category: 'news',
+    url: 'https://feeds.reuters.com/reuters/technologyNews',
+    reliability: 9,
+    enabled: true,
+  },
+  {
+    id: 'fortune_ai',
+    name: 'Fortune AI',
+    type: 'rss',
+    category: 'news',
+    url: 'https://fortune.com/tag/artificial-intelligence/feed/',
+    reliability: 8,
+    enabled: true,
+  },
+  {
+    id: 'zdnet_ai',
+    name: 'ZDNet AI',
+    type: 'rss',
+    category: 'news',
+    url: 'https://www.zdnet.com/topic/artificial-intelligence/rss.xml',
+    reliability: 8,
+    enabled: true,
+  },
+  {
+    id: 'infoq_ai',
+    name: 'InfoQ AI/ML',
+    type: 'rss',
+    category: 'news',
+    url: 'https://www.infoq.com/ai-ml-data-eng/articles.atom',
+    reliability: 8,
+    enabled: true,
+  },
+  {
+    id: 'thenewstack_ai',
+    name: 'The New Stack AI',
+    type: 'rss',
+    category: 'news',
+    url: 'https://thenewstack.io/category/machine-learning/feed/',
+    reliability: 7,
+    enabled: true,
+  },
+  {
+    id: 'science_daily_ai',
+    name: 'ScienceDaily Artificial Intelligence',
+    type: 'rss',
+    category: 'news',
+    url: 'https://www.sciencedaily.com/rss/computers_math/artificial_intelligence.xml',
+    reliability: 7,
+    enabled: true,
+  },
+  {
+    id: 'the_atlantic_tech',
+    name: 'The Atlantic Technology',
+    type: 'rss',
+    category: 'news',
+    url: 'https://www.theatlantic.com/feed/channel/technology/',
+    reliability: 8,
+    enabled: true,
+  },
+
+  // ── Tier 2: AI-focused newsletters & analyst commentary ───────────────────
+
+  {
+    id: 'the_batch_newsletter',
+    name: 'The Batch (DeepLearning.AI)',
+    type: 'rss',
+    category: 'news',
+    url: 'https://www.deeplearning.ai/the-batch/rss/',
+    reliability: 8,
+    enabled: true,
+  },
+  {
+    id: 'ben_evans',
+    name: 'Benedict Evans',
+    type: 'rss',
+    category: 'news',
+    url: 'https://www.ben-evans.com/benedictevans?format=rss',
+    reliability: 7,
+    enabled: true,
+  },
+  {
+    id: 'gradient_flow',
+    name: 'Gradient Flow',
+    type: 'rss',
+    category: 'news',
+    url: 'https://gradientflow.com/feed/',
+    reliability: 7,
+    enabled: true,
+  },
+
+  // ── Tier 2: Developer-oriented AI news ───────────────────────────────────
+
+  {
+    id: 'hacker_news_ai',
+    name: 'Hacker News (AI / ML top posts)',
+    type: 'rss',
+    category: 'news',
+    url: 'https://hnrss.org/newest?q=AI+machine+learning&points=100',
+    reliability: 7,
+    enabled: true,
+  },
+
+  // ── Tier 3: Broader AI news aggregators ──────────────────────────────────
+
+  {
+    id: 'marktechpost',
+    name: 'MarkTechPost',
+    type: 'rss',
+    category: 'news',
+    url: 'https://www.marktechpost.com/feed/',
+    reliability: 6,
+    enabled: true,
+  },
+  {
+    id: 'towards_data_science',
+    name: 'Towards Data Science',
+    type: 'rss',
+    category: 'news',
+    url: 'https://towardsdatascience.com/feed',
+    reliability: 6,
+    enabled: true,
+  },
 ];

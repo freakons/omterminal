@@ -383,4 +383,139 @@ export const companyBlogSources: SourceDefinition[] = [
     reliability: 8,
     enabled: true,
   },
+
+  // ── AI infrastructure & data platforms (4) — Tier 1 ──────────────────────
+
+  {
+    id: 'databricks_blog',
+    name: 'Databricks Blog',
+    type: 'rss',
+    category: 'company',
+    url: 'https://www.databricks.com/blog/feed',
+    entity: 'Databricks',
+    reliability: 9,
+    enabled: true,
+  },
+  {
+    id: 'anyscale_blog',
+    name: 'Anyscale Blog',
+    type: 'rss',
+    category: 'company',
+    url: 'https://www.anyscale.com/blog/rss',
+    entity: 'Anyscale',
+    reliability: 9,
+    enabled: true,
+  },
+  {
+    id: 'snowflake_ai_blog',
+    name: 'Snowflake AI/ML Blog',
+    type: 'rss',
+    category: 'company',
+    url: 'https://www.snowflake.com/blog/category/ai-ml/feed/',
+    entity: 'Snowflake',
+    reliability: 8,
+    enabled: true,
+  },
+  {
+    id: 'h2o_ai_blog',
+    name: 'H2O.ai Blog',
+    type: 'rss',
+    category: 'company',
+    url: 'https://h2o.ai/blog/rss/',
+    entity: 'H2O.ai',
+    reliability: 8,
+    enabled: true,
+  },
+
+  // ── AI model serving & inference (2) — Tier 1 ────────────────────────────
+
+  {
+    id: 'groq_blog',
+    name: 'Groq Blog',
+    type: 'rss',
+    category: 'company',
+    url: 'https://groq.com/blog/feed/',
+    entity: 'Groq',
+    reliability: 9,
+    enabled: true,
+  },
+  {
+    id: 'sambanova_blog',
+    name: 'SambaNova Systems Blog',
+    type: 'rss',
+    category: 'company',
+    url: 'https://sambanova.ai/blog/feed/',
+    entity: 'SambaNova',
+    reliability: 8,
+    enabled: true,
+  },
+
+  // ── Applied AI & scale (2) — Tier 1 ──────────────────────────────────────
+
+  {
+    id: 'scale_ai_blog',
+    name: 'Scale AI Blog',
+    type: 'rss',
+    category: 'company',
+    url: 'https://scale.com/blog/feed',
+    entity: 'Scale AI',
+    reliability: 9,
+    enabled: true,
+  },
+  {
+    id: 'amazon_science_blog',
+    name: 'Amazon Science Blog',
+    type: 'rss',
+    category: 'company',
+    url: 'https://www.amazon.science/blog/rss',
+    entity: 'Amazon',
+    reliability: 9,
+    enabled: true,
+  },
+
+  // ── Open-source AI research orgs (2) — Tier 1 ────────────────────────────
+
+  {
+    id: 'allenai_blog',
+    name: 'Allen Institute for AI Blog',
+    type: 'rss',
+    category: 'company',
+    url: 'https://allenai.org/blog/feed.xml',
+    entity: 'Allen Institute for AI',
+    reliability: 9,
+    enabled: true,
+  },
+  {
+    id: 'eleutherai_blog',
+    name: 'EleutherAI Blog',
+    type: 'rss',
+    category: 'company',
+    url: 'https://blog.eleuther.ai/rss.xml',
+    entity: 'EleutherAI',
+    reliability: 9,
+    enabled: true,
+  },
+
+  // ── Enterprise software AI (2) — Tier 2 ──────────────────────────────────
+
+  {
+    id: 'adobe_ai_blog',
+    name: 'Adobe AI Blog',
+    type: 'rss',
+    category: 'company',
+    url: 'https://blog.adobe.com/en/topics/ai-ml-data/rss',
+    entity: 'Adobe',
+    reliability: 8,
+    enabled: true,
+  },
+  {
+    id: 'oracle_ai_blog',
+    name: 'Oracle AI & Data Science Blog',
+    type: 'rss',
+    category: 'company',
+    url: 'https://blogs.oracle.com/ai-and-datascience/rss',
+    entity: 'Oracle',
+    reliability: 7,
+    enabled: true,
+  },
 ];
