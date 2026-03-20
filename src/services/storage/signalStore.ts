@@ -34,6 +34,9 @@ interface SignalRow {
   human_verified: boolean;
   created_at: string;
   updated_at: string | null;
+  // Significance scoring (migration 008)
+  significance_score?: string | null;   // NUMERIC comes back as string from Neon
+  source_support_count?: number | null;
   // Intelligence layer (migration 014) — nullable
   why_this_matters?: string | null;
   strategic_impact?: string | null;
@@ -70,10 +73,12 @@ function rowToSignal(row: SignalRow): Signal {
                           ? row.updated_at
                           : new Date(row.updated_at).toISOString()
                         : undefined,
-    whyThisMatters:   row.why_this_matters ?? undefined,
-    strategicImpact:  row.strategic_impact ?? undefined,
-    whoShouldCare:    row.who_should_care ?? undefined,
-    prediction:       row.prediction ?? undefined,
+    significanceScore:  row.significance_score != null ? parseFloat(row.significance_score) : undefined,
+    sourceSupportCount: row.source_support_count ?? undefined,
+    whyThisMatters:     row.why_this_matters ?? undefined,
+    strategicImpact:    row.strategic_impact ?? undefined,
+    whoShouldCare:      row.who_should_care ?? undefined,
+    prediction:         row.prediction ?? undefined,
   };
 }
 
@@ -102,7 +107,8 @@ export async function saveSignal(signal: Signal): Promise<boolean> {
       id, signal_type, title, description, supporting_events,
       confidence_score, direction, affected_entities, recommendation,
       human_verified, created_at, status,
-      significance_score, source_support_count
+      significance_score, source_support_count,
+      why_this_matters
     ) VALUES (
       ${signal.id},
       ${signal.type ?? null},
@@ -117,7 +123,8 @@ export async function saveSignal(signal: Signal): Promise<boolean> {
       ${signal.createdAt},
       'auto',
       ${signal.significanceScore ?? null},
-      ${signal.sourceSupportCount ?? null}
+      ${signal.sourceSupportCount ?? null},
+      ${signal.whyThisMatters ?? null}
     )
     ON CONFLICT (id) DO NOTHING
     RETURNING id
@@ -174,7 +181,10 @@ export async function getRecentSignals(limit = 20): Promise<Signal[]> {
     SELECT
       id, signal_type, title, description, supporting_events,
       confidence_score, direction, affected_entities, recommendation,
-      human_verified, created_at, updated_at
+      human_verified, created_at, updated_at,
+      significance_score, source_support_count,
+      why_this_matters, strategic_impact, who_should_care, prediction,
+      insight_generated, insight_generated_at, insight_generation_error
     FROM signals
     ORDER BY created_at DESC
     LIMIT ${safeLimit}

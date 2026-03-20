@@ -216,6 +216,82 @@ function summarizeEventMix(cluster: Event[]): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// "Why This Matters" — deterministic intelligence layer
+//
+// Generates a concise strategic explanation for each signal type at write time.
+// This runs synchronously without an LLM and provides immediate value even when
+// the AI provider is unavailable.  The LLM-based generateSignalInsight will
+// overwrite this with a more personalised version when it runs in the
+// intelligence pipeline stage.
+//
+// Design constraints:
+//   - 1–3 short sentences max
+//   - Strategic, not descriptive (description already covers the facts)
+//   - Covers impact on ecosystem, competition, regulation, or product direction
+//   - Prioritises high-significance signals with stronger framing
+// ─────────────────────────────────────────────────────────────────────────────
+
+function buildWhyThisMatters(
+  type: SignalType,
+  cluster: Event[],
+  significanceScore: number,
+): string {
+  const entities        = rankEntities(cluster);
+  const topEntities     = entities.slice(0, 2).join(' and ');
+  const hasMajor        = entities.some(isMajorEntity);
+  const isHighSig       = significanceScore >= 70;
+
+  switch (type) {
+    case 'CAPITAL_ACCELERATION': {
+      const scope  = hasMajor
+        ? `major AI players including ${topEntities}`
+        : topEntities;
+      const impact = isHighSig
+        ? `At this scale and velocity, capital concentration reshapes talent markets and sets competitive baselines that smaller players struggle to match.`
+        : `Concentrated funding signals a shifting investor thesis and accelerated product timelines across the sector.`;
+      return `${cluster.length} funding rounds flowing into ${scope} signal a demand surge in AI infrastructure or product development. ${impact}`;
+    }
+
+    case 'MODEL_RELEASE_WAVE': {
+      const labCtx = hasMajor ? `from ${topEntities}` : `across ${topEntities}`;
+      return (
+        `${cluster.length} model releases ${labCtx} in rapid succession compress the adoption window for downstream builders. ` +
+        (hasMajor
+          ? `Releases at this pace from major labs trigger API pricing shifts and integration re-evaluations — teams that delay benchmarking risk locking in inferior capabilities.`
+          : `Clustered releases raise the capability baseline, forcing product and infrastructure teams to reassess dependencies now.`)
+      );
+    }
+
+    case 'REGULATION_ACTIVITY': {
+      const target = hasMajor
+        ? `targeting ${topEntities}`
+        : `affecting ${topEntities}`;
+      return (
+        `${cluster.length} regulatory or policy actions ${target} signal that AI governance is moving from discussion to enforcement. ` +
+        `Rules aimed at prominent players typically become industry-wide compliance templates — teams not directly named should review their exposure now.`
+      );
+    }
+
+    case 'RESEARCH_MOMENTUM': {
+      const src      = hasMajor ? `from ${topEntities}` : `across ${topEntities}`;
+      const timeline = isHighSig ? `3–6 months` : `6–12 months`;
+      return (
+        `${cluster.length} research breakthroughs ${src} signal an accelerating capability frontier. ` +
+        `Clustered output at this pace is a reliable leading indicator — production deployments typically follow within ${timeline}, forcing product and infra teams to reassess their roadmaps.`
+      );
+    }
+
+    case 'COMPANY_EXPANSION': {
+      const mix      = summarizeEventMix(cluster);
+      const pressure = hasMajor
+        ? `Expansion at this density from major players typically precipitates consolidation pressure and narrows partnership windows for smaller competitors.`
+        : `Dense strategic activity from ${topEntities} signals an effort to lock in market position before a consolidation phase.`;
+      return `${topEntities} executing ${mix} signals active market repositioning. ${pressure}`;
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Title / description generators
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -472,6 +548,8 @@ export function generateSignalsFromEvents(
         clusterContext,
       });
 
+      const whyThisMatters = buildWhyThisMatters(rule.type, cluster, sig.significanceScore);
+
       const signal: Signal = {
         id: generateSignalId(rule.type, eventIds),
         type: rule.type,
@@ -486,6 +564,7 @@ export function generateSignalsFromEvents(
         humanVerified: false,
         significanceScore:  sig.significanceScore,
         sourceSupportCount: sig.sourceSupportCount,
+        whyThisMatters,
       };
 
       signals.push(signal);

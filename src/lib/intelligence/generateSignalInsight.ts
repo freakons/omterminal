@@ -243,7 +243,8 @@ export async function generateSignalInsightWithMeta(
 
     console.log(
       `[generateSignalInsight] provider=${providerName}` +
-      ` title="${input.title.slice(0, 60)}" success=true`,
+      ` title="${input.title.slice(0, 60)}" success=true` +
+      ` why_this_matters="${(insight.why_this_matters ?? '').slice(0, 100)}"`,
     );
 
     return { insight, reused: false };
