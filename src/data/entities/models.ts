@@ -23,12 +23,24 @@ export type ModelType =
   | 'reasoning'
   | 'other';
 
+export type ModelCategory =
+  | 'foundation_model'
+  | 'multimodal'
+  | 'image_generation'
+  | 'video_generation'
+  | 'speech_audio'
+  | 'embedding'
+  | 'code_model'
+  | 'reasoning_model'
+  | 'research_model'
+  | 'other';
+
 export interface ModelEntity {
   /** Stable machine-friendly identifier */
   id: string;
   /** Canonical model name, e.g. "GPT-4o" */
   name: string;
-  /** Canonical company id from the company registry */
+  /** Canonical company id from the company registry (equivalent to provider) */
   company: string;
   /** Primary model type */
   type: ModelType;
@@ -40,6 +52,12 @@ export interface ModelEntity {
   aliases?: string[];
   /** Brief description of the model's key characteristics */
   description?: string;
+  /** URL-safe slug; defaults to id if omitted */
+  slug?: string;
+  /** High-level category for filtering and display */
+  category?: ModelCategory;
+  /** Supported input/output modalities (e.g. ['text', 'vision', 'audio']) */
+  modality?: string[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -820,6 +838,437 @@ export const MODELS: ModelEntity[] = [
     isOpenWeights: false,
     aliases: ['text-embedding-3-large', 'text-embedding-3-small', 'OpenAI embeddings'],
     description: 'OpenAI\'s third-generation text embedding models.',
+    category: 'embedding',
+    modality: ['text'],
+  },
+
+  // ── OpenAI (additional) ──────────────────────────────────────────────────────
+
+  {
+    id: 'gpt4o_mini',
+    name: 'GPT-4o mini',
+    company: 'openai',
+    type: 'multimodal',
+    releaseYear: 2024,
+    isOpenWeights: false,
+    aliases: ['GPT-4o Mini', 'gpt-4o-mini', 'GPT4o mini', 'gpt4omini'],
+    description: 'OpenAI\'s lightweight multimodal model optimised for speed and cost.',
+    category: 'foundation_model',
+    modality: ['text', 'vision'],
+  },
+
+  // ── Anthropic (additional) ───────────────────────────────────────────────────
+
+  {
+    id: 'claude2',
+    name: 'Claude 2',
+    company: 'anthropic',
+    type: 'large_language_model',
+    releaseYear: 2023,
+    isOpenWeights: false,
+    aliases: ['Claude 2.0', 'claude-2', 'Claude2', 'claude-2.0', 'claude-2.1', 'Claude 2.1'],
+    description: 'Anthropic\'s second-generation Claude model with improved reasoning and longer context.',
+    category: 'foundation_model',
+    modality: ['text'],
+  },
+
+  // ── Google DeepMind (additional) ─────────────────────────────────────────────
+
+  {
+    id: 'gemini_10_pro',
+    name: 'Gemini 1.0 Pro',
+    company: 'google_deepmind',
+    type: 'large_language_model',
+    releaseYear: 2023,
+    isOpenWeights: false,
+    aliases: ['Gemini Pro 1.0', 'gemini-pro', 'gemini-1.0-pro', 'Gemini 1.0'],
+    description: 'Google\'s original Gemini Pro model, successor to PaLM 2.',
+    category: 'foundation_model',
+    modality: ['text'],
+  },
+  {
+    id: 'imagen',
+    name: 'Imagen',
+    company: 'google_deepmind',
+    type: 'image_generation',
+    releaseYear: 2022,
+    isOpenWeights: false,
+    aliases: ['Google Imagen', 'Imagen 2', 'Imagen2', 'Google Imagen 2'],
+    description: 'Google\'s text-to-image diffusion model series, powering image generation in Google products.',
+    category: 'image_generation',
+    modality: ['text', 'image'],
+  },
+  {
+    id: 't5',
+    name: 'T5',
+    company: 'google_deepmind',
+    type: 'large_language_model',
+    releaseYear: 2019,
+    isOpenWeights: true,
+    aliases: ['T5-large', 'T5-base', 'T5-small', 'T5-XL', 'T5-XXL', 'Text-to-Text Transfer Transformer'],
+    description: 'Google\'s Text-to-Text Transfer Transformer, a foundational encoder-decoder language model.',
+    category: 'research_model',
+    modality: ['text'],
+  },
+  {
+    id: 'ul2',
+    name: 'UL2',
+    company: 'google_deepmind',
+    type: 'large_language_model',
+    releaseYear: 2022,
+    isOpenWeights: true,
+    aliases: ['UL2 20B', 'Unified Language Learner', 'Flan-UL2'],
+    description: 'Google\'s Unified Language Learner, a flexible encoder-decoder model with strong few-shot performance.',
+    category: 'research_model',
+    modality: ['text'],
+  },
+
+  // ── Meta AI (additional) ─────────────────────────────────────────────────────
+
+  {
+    id: 'sam',
+    name: 'Segment Anything',
+    company: 'meta_ai',
+    type: 'multimodal',
+    releaseYear: 2023,
+    isOpenWeights: true,
+    aliases: ['SAM', 'Segment Anything Model', 'SAM 2', 'SAM2', 'Meta SAM'],
+    description: 'Meta\'s zero-shot image segmentation model capable of segmenting any object from a prompt.',
+    category: 'multimodal',
+    modality: ['vision'],
+  },
+  {
+    id: 'opt',
+    name: 'OPT',
+    company: 'meta_ai',
+    type: 'large_language_model',
+    releaseYear: 2022,
+    isOpenWeights: true,
+    aliases: ['OPT-66B', 'OPT-175B', 'OPT-30B', 'OPT-13B', 'Open Pre-trained Transformer'],
+    description: 'Meta\'s Open Pre-trained Transformer language model suite, released for research.',
+    category: 'research_model',
+    modality: ['text'],
+  },
+
+  // ── Mistral AI (additional) ──────────────────────────────────────────────────
+
+  {
+    id: 'mistral_medium',
+    name: 'Mistral Medium',
+    company: 'mistral_ai',
+    type: 'large_language_model',
+    releaseYear: 2023,
+    isOpenWeights: false,
+    aliases: ['mistral-medium', 'Mistral Medium 2', 'Mistral Medium 3'],
+    description: 'Mistral\'s mid-tier model balancing capability and cost for enterprise use.',
+    category: 'foundation_model',
+    modality: ['text'],
+  },
+
+  // ── Cohere (additional) ──────────────────────────────────────────────────────
+
+  {
+    id: 'cohere_embed_v3',
+    name: 'Embed v3',
+    company: 'cohere',
+    type: 'embedding',
+    releaseYear: 2023,
+    isOpenWeights: false,
+    aliases: ['Cohere Embed v3', 'embed-english-v3.0', 'embed-multilingual-v3.0', 'Cohere Embed 3'],
+    description: 'Cohere\'s third-generation text embedding model with improved multilingual support.',
+    category: 'embedding',
+    modality: ['text'],
+  },
+
+  // ── AI21 Labs ────────────────────────────────────────────────────────────────
+
+  {
+    id: 'jurassic2',
+    name: 'Jurassic-2',
+    company: 'ai21_labs',
+    type: 'large_language_model',
+    releaseYear: 2023,
+    isOpenWeights: false,
+    aliases: ['J2', 'Jurassic 2', 'AI21 Jurassic-2', 'j2-ultra', 'j2-mid'],
+    description: 'AI21 Labs\' second-generation language model for enterprise text generation.',
+    category: 'foundation_model',
+    modality: ['text'],
+  },
+  {
+    id: 'jamba',
+    name: 'Jamba',
+    company: 'ai21_labs',
+    type: 'large_language_model',
+    releaseYear: 2024,
+    isOpenWeights: true,
+    aliases: ['AI21 Jamba', 'Jamba 1.5', 'Jamba-Instruct'],
+    description: 'AI21 Labs\' hybrid SSM-Transformer model combining Mamba and attention layers.',
+    category: 'foundation_model',
+    modality: ['text'],
+  },
+
+  // ── xAI (additional) ─────────────────────────────────────────────────────────
+
+  {
+    id: 'grok15',
+    name: 'Grok-1.5',
+    company: 'xai',
+    type: 'large_language_model',
+    releaseYear: 2024,
+    isOpenWeights: false,
+    aliases: ['Grok 1.5', 'grok-1.5', 'Grok 1.5V', 'Grok-1.5V'],
+    description: 'xAI\'s Grok-1.5 with enhanced reasoning and vision capabilities.',
+    category: 'foundation_model',
+    modality: ['text', 'vision'],
+  },
+
+  // ── Amazon (additional) ──────────────────────────────────────────────────────
+
+  {
+    id: 'titan_image',
+    name: 'Titan Image',
+    company: 'amazon',
+    type: 'image_generation',
+    releaseYear: 2023,
+    isOpenWeights: false,
+    aliases: ['Amazon Titan Image', 'Titan Image Generator', 'Amazon Titan Image Generator'],
+    description: 'Amazon\'s Titan image generation model available on AWS Bedrock.',
+    category: 'image_generation',
+    modality: ['text', 'image'],
+  },
+
+  // ── Microsoft (additional) ───────────────────────────────────────────────────
+
+  {
+    id: 'phi2',
+    name: 'Phi-2',
+    company: 'microsoft',
+    type: 'large_language_model',
+    releaseYear: 2023,
+    isOpenWeights: true,
+    aliases: ['Phi 2', 'phi-2', 'Microsoft Phi-2', 'Phi2'],
+    description: 'Microsoft\'s 2.7B small language model demonstrating strong reasoning per parameter.',
+    category: 'foundation_model',
+    modality: ['text'],
+  },
+
+  // ── Snowflake ────────────────────────────────────────────────────────────────
+
+  {
+    id: 'arctic',
+    name: 'Snowflake Arctic',
+    company: 'snowflake',
+    type: 'large_language_model',
+    releaseYear: 2024,
+    isOpenWeights: true,
+    aliases: ['Arctic', 'Snowflake Arctic Instruct', 'Arctic Embed'],
+    description: 'Snowflake\'s enterprise-focused open-weights LLM optimised for SQL and data tasks.',
+    category: 'foundation_model',
+    modality: ['text'],
+  },
+
+  // ── Databricks ───────────────────────────────────────────────────────────────
+
+  {
+    id: 'dbrx',
+    name: 'DBRX',
+    company: 'databricks',
+    type: 'large_language_model',
+    releaseYear: 2024,
+    isOpenWeights: true,
+    aliases: ['DBRX Instruct', 'Databricks DBRX', 'dbrx-instruct'],
+    description: 'Databricks\' open MoE language model trained on high-quality data.',
+    category: 'foundation_model',
+    modality: ['text'],
+  },
+
+  // ── NVIDIA ───────────────────────────────────────────────────────────────────
+
+  {
+    id: 'nemotron4',
+    name: 'Nemotron-4',
+    company: 'nvidia',
+    type: 'large_language_model',
+    releaseYear: 2024,
+    isOpenWeights: true,
+    aliases: ['NVIDIA Nemotron-4', 'Nemotron 4', 'Nemotron-4 340B', 'Nemotron-4 15B'],
+    description: 'NVIDIA\'s large language model trained for enterprise and research applications.',
+    category: 'foundation_model',
+    modality: ['text'],
+  },
+  {
+    id: 'nvidia_nim',
+    name: 'NVIDIA NIM',
+    company: 'nvidia',
+    type: 'other',
+    releaseYear: 2024,
+    isOpenWeights: false,
+    aliases: ['NIM', 'NVIDIA NIM microservices', 'NIM microservices'],
+    description: 'NVIDIA\'s inference microservices platform for deploying optimised AI models at scale.',
+    category: 'other',
+    modality: ['text', 'vision'],
+  },
+
+  // ── Alibaba (additional) ─────────────────────────────────────────────────────
+
+  {
+    id: 'qwen15',
+    name: 'Qwen 1.5',
+    company: 'alibaba',
+    type: 'large_language_model',
+    releaseYear: 2024,
+    isOpenWeights: true,
+    aliases: ['Qwen1.5', 'qwen-1.5', 'Alibaba Qwen 1.5', 'Qwen 1.5 72B'],
+    description: 'Alibaba\'s Qwen 1.5 open-weights LLM series, the predecessor to Qwen 2.',
+    category: 'foundation_model',
+    modality: ['text'],
+  },
+
+  // ── Tencent ──────────────────────────────────────────────────────────────────
+
+  {
+    id: 'hunyuan',
+    name: 'Hunyuan',
+    company: 'tencent',
+    type: 'large_language_model',
+    releaseYear: 2023,
+    isOpenWeights: false,
+    aliases: ['Tencent Hunyuan', 'Hunyuan-large', 'HunyuanDiT', 'Hunyuan Video'],
+    description: 'Tencent\'s large language and multimodal model family.',
+    category: 'foundation_model',
+    modality: ['text', 'vision'],
+  },
+
+  // ── Runway (additional) ──────────────────────────────────────────────────────
+
+  {
+    id: 'runway_gen2',
+    name: 'Runway Gen-2',
+    company: 'runway',
+    type: 'video_generation',
+    releaseYear: 2023,
+    isOpenWeights: false,
+    aliases: ['Runway Gen2', 'Gen-2', 'RunwayML Gen-2'],
+    description: 'Runway\'s second-generation text-to-video and image-to-video model.',
+    category: 'video_generation',
+    modality: ['text', 'video', 'image'],
+  },
+
+  // ── Pika Labs ────────────────────────────────────────────────────────────────
+
+  {
+    id: 'pika_10',
+    name: 'Pika 1.0',
+    company: 'pika_labs',
+    type: 'video_generation',
+    releaseYear: 2023,
+    isOpenWeights: false,
+    aliases: ['Pika', 'Pika Labs 1.0', 'Pika 2.0'],
+    description: 'Pika Labs\' text-to-video model for short-form video generation.',
+    category: 'video_generation',
+    modality: ['text', 'video'],
+  },
+
+  // ── Adept ────────────────────────────────────────────────────────────────────
+
+  {
+    id: 'act1',
+    name: 'ACT-1',
+    company: 'adept',
+    type: 'other',
+    releaseYear: 2022,
+    isOpenWeights: false,
+    aliases: ['Adept ACT-1', 'Action Transformer', 'ACT1'],
+    description: 'Adept\'s Action Transformer, a model designed to operate computers via UI actions.',
+    category: 'other',
+    modality: ['text', 'vision'],
+  },
+
+  // ── Inflection AI ────────────────────────────────────────────────────────────
+
+  {
+    id: 'inflection2',
+    name: 'Inflection-2',
+    company: 'inflection',
+    type: 'large_language_model',
+    releaseYear: 2024,
+    isOpenWeights: false,
+    aliases: ['Inflection 2', 'Pi model', 'Inflection-2.5', 'Inflection 2.5'],
+    description: 'Inflection AI\'s large language model powering the Pi personal AI assistant.',
+    category: 'foundation_model',
+    modality: ['text'],
+  },
+
+  // ── Perplexity AI ────────────────────────────────────────────────────────────
+
+  {
+    id: 'perplexity_sonar',
+    name: 'Perplexity Sonar',
+    company: 'perplexity',
+    type: 'large_language_model',
+    releaseYear: 2024,
+    isOpenWeights: false,
+    aliases: ['Sonar', 'Perplexity Sonar Large', 'Perplexity Sonar Small', 'sonar-small-online', 'sonar-medium-online'],
+    description: 'Perplexity AI\'s search-augmented language model optimised for real-time web retrieval.',
+    category: 'foundation_model',
+    modality: ['text'],
+  },
+
+  // ── Reka AI ──────────────────────────────────────────────────────────────────
+
+  {
+    id: 'reka_core',
+    name: 'Reka Core',
+    company: 'reka',
+    type: 'multimodal',
+    releaseYear: 2024,
+    isOpenWeights: false,
+    aliases: ['Reka', 'Reka Flash', 'Reka Edge', 'reka-core'],
+    description: 'Reka AI\'s flagship multimodal model with text, vision, and video understanding.',
+    category: 'multimodal',
+    modality: ['text', 'vision', 'video'],
+  },
+
+  // ── Groq ecosystem ───────────────────────────────────────────────────────────
+
+  {
+    id: 'llama3_groq',
+    name: 'LLaMA-3-Groq',
+    company: 'groq',
+    type: 'large_language_model',
+    releaseYear: 2024,
+    isOpenWeights: false,
+    aliases: ['Mixtral-Groq', 'Groq LLaMA', 'llama-3-groq', 'Groq Mixtral', 'Llama 3 Groq'],
+    description: 'Meta\'s Llama 3 and Mistral Mixtral models served via Groq\'s LPU inference infrastructure.',
+    category: 'foundation_model',
+    modality: ['text'],
+  },
+
+  // ── Open source / Research ───────────────────────────────────────────────────
+
+  {
+    id: 'mpt',
+    name: 'MPT',
+    company: 'databricks',
+    type: 'large_language_model',
+    releaseYear: 2023,
+    isOpenWeights: true,
+    aliases: ['MPT-7B', 'MPT-30B', 'MosaicML MPT', 'MPT-7B-Instruct', 'MPT-30B-Instruct'],
+    description: 'MosaicML\'s open-source MPT transformer series for efficient LLM training and inference.',
+    category: 'research_model',
+    modality: ['text'],
+  },
+  {
+    id: 'bloom',
+    name: 'BLOOM',
+    company: 'hugging_face',
+    type: 'large_language_model',
+    releaseYear: 2022,
+    isOpenWeights: true,
+    aliases: ['BigScience BLOOM', 'BLOOMZ', 'bloom-176b', 'BLOOM 176B'],
+    description: 'BigScience\'s multilingual 176B open-access language model trained on 46 languages.',
+    category: 'research_model',
+    modality: ['text'],
   },
 ];
 
