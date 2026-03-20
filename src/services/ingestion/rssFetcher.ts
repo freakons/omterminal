@@ -25,8 +25,12 @@ import {
   generateArticleId,
 } from '../normalization/helpers';
 
-// Per-feed fetch timeout.  Override with RSS_FEED_TIMEOUT_MS env var.
-const RSS_FEED_TIMEOUT_MS = parseInt(process.env.RSS_FEED_TIMEOUT_MS ?? '10000', 10);
+// Per-feed fetch timeout (5–8 s range).  Override with RSS_FEED_TIMEOUT_MS env var.
+const RSS_FEED_TIMEOUT_MS = parseInt(process.env.RSS_FEED_TIMEOUT_MS ?? '7000', 10);
+
+// Maximum simultaneous feed fetches.  Caps open connections with 160+ sources.
+// Override with RSS_FETCH_CONCURRENCY env var.
+const RSS_FETCH_CONCURRENCY = parseInt(process.env.RSS_FETCH_CONCURRENCY ?? '25', 10);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Result type
@@ -43,6 +47,8 @@ export interface FetchResult {
   fetchedAt: string;
   /** Error message if the fetch failed, undefined on success */
   error?: string;
+  /** True when the fetch was aborted by the per-source timeout */
+  timedOut?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -71,6 +77,10 @@ export async function fetchArticlesFromSource(
       .filter((item) => item.link && item.title)
       .map((item) => normaliseItem(item, source));
 
+    console.log(
+      `[rssFetcher] OK source="${source.id}" articles=${articles.length} rawItems=${feed.items.length}`,
+    );
+
     return {
       sourceId: source.id,
       articles,
@@ -78,14 +88,22 @@ export async function fetchArticlesFromSource(
       fetchedAt,
     };
   } catch (err) {
+    const isTimeout = err instanceof Error && err.name === 'TimeoutError';
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`[rssFetcher] Failed to fetch "${source.id}" (${source.rss}): ${message}`);
+    if (isTimeout) {
+      console.warn(
+        `[rssFetcher] TIMEOUT source="${source.id}" (${source.rss}) exceeded ${RSS_FEED_TIMEOUT_MS}ms`,
+      );
+    } else {
+      console.error(`[rssFetcher] FAILED source="${source.id}" (${source.rss}): ${message}`);
+    }
     return {
       sourceId: source.id,
       articles: [],
       rawItemCount: 0,
       fetchedAt,
       error: message,
+      timedOut: isTimeout,
     };
   }
 }
@@ -95,19 +113,57 @@ export async function fetchArticlesFromSource(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Fetches articles from multiple sources in parallel.
+ * Fetches articles from multiple sources with bounded concurrency.
+ * At most RSS_FETCH_CONCURRENCY (default 25) fetches run simultaneously,
+ * preventing socket exhaustion when the source list exceeds 100+ entries.
  * Failures for individual sources are caught and returned as error results
  * without halting the entire batch.
  *
  * @param sources  Array of Source objects to fetch.
  * @param limit    Per-source article limit (default: 20).
- * @returns        Array of FetchResults (one per source).
+ * @returns        Array of FetchResults (one per source, order preserved).
  */
 export async function fetchArticlesFromSources(
   sources: Source[],
   limit = 20
 ): Promise<FetchResult[]> {
-  return Promise.all(sources.map((source) => fetchArticlesFromSource(source, limit)));
+  console.log(
+    `[rssFetcher] Starting batch: ${sources.length} sources, concurrency=${RSS_FETCH_CONCURRENCY}, timeout=${RSS_FEED_TIMEOUT_MS}ms, limit=${limit}`,
+  );
+  return concurrentMap(
+    sources,
+    (source) => fetchArticlesFromSource(source, limit),
+    RSS_FETCH_CONCURRENCY,
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Concurrency helper
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Maps over `items` with at most `concurrency` async operations running at
+ * once.  Uses a worker-pool pattern so the pipeline stays saturated without
+ * ever exceeding the concurrency cap.  Order of results matches input order.
+ */
+async function concurrentMap<T, R>(
+  items: T[],
+  fn: (item: T) => Promise<R>,
+  concurrency: number,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let index = 0;
+
+  async function worker(): Promise<void> {
+    while (index < items.length) {
+      const i = index++;
+      results[i] = await fn(items[i]);
+    }
+  }
+
+  const workerCount = Math.min(concurrency, items.length);
+  await Promise.all(Array.from({ length: workerCount }, worker));
+  return results;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
