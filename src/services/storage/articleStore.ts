@@ -13,7 +13,7 @@
  *   2. Content fingerprint — title + leading description hash + 48h window (app-level)
  *   3. Exact URL match     — UNIQUE constraint on `url` column (DB-enforced)
  *
- * articles table schema (src/db/schema.sql + migration 022):
+ * articles table schema (src/db/schema.sql + migrations 021-023):
  *   id                   TEXT PRIMARY KEY
  *   title                TEXT NOT NULL
  *   source               TEXT NOT NULL
@@ -21,7 +21,10 @@
  *   published_at         TIMESTAMPTZ NOT NULL
  *   category             TEXT NOT NULL
  *   title_fingerprint    TEXT           -- nullable for backward compat
- *   content_fingerprint  TEXT           -- nullable for backward compat (added migration 022)
+ *   content_fingerprint  TEXT           -- nullable for backward compat (migration 022)
+ *   source_tier          SMALLINT       -- nullable for backward compat (migration 021)
+ *   source_weight        NUMERIC(3,1)   -- nullable for backward compat (migration 021)
+ *   source_category      TEXT           -- nullable for backward compat (migration 023)
  *   created_at           TIMESTAMPTZ DEFAULT NOW()
  */
 
@@ -83,6 +86,12 @@ export interface ArticleInput {
    * Nullable for backward compatibility with pre-weighting ingestion paths.
    */
   sourceWeight?: number;
+  /**
+   * Source registry category ('news' | 'company' | 'research' | 'developer' | 'social' | 'policy').
+   * Carried from SourceDefinition.category at ingestion time.
+   * Nullable for backward compatibility with pre-023 ingestion paths.
+   */
+  sourceCategory?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -180,7 +189,8 @@ export async function saveArticle(article: ArticleInput): Promise<boolean> {
   const rows = await dbQuery<{ id: string }>`
     INSERT INTO articles (
       id, title, source, url, published_at, category,
-      title_fingerprint, content_fingerprint, source_tier, source_weight
+      title_fingerprint, content_fingerprint,
+      source_tier, source_weight, source_category
     )
     VALUES (
       ${article.id},
@@ -192,7 +202,8 @@ export async function saveArticle(article: ArticleInput): Promise<boolean> {
       ${article.titleFingerprint ?? null},
       ${article.contentFingerprint ?? null},
       ${article.sourceTier ?? null},
-      ${article.sourceWeight ?? null}
+      ${article.sourceWeight ?? null},
+      ${article.sourceCategory ?? null}
     )
     ON CONFLICT (url) DO NOTHING
     RETURNING id
