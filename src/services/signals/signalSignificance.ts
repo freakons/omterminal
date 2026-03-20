@@ -3,13 +3,15 @@
  *
  * Pure, stateless module that computes a significance score (0–100) for a
  * signal at write time.  Significance goes beyond raw confidence: it weighs
- * source diversity, event velocity, signal type strategic weight, and entity
- * spread to produce a ranking signal that powers premium surfaces.
+ * source diversity, event velocity, signal type strategic weight, entity
+ * spread, and (when available) story-cluster intelligence to produce a ranking
+ * signal that powers premium surfaces.
  *
  * Design constraints:
  *   • No LLM calls, no external I/O — safe to call in any pipeline stage.
  *   • Pure function: same inputs always produce the same output.
  *   • All weights are centralised here; change one place to affect all signals.
+ *   • ClusterContext is optional — omitting it preserves pre-existing behaviour.
  */
 
 import type { SignalType } from '@/types/intelligence';
@@ -18,6 +20,48 @@ import { computeWeightedSourceTrust } from '@/lib/sourceTrust';
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Story-cluster level metadata that can be attached to a significance
+ * computation to upgrade scoring beyond event-level signals.
+ *
+ * All fields are derived from the `story_clusters` table and the articles
+ * that belong to it.  Pass this when the signal's events can be linked to
+ * a story cluster (e.g. via articles.story_cluster_id).
+ *
+ * When provided, the `clusterIntelligence` component (weight 0.25) is added
+ * and the weights for sourceDiversity and sourceTrustQuality are halved to
+ * avoid double-counting corroboration evidence.
+ */
+export interface ClusterContext {
+  /**
+   * Total number of articles in the story cluster covering this signal.
+   * 1 = isolated single article (low significance).
+   * 8+ from multiple tiers = widely corroborated (high significance).
+   */
+  articleCount: number;
+
+  /**
+   * Number of distinct source publishers in the cluster.
+   * More unique sources → less risk of single-source bias.
+   */
+  uniqueSourceCount: number;
+
+  /**
+   * Average source weight across cluster articles.
+   * Tier 1 (primary / official) = 1.0
+   * Tier 2 (major media)        = 0.7
+   * Tier 3 (community/aggreg.)  = 0.4
+   */
+  avgSourceWeight: number;
+
+  /**
+   * Optional: number of distinct source tiers represented in the cluster.
+   * Range 1–3.  A mix of Tier 1 + Tier 2 (diversity=2) is worth more than
+   * ten articles all from the same tier.
+   */
+  sourceTierDiversity?: number;
+}
 
 /**
  * Input to computeSignificance.
@@ -74,6 +118,17 @@ export interface SignificanceInput {
    * receive a boost.
    */
   entityNames?: string[];
+
+  /**
+   * Optional story-cluster metadata for this signal's underlying story.
+   * When provided, enables the cluster intelligence component which reflects
+   * real-world importance (breadth of coverage + source quality mix) rather
+   * than just whether the signal exists.
+   *
+   * Without this field the function behaves identically to the previous
+   * version — full backward compatibility.
+   */
+  clusterContext?: ClusterContext;
 }
 
 /**
@@ -106,6 +161,12 @@ export interface SignificanceResult {
     entitySpread: number;
     /** Entity prominence component (0–100 before weighting). */
     entityProminence: number;
+    /**
+     * Cluster intelligence component (0–100 before weighting).
+     * Only present when clusterContext was supplied.
+     * Encodes article volume + source diversity + source quality tier.
+     */
+    clusterIntelligence?: number;
   };
 }
 
@@ -129,18 +190,43 @@ export const SIGNAL_TYPE_WEIGHTS: Record<SignalType, number> = {
 const DEFAULT_TYPE_WEIGHT = 60;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Component weights (must sum to 1.0)
+// Component weights
+//
+// Two weight sets:
+//   BASE_WEIGHTS        — used when no ClusterContext is supplied (original).
+//   CLUSTER_WEIGHTS     — used when ClusterContext is available; adds a
+//                         clusterIntelligence component (0.25) and reduces
+//                         sourceDiversity + sourceTrustQuality to avoid
+//                         double-counting corroboration evidence.
+//
+// Both sets sum to 1.0.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const COMPONENT_WEIGHTS = {
-  confidence:        0.25,  // Confidence remains important but shares weight with prominence
-  sourceDiversity:   0.20,  // Source corroboration (distinct source count)
-  sourceTrustQuality: 0.10, // Quality/credibility of contributing sources
-  velocity:          0.15,  // How fast events are clustering matters for timeliness
-  typeWeight:        0.10,  // Strategic category boost
-  entitySpread:      0.10,  // Breadth of impact across the AI ecosystem
-  entityProminence:  0.10,  // Boost for signals involving major AI players
+const BASE_WEIGHTS = {
+  confidence:         0.25,
+  sourceDiversity:    0.20,
+  sourceTrustQuality: 0.10,
+  velocity:           0.15,
+  typeWeight:         0.10,
+  entitySpread:       0.10,
+  entityProminence:   0.10,
+  clusterIntelligence: 0.00, // unused in base mode
 } as const;
+
+const CLUSTER_WEIGHTS = {
+  confidence:         0.20,  // –0.05: cluster carries some of the corroboration signal
+  sourceDiversity:    0.10,  // –0.10: cluster's uniqueSourceCount supersedes this
+  sourceTrustQuality: 0.05,  // –0.05: cluster's avgSourceWeight encodes quality better
+  velocity:           0.15,  // unchanged
+  typeWeight:         0.10,  // unchanged
+  entitySpread:       0.05,  // –0.05: cluster article count proxies breadth
+  entityProminence:   0.10,  // unchanged
+  clusterIntelligence: 0.25, // new: article volume × source diversity × source quality
+} as const;
+
+// Keep the existing exported symbol pointing at the base weights for callers
+// that reference it directly (e.g. tests).
+export const COMPONENT_WEIGHTS = BASE_WEIGHTS;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Normalisation constants
@@ -151,6 +237,19 @@ const SOURCE_SATURATION = 5;
 
 /** Treat ≥ this many entities as full entity-spread coverage. */
 const ENTITY_SATURATION = 8;
+
+/**
+ * Cluster-level saturation: ≥ this many articles in a story cluster is treated
+ * as full volume coverage (log scale so each extra article adds diminishing returns).
+ * 1 article → 0, 2 → ~30, 4 → ~60, 8 → ~90, 10 → 100.
+ */
+const CLUSTER_ARTICLE_SATURATION = 10;
+
+/**
+ * Cluster-level source saturation: ≥ this many distinct publishers in the cluster
+ * is treated as full source-diversity coverage.
+ */
+const CLUSTER_SOURCE_SATURATION = 8;
 
 /**
  * Reference velocity: events/hour at which velocity component saturates.
@@ -225,6 +324,58 @@ function scoreSourceTrustQuality(sourceIds?: string[]): number {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Cluster intelligence scorer
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Score a story cluster's contribution to signal significance.
+ *
+ * Combines three sub-components:
+ *   articleVolume   (0.30) — log-scale article count; 1 article → 0, 10+ → 100
+ *   sourceDiversity (0.25) — log-scale distinct publishers; saturates at 8
+ *   sourceQuality   (0.45) — linear from avgSourceWeight (0.4 → 40, 1.0 → 100)
+ *
+ * Plus an optional tier-diversity bonus (+10 per extra tier) for signals
+ * backed by a mix of Tier 1/Tier 2/Tier 3 sources.
+ *
+ * Examples:
+ *   1 article (tier 2)                         → ~40 (low)
+ *   8 articles, 6 sources, avg weight 0.85     → ~88 (high)
+ *   10 articles, 5 sources, avg weight 0.40    → ~69 (medium)
+ */
+function scoreClusterIntelligence(ctx: ClusterContext): number {
+  // Article volume: log scale so that going from 1→2 adds more than 9→10.
+  // log(1)=0 intentionally gives zero for single-article signals.
+  const articleVolumeScore = ctx.articleCount <= 1
+    ? 0
+    : toScore(Math.log(ctx.articleCount) / Math.log(CLUSTER_ARTICLE_SATURATION));
+
+  // Source diversity within the cluster (log scale, different saturation from event-level).
+  const sourceDivScore = toScore(
+    Math.log(ctx.uniqueSourceCount + 1) / Math.log(CLUSTER_SOURCE_SATURATION + 1),
+  );
+
+  // Source quality: avgSourceWeight is already on [0, 1] scale.
+  // Tier 1 (1.0) → 100, Tier 2 (0.7) → 70, Tier 3 (0.4) → 40.
+  const qualityScore = toScore(ctx.avgSourceWeight);
+
+  // Composite (weights sum to 1.0 within this sub-scorer).
+  const base =
+    articleVolumeScore * 0.30 +
+    sourceDivScore     * 0.25 +
+    qualityScore       * 0.45;
+
+  // Tier-diversity bonus: each additional tier (beyond the first) adds 10 points.
+  // Rewards signals backed by a heterogeneous mix (Tier 1 + Tier 2, etc.).
+  const tierBonus =
+    ctx.sourceTierDiversity != null
+      ? Math.min(ctx.sourceTierDiversity - 1, 2) * 10
+      : 0;
+
+  return Math.min(100, Math.round(base + tierBonus));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Entity prominence
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -258,18 +409,26 @@ function scoreEntityProminence(entityNames?: string[]): number {
 /**
  * Compute a composite significance score for a signal.
  *
- * Combines five components — confidence, source diversity, velocity, signal
- * type weight, and entity spread — into a single 0–100 integer.  Higher
- * scores indicate signals that are more credible, better corroborated, more
- * timely, more strategically relevant, and broader in ecosystem impact.
+ * Combines up to eight components — confidence, source diversity, source trust
+ * quality, velocity, signal type weight, entity spread, entity prominence, and
+ * (when clusterContext is provided) cluster intelligence — into a single 0–100
+ * integer.  Higher scores indicate signals that are more credible, better
+ * corroborated, more timely, more strategically relevant, and broader in
+ * ecosystem impact.
+ *
+ * When clusterContext is supplied the weighting shifts to favour cluster-level
+ * intelligence (article volume × source diversity × source quality tier) and
+ * reduces the event-level corroboration weights to avoid double-counting.
+ * Without clusterContext the function behaves identically to previous versions.
  *
  * Called at write time (signal generation stage) so the score is persisted
  * and never recomputed on the read path.
  *
- * @param input  Significance input derived from the signal and its events.
+ * @param input  Significance input derived from the signal, its events, and
+ *               optionally the story cluster it belongs to.
  * @returns      Scored result with the integer significanceScore and component breakdown.
  *
- * @example
+ * @example — without cluster context (backward-compatible)
  * const result = computeSignificance({
  *   signalType:      'CAPITAL_ACCELERATION',
  *   confidenceScore: 0.87,
@@ -279,6 +438,18 @@ function scoreEntityProminence(entityNames?: string[]): number {
  *   entityCount:     3,
  * });
  * // result.significanceScore → 79
+ *
+ * @example — with cluster context
+ * const result = computeSignificance({
+ *   signalType:      'MODEL_RELEASE_WAVE',
+ *   confidenceScore: 0.82,
+ *   sourceCount:     3,
+ *   eventCount:      4,
+ *   windowHours:     48,
+ *   entityCount:     2,
+ *   clusterContext: { articleCount: 8, uniqueSourceCount: 6, avgSourceWeight: 0.85 },
+ * });
+ * // result.significanceScore → ~85 (high — broad, quality coverage)
  */
 export function computeSignificance(input: SignificanceInput): SignificanceResult {
   const {
@@ -290,30 +461,61 @@ export function computeSignificance(input: SignificanceInput): SignificanceResul
     entityCount,
     sourceIds,
     entityNames,
+    clusterContext,
   } = input;
 
+  const hasCluster = clusterContext != null;
+  const weights = hasCluster ? CLUSTER_WEIGHTS : BASE_WEIGHTS;
+
   // --- per-component scores (0–100) ---
+  const clusterIntelligence = hasCluster
+    ? scoreClusterIntelligence(clusterContext)
+    : undefined;
+
   const components = {
-    confidence:        scoreConfidence(confidenceScore),
-    sourceDiversity:   scoreSourceDiversity(sourceCount),
-    sourceTrustQuality: scoreSourceTrustQuality(sourceIds),
-    velocity:          scoreVelocity(eventCount, windowHours),
-    typeWeight:        scoreTypeWeight(signalType),
-    entitySpread:      scoreEntitySpread(entityCount),
-    entityProminence:  scoreEntityProminence(entityNames),
+    confidence:          scoreConfidence(confidenceScore),
+    sourceDiversity:     scoreSourceDiversity(sourceCount),
+    sourceTrustQuality:  scoreSourceTrustQuality(sourceIds),
+    velocity:            scoreVelocity(eventCount, windowHours),
+    typeWeight:          scoreTypeWeight(signalType),
+    entitySpread:        scoreEntitySpread(entityCount),
+    entityProminence:    scoreEntityProminence(entityNames),
+    ...(clusterIntelligence !== undefined ? { clusterIntelligence } : {}),
   };
 
   // --- weighted composite ---
   const raw =
-    components.confidence        * COMPONENT_WEIGHTS.confidence        +
-    components.sourceDiversity   * COMPONENT_WEIGHTS.sourceDiversity   +
-    components.sourceTrustQuality * COMPONENT_WEIGHTS.sourceTrustQuality +
-    components.velocity          * COMPONENT_WEIGHTS.velocity          +
-    components.typeWeight        * COMPONENT_WEIGHTS.typeWeight        +
-    components.entitySpread      * COMPONENT_WEIGHTS.entitySpread      +
-    components.entityProminence  * COMPONENT_WEIGHTS.entityProminence;
+    components.confidence        * weights.confidence        +
+    components.sourceDiversity   * weights.sourceDiversity   +
+    components.sourceTrustQuality * weights.sourceTrustQuality +
+    components.velocity          * weights.velocity          +
+    components.typeWeight        * weights.typeWeight        +
+    components.entitySpread      * weights.entitySpread      +
+    components.entityProminence  * weights.entityProminence  +
+    (clusterIntelligence ?? 0)   * weights.clusterIntelligence;
 
   const significanceScore = Math.round(clamp01(raw / 100) * 100);
+
+  // --- debug logging ---
+  console.log(
+    `[signalSignificance] type=${signalType ?? 'null'}` +
+    ` score=${significanceScore}` +
+    ` conf=${components.confidence}×${weights.confidence}` +
+    ` srcDiv=${components.sourceDiversity}×${weights.sourceDiversity}` +
+    ` srcTrust=${components.sourceTrustQuality}×${weights.sourceTrustQuality}` +
+    ` vel=${components.velocity}×${weights.velocity}` +
+    ` typeW=${components.typeWeight}×${weights.typeWeight}` +
+    ` entSpread=${components.entitySpread}×${weights.entitySpread}` +
+    ` entProm=${components.entityProminence}×${weights.entityProminence}` +
+    (hasCluster
+      ? ` clusterIntel=${clusterIntelligence}×${weights.clusterIntelligence}` +
+        ` [articles=${clusterContext.articleCount}` +
+        ` sources=${clusterContext.uniqueSourceCount}` +
+        ` avgWeight=${clusterContext.avgSourceWeight}` +
+        (clusterContext.sourceTierDiversity != null ? ` tiers=${clusterContext.sourceTierDiversity}` : '') +
+        `]`
+      : ' [no-cluster]'),
+  );
 
   return {
     significanceScore,
