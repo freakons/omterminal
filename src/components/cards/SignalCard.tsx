@@ -10,6 +10,7 @@ import { EntityQuickProfile } from '@/components/entity/EntityQuickProfile';
 import type { SignalWithRankMeta } from '@/lib/signals/feedComposer';
 import type { SignalExplanation } from '@/lib/signals/explanationLayer';
 import { isHot, isRecent, formatSignalAge } from '@/lib/signals/signalAge';
+import { trackEntityClick, trackSignalView, trackSignalType } from '@/lib/personalization/userPreferences';
 
 interface SignalWithExplanation extends SignalWithRankMeta {
   explanation?: SignalExplanation;
@@ -43,10 +44,20 @@ export function SignalCard({ signal }: SignalCardProps) {
 
   const hot = isHot(signal.date);
 
+  // Track interactions for lightweight personalization
+  function handleSignalClick() {
+    trackSignalView(signal.id);
+    trackSignalType(signal.category);
+  }
+
+  function handleEntityClick() {
+    if (signal.entityName) trackEntityClick(signal.entityName);
+  }
+
   return (
     <div className={`nc${tier === 'critical' ? ' nc-critical' : tier === 'high' ? ' nc-high' : ''}${hot ? ' nc-hot' : ''}`}>
       {/* Clickable area for navigation */}
-      <Link href={href} className="nc-link">
+      <Link href={href} className="nc-link" onClick={handleSignalClick}>
         {/* Top meta row */}
         <div className="nc-top">
           <div className="nc-badges">
@@ -161,9 +172,11 @@ export function SignalCard({ signal }: SignalCardProps) {
         <span className="nc-src">
           <span className="indicator-dot indicator-dot--indigo" />
           {signal.entityName ? (
-            <EntityQuickProfile entityName={signal.entityName}>
-              {signal.entityName}
-            </EntityQuickProfile>
+            <span onClick={handleEntityClick}>
+              <EntityQuickProfile entityName={signal.entityName}>
+                {signal.entityName}
+              </EntityQuickProfile>
+            </span>
           ) : (
             'Intelligence'
           )}
@@ -177,7 +190,7 @@ export function SignalCard({ signal }: SignalCardProps) {
       </div>
 
       {/* Open signal affordance */}
-      <Link href={href} className="nc-link">
+      <Link href={href} className="nc-link" onClick={handleSignalClick}>
         <span className="nc-open-hint">Open signal</span>
       </Link>
     </div>
