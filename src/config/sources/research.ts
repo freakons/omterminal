@@ -307,4 +307,122 @@ export const researchSources: SourceDefinition[] = [
     reliability: 8,
     enabled: false, // high-volume, low intelligence value; dataset uploads ≠ AI intelligence signal
   },
+
+  // ── Additional university labs (3) — Tier 1 ──────────────────────────────
+
+  {
+    id: 'mit_news_ai',
+    name: 'MIT News — Artificial Intelligence',
+    type: 'rss',
+    category: 'research',
+    url: 'https://news.mit.edu/rss/topic/artificial-intelligence2',
+    reliability: 9,
+    enabled: true,
+  },
+  {
+    id: 'cmu_ml_blog',
+    name: 'CMU Machine Learning Blog',
+    type: 'rss',
+    category: 'research',
+    url: 'https://blog.ml.cmu.edu/feed/',
+    reliability: 9,
+    enabled: true,
+  },
+  {
+    id: 'oxford_internet_institute',
+    name: 'Oxford Internet Institute Blog',
+    type: 'rss',
+    category: 'research',
+    url: 'https://www.oii.ox.ac.uk/feed/',
+    reliability: 8,
+    enabled: true,
+  },
+
+  // ── Journals & scholarly publications (2) — Tier 1 ───────────────────────
+
+  {
+    id: 'nature_machine_intelligence',
+    name: 'Nature Machine Intelligence',
+    type: 'rss',
+    category: 'research',
+    url: 'https://www.nature.com/natmachintell.rss',
+    reliability: 9,
+    enabled: true,
+  },
+  {
+    id: 'jmlr',
+    name: 'Journal of Machine Learning Research',
+    type: 'rss',
+    category: 'research',
+    url: 'https://jmlr.org/jmlr.xml',
+    reliability: 9,
+    enabled: true,
+  },
+
+  // ── AI education & learning (1) — Tier 1 ─────────────────────────────────
+
+  {
+    id: 'deeplearning_ai_blog',
+    name: 'DeepLearning.AI Blog',
+    type: 'rss',
+    category: 'research',
+    entity: 'DeepLearning.AI',
+    url: 'https://www.deeplearning.ai/blog/rss/',
+    reliability: 9,
+    enabled: true,
+  },
+
+  // ── National AI institutes (2) — Tier 1 ──────────────────────────────────
+
+  {
+    id: 'vector_institute_blog',
+    name: 'Vector Institute Blog',
+    type: 'rss',
+    category: 'research',
+    url: 'https://vectorinstitute.ai/feed/',
+    reliability: 8,
+    enabled: true,
+  },
+  {
+    id: 'mila_news',
+    name: 'MILA Quebec AI Institute',
+    type: 'rss',
+    category: 'research',
+    url: 'https://mila.quebec/en/feeds/',
+    reliability: 9,
+    enabled: true,
+  },
+
+  // ── Additional arXiv categories (2) — Tier 1 ─────────────────────────────
+
+  {
+    id: 'arxiv_ne',
+    name: 'arXiv Neural & Evolutionary Computing',
+    type: 'arxiv',
+    category: 'research',
+    url: 'https://arxiv.org/rss/cs.NE',
+    reliability: 9,
+    enabled: true,
+  },
+  {
+    id: 'arxiv_ma',
+    name: 'arXiv Multiagent Systems',
+    type: 'arxiv',
+    category: 'research',
+    url: 'https://arxiv.org/rss/cs.MA',
+    reliability: 9,
+    enabled: true,
+  },
+
+  // ── Scholarly tech news (1) — Tier 2 ─────────────────────────────────────
+
+  {
+    id: 'acm_tech_news',
+    name: 'ACM TechNews',
+    type: 'rss',
+    category: 'research',
+    url: 'https://technews.acm.org/feed/',
+    reliability: 8,
+    enabled: true,
+  },
 ];
