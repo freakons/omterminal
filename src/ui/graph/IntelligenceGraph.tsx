@@ -402,6 +402,15 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
   // avoid crashes when the container hasn't laid out yet at mount time.
   const [dimensions, setDimensions] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
 
+  // ── Search state ──────────────────────────────────────────────────────────
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Pinning state — pinned node stays as context while exploring ──────────
+  const [pinnedNodeId, setPinnedNodeId] = useState<string | null>(null);
+  const [pinnedNode, setPinnedNode] = useState<RuntimeNode | null>(null);
+
+
   useIsomorphicLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -452,6 +461,13 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
       if (node) setFocusedNode(node);
     }
   }, [initialFocusId, graphData.nodes, focusedNode]);
+
+  /** Smooth center-on-node — pans the viewport to the node's canvas position */
+  const centerOnNode = useCallback((node: RuntimeNode) => {
+    const g = graphRef.current;
+    if (!g || node.x == null || node.y == null) return;
+    try { g.centerAt(node.x, node.y, 600); } catch { /* best effort */ }
+  }, []);
 
   // Tune D3 forces for a more stable, deliberate layout
   const tuneForces = useCallback(() => {
@@ -506,16 +522,23 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
    * Used by paintNode / getLinkColor to calculate focus-dim opacity.
    */
   const focusNeighbors = useMemo<Set<string>>(() => {
-    if (!focusedNodeId) return new Set();
+    if (!focusedNodeId && !pinnedNodeId) return new Set();
     const s = new Set<string>();
     for (const link of graphData.links) {
       const src = nodeId(link.source as string | RuntimeNode);
       const tgt = nodeId(link.target as string | RuntimeNode);
-      if (src === focusedNodeId) s.add(tgt);
-      if (tgt === focusedNodeId) s.add(src);
+      if (focusedNodeId) {
+        if (src === focusedNodeId) s.add(tgt);
+        if (tgt === focusedNodeId) s.add(src);
+      }
+      // Include pinned node's neighborhood so it stays lit while exploring
+      if (pinnedNodeId && pinnedNodeId !== focusedNodeId) {
+        if (src === pinnedNodeId) s.add(tgt);
+        if (tgt === pinnedNodeId) s.add(src);
+      }
     }
     return s;
-  }, [focusedNodeId, graphData.links]);
+  }, [focusedNodeId, pinnedNodeId, graphData.links]);
 
   // ── topConnections: strongest links for the ConnectionExplanationPanel ──────
   //
@@ -535,19 +558,70 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
     return related.slice(0, 3);
   }, [focusedNodeId, graphData.links]);
 
-  const resetFocus = useCallback(() => {
-    setFocusedNodeId(null);
-    setFocusedNode(null);
-  }, []);
+  /** Node IDs matching the current search query — used for canvas highlight ring */
+  const searchMatchIds = useMemo<Set<string>>(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return new Set();
+    const s = new Set<string>();
+    for (const node of graphData.nodes) {
+      if (node.label.toLowerCase().includes(q)) s.add(node.id);
+    }
+    return s;
+  }, [searchQuery, graphData.nodes]);
 
-  // Escape key exits focus mode — defined after resetFocus to avoid temporal dead zone
+  /**
+   * Toggle pin on the currently focused node.
+   * Pinned node keeps its neighborhood lit while you explore other nodes.
+   */
+  const togglePin = useCallback(() => {
+    if (!focusedNodeId || !focusedNode) return;
+    if (pinnedNodeId === focusedNodeId) {
+      setPinnedNodeId(null);
+      setPinnedNode(null);
+    } else {
+      setPinnedNodeId(focusedNodeId);
+      setPinnedNode(focusedNode);
+    }
+  }, [pinnedNodeId, focusedNodeId, focusedNode]);
+
+  /**
+   * Reset focus. If a pin is active and we're exploring a different node,
+   * Escape returns to the pinned context rather than clearing everything.
+   */
+  const resetFocus = useCallback(() => {
+    if (pinnedNodeId && focusedNodeId !== pinnedNodeId) {
+      // Return to pinned context
+      setFocusedNodeId(pinnedNodeId);
+      setFocusedNode(pinnedNode);
+    } else {
+      // Clear all focus + pin
+      setFocusedNodeId(null);
+      setFocusedNode(null);
+      setPinnedNodeId(null);
+      setPinnedNode(null);
+    }
+  }, [pinnedNodeId, pinnedNode, focusedNodeId]);
+
+  // Escape key: clears search query first, then exits focus/pin
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && focusedNodeId) resetFocus();
+      if (e.key === 'Escape') {
+        if (searchQuery) {
+          setSearchQuery('');
+          searchInputRef.current?.blur();
+        } else if (focusedNodeId) {
+          resetFocus();
+        }
+      }
+      // '/' focuses the search input from anywhere in the graph
+      if (e.key === '/' && document.activeElement !== searchInputRef.current) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [focusedNodeId, resetFocus]);
+  }, [focusedNodeId, searchQuery, resetFocus]);
 
   /** Set of node IDs connected to the hovered node */
   const neighbors = useMemo<Set<string>>(() => {
@@ -670,11 +744,14 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
     (node: RuntimeNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
       if (!node || !ctx || typeof node.id !== 'string') return;
       try {
-        const color      = nodeColor(node);
-        const isHovered  = node.id === hoveredId;
-        const isNeighbor = neighbors.has(node.id);
-        const isFocused  = node.id === focusedNodeId;
-        const isInFocusZone = !focusedNodeId || isFocused || focusNeighbors.has(node.id);
+        const color        = nodeColor(node);
+        const isHovered    = node.id === hoveredId;
+        const isNeighbor   = neighbors.has(node.id);
+        const isFocused    = node.id === focusedNodeId;
+        const isPinned     = node.id === pinnedNodeId;
+        const isSearchMatch = searchMatchIds.has(node.id);
+        // Pinned node always stays in focus zone even when exploring elsewhere
+        const isInFocusZone = !focusedNodeId || isFocused || focusNeighbors.has(node.id) || isPinned;
 
         // Two-level dimming: hover dims unfocused-neighbours; focus dims non-zone nodes
         const isHoverDimmed = !!hoveredId && !isHovered && !isNeighbor;
@@ -683,7 +760,7 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
 
         // Importance-based radius — high-signal entities read as more significant
         const baseR  = nodeRadius(node);
-        const r      = isFocused ? baseR + 3 : isHovered ? baseR + 2 : baseR;
+        const r      = isFocused ? baseR + 3 : isHovered ? baseR + 2 : isPinned ? baseR + 1.5 : baseR;
 
         const x = node.x ?? 0;
         const y = node.y ?? 0;
@@ -747,6 +824,33 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
 
         ctx.stroke();
 
+        // ── Pinned node indicator — double orbit ring ─────────────────────
+        if (isPinned && !isDimmed) {
+          ctx.shadowBlur = 0;
+          ctx.beginPath();
+          ctx.arc(x, y, r + 5, 0, 2 * Math.PI);
+          ctx.strokeStyle = `${color}55`;
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(x, y, r + 9, 0, 2 * Math.PI);
+          ctx.strokeStyle = `${color}22`;
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+
+        // ── Search match highlight — amber glow ring ──────────────────────
+        if (isSearchMatch && !isDimmed) {
+          ctx.shadowBlur  = 14;
+          ctx.shadowColor = 'rgba(251,191,36,0.7)';
+          ctx.beginPath();
+          ctx.arc(x, y, r + 5, 0, 2 * Math.PI);
+          ctx.strokeStyle = 'rgba(251,191,36,0.75)';
+          ctx.lineWidth   = 2;
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+        }
+
         // Label — only show for non-dimmed nodes, scale visibility by zoom
         if (!isDimmed) {
           const fontSize = Math.max(9, 10.5 / globalScale);
@@ -772,7 +876,7 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
         console.warn('[IntelligenceGraph] paintNode error:', err);
       }
     },
-    [hoveredId, neighbors, focusedNodeId, focusNeighbors],
+    [hoveredId, neighbors, focusedNodeId, focusNeighbors, pinnedNodeId, searchMatchIds],
   );
 
   const getLinkColor = useCallback(
@@ -790,10 +894,12 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
         }
 
         // Focus state — brighten edges within focus zone, dim everything else
+        // Pinned node's edges also stay visible alongside focused node's edges
         if (focusedNodeId) {
-          const inZone = src === focusedNodeId || tgt === focusedNodeId ||
-            (focusNeighbors.has(src) && focusNeighbors.has(tgt));
-          if (!inZone) return 'rgba(255,255,255,0.03)';
+          const inFocusedZone = src === focusedNodeId || tgt === focusedNodeId;
+          const inPinnedZone  = pinnedNodeId && (src === pinnedNodeId || tgt === pinnedNodeId);
+          const inNeighborZone = focusNeighbors.has(src) && focusNeighbors.has(tgt);
+          if (!inFocusedZone && !inPinnedZone && !inNeighborZone) return 'rgba(255,255,255,0.03)';
         }
 
         const alpha = baseLinkAlpha(link);
@@ -814,7 +920,7 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
         return 'rgba(255,255,255,0.06)';
       }
     },
-    [hoveredId, focusedNodeId, focusNeighbors],
+    [hoveredId, focusedNodeId, pinnedNodeId, focusNeighbors],
   );
 
   const getLinkWidth = useCallback(
@@ -868,12 +974,14 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
       } else {
         setFocusedNodeId(node.id);
         setFocusedNode(node);
+        // Smooth camera center on the clicked node
+        centerOnNode(node);
       }
     } else if (node.type === 'signal') {
       router.push(`/signals/${node.id}`);
     }
     // event nodes: no dedicated page yet
-  }, [router, focusedNodeId, resetFocus]);
+  }, [router, focusedNodeId, resetFocus, centerOnNode]);
 
   const handleNodeHover = useCallback((node: RuntimeNode | null) => {
     const validNode = node && typeof node.id === 'string' ? node : null;
@@ -1125,7 +1233,9 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
 
   // ── Focus mode indicator ──────────────────────────────────────────────────
 
-  const focusNodeColor = focusedNode ? nodeColor(focusedNode as RuntimeNode) : '#60a5fa';
+  const focusNodeColor  = focusedNode  ? nodeColor(focusedNode  as RuntimeNode) : '#60a5fa';
+  const pinnedNodeColor = pinnedNode   ? nodeColor(pinnedNode   as RuntimeNode) : '#60a5fa';
+  // When pinned and exploring another node, show a combined count; otherwise just focusNeighbors
   const focusConnectionCount = focusNeighbors.size;
 
   const focusIndicator = focusedNode && (
@@ -1148,7 +1258,29 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
       boxShadow: `0 4px 28px rgba(0,0,0,0.55), 0 0 0 1px ${focusNodeColor}12`,
       whiteSpace: 'nowrap',
     }}>
-      {/* Color-coded dot matching node color */}
+      {/* Pinned context — shown when exploring a different node from the pin */}
+      {pinnedNodeId && pinnedNodeId !== focusedNodeId && pinnedNode && (
+        <>
+          <span style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 5,
+            color: pinnedNodeColor,
+            fontSize: '0.73rem',
+            opacity: 0.8,
+          }}>
+            {/* Pin icon */}
+            <svg width={10} height={10} viewBox="0 0 10 10" fill="none" style={{ flexShrink: 0 }}>
+              <circle cx={5} cy={5} r={4} stroke={pinnedNodeColor} strokeWidth={1.5} />
+              <circle cx={5} cy={5} r={1.8} fill={pinnedNodeColor} />
+            </svg>
+            <span style={{ fontWeight: 600 }}>{pinnedNode.label}</span>
+          </span>
+          <span style={{ color: 'rgba(255,255,255,0.12)', fontSize: '0.65rem' }}>→</span>
+        </>
+      )}
+
+      {/* Color-coded dot matching focused node color */}
       <span style={{
         display: 'inline-block',
         width: 8,
@@ -1160,12 +1292,45 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
       }} />
 
       <span>
-        <span style={{ color: 'rgba(238,238,248,0.38)', marginRight: 4, fontSize: '0.73rem' }}>Focus</span>
+        <span style={{ color: 'rgba(238,238,248,0.38)', marginRight: 4, fontSize: '0.73rem' }}>
+          {pinnedNodeId && pinnedNodeId !== focusedNodeId ? 'Exploring' : 'Focus'}
+        </span>
         <span style={{ fontWeight: 600, color: focusNodeColor }}>{focusedNode.label}</span>
         <span style={{ color: 'rgba(238,238,248,0.28)', marginLeft: 6, fontSize: '0.72rem' }}>
           · {focusConnectionCount} connection{focusConnectionCount !== 1 ? 's' : ''}
         </span>
       </span>
+
+      {/* Pin toggle — pins/unpins the focused node as primary context */}
+      {!initialFocusId && (
+        <button
+          onClick={togglePin}
+          title={pinnedNodeId === focusedNodeId ? 'Unpin node' : 'Pin as anchor — keep context while exploring'}
+          style={{
+            background: pinnedNodeId === focusedNodeId ? `${focusNodeColor}28` : 'rgba(255,255,255,0.05)',
+            border: `1px solid ${pinnedNodeId === focusedNodeId ? focusNodeColor + '55' : 'rgba(255,255,255,0.1)'}`,
+            borderRadius: 6,
+            color: pinnedNodeId === focusedNodeId ? focusNodeColor : 'rgba(238,238,248,0.38)',
+            fontSize: '0.67rem',
+            padding: '3px 9px',
+            cursor: 'pointer',
+            letterSpacing: '0.04em',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+          }}
+        >
+          {/* Minimal pin icon */}
+          <svg width={9} height={9} viewBox="0 0 10 10" fill="none" style={{ flexShrink: 0 }}>
+            <circle cx={5} cy={5} r={3.5}
+              stroke={pinnedNodeId === focusedNodeId ? focusNodeColor : 'rgba(238,238,248,0.38)'}
+              strokeWidth={1.5}
+            />
+            {pinnedNodeId === focusedNodeId && <circle cx={5} cy={5} r={1.5} fill={focusNodeColor} />}
+          </svg>
+          {pinnedNodeId === focusedNodeId ? 'Pinned' : 'Pin'}
+        </button>
+      )}
 
       {/* Open entity page or navigate to full graph in embedded mode */}
       <button
@@ -1198,9 +1363,12 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
           cursor: 'pointer',
           letterSpacing: '0.03em',
         }}
-        title="Press Escape to reset"
+        title={pinnedNodeId && focusedNodeId !== pinnedNodeId ? 'Return to pinned node' : 'Press Escape to reset'}
       >
-        Reset <span style={{ opacity: 0.4, fontSize: '0.62rem' }}>Esc</span>
+        {pinnedNodeId && focusedNodeId !== pinnedNodeId
+          ? <span>← Back <span style={{ opacity: 0.4, fontSize: '0.62rem' }}>Esc</span></span>
+          : <span>Reset <span style={{ opacity: 0.4, fontSize: '0.62rem' }}>Esc</span></span>
+        }
       </button>
     </div>
   );
@@ -1219,6 +1387,13 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
     () => [...entityNodes].sort((a, b) => (b.importance ?? 0) - (a.importance ?? 0)),
     [entityNodes],
   );
+
+  // Search-filtered entity list — used by the selector panel
+  const filteredEntityNodes = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return sortedEntityNodes;
+    return sortedEntityNodes.filter(n => n.label.toLowerCase().includes(q));
+  }, [sortedEntityNodes, searchQuery]);
 
   // ── Cluster insight — deterministic label describing the dominant activity ──
   //
@@ -1328,27 +1503,95 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
       top: 16,
       left: 16,
       zIndex: 10,
-      maxWidth: 190,
+      width: 200,
     }}>
-      <div style={{
-        fontSize: '0.6rem',
-        color: 'rgba(238,238,248,0.24)',
-        textTransform: 'uppercase',
-        letterSpacing: '0.1em',
-        marginBottom: 7,
-        paddingLeft: 2,
-      }}>
-        Entities
+      {/* ── Search input ──────────────────────────────────────────────────── */}
+      <div style={{ position: 'relative', marginBottom: 8 }}>
+        {/* Search icon */}
+        <svg
+          width={11} height={11} viewBox="0 0 11 11" fill="none"
+          style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', opacity: 0.35 }}
+        >
+          <circle cx={4.5} cy={4.5} r={3.5} stroke="rgba(238,238,248,0.7)" strokeWidth={1.3} />
+          <line x1={7.5} y1={7.5} x2={10} y2={10} stroke="rgba(238,238,248,0.7)" strokeWidth={1.3} strokeLinecap="round" />
+        </svg>
+        <input
+          ref={searchInputRef}
+          type="text"
+          placeholder="Search entities…"
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Escape') {
+              if (searchQuery) { setSearchQuery(''); }
+              else { (e.currentTarget as HTMLInputElement).blur(); }
+              e.stopPropagation();
+            }
+            // Enter: focus first result
+            if (e.key === 'Enter' && filteredEntityNodes.length > 0) {
+              const first = filteredEntityNodes[0] as RuntimeNode;
+              setFocusedNodeId(first.id);
+              setFocusedNode(first);
+              centerOnNode(first);
+              setSearchQuery('');
+            }
+          }}
+          style={{
+            width: '100%',
+            boxSizing: 'border-box',
+            background: 'rgba(10,10,22,0.82)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: 7,
+            color: 'rgba(238,238,248,0.85)',
+            fontSize: '0.72rem',
+            padding: '5px 28px 5px 26px',
+            outline: 'none',
+            fontFamily: 'DM Mono, monospace',
+            letterSpacing: '0.02em',
+            backdropFilter: 'blur(10px)',
+          }}
+        />
+        {/* Clear button */}
+        {searchQuery && (
+          <button
+            onClick={() => { setSearchQuery(''); searchInputRef.current?.focus(); }}
+            style={{
+              position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: 'rgba(238,238,248,0.35)', fontSize: '0.75rem', padding: '0 2px',
+              lineHeight: 1,
+            }}
+          >
+            ×
+          </button>
+        )}
       </div>
+
+      {/* ── Entity list ───────────────────────────────────────────────────── */}
+      {!searchQuery && (
+        <div style={{
+          fontSize: '0.6rem',
+          color: 'rgba(238,238,248,0.24)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.1em',
+          marginBottom: 5,
+          paddingLeft: 2,
+        }}>
+          Entities
+        </div>
+      )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-        {sortedEntityNodes.slice(0, 10).map(node => {
+        {filteredEntityNodes.slice(0, searchQuery ? 8 : 10).map(node => {
           const dotColor = nodeColor(node as GraphNode);
           return (
             <button
               key={node.id}
               onClick={() => {
-                setFocusedNodeId(node.id);
-                setFocusedNode(node as RuntimeNode);
+                const rn = node as RuntimeNode;
+                setFocusedNodeId(rn.id);
+                setFocusedNode(rn);
+                centerOnNode(rn);
+                setSearchQuery('');
               }}
               style={{
                 display: 'flex',
@@ -1402,10 +1645,39 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
             </button>
           );
         })}
-        {sortedEntityNodes.length > 10 && (
+        {/* No results feedback */}
+        {searchQuery && filteredEntityNodes.length === 0 && (
+          <div style={{ fontSize: '0.68rem', color: 'rgba(238,238,248,0.25)', paddingLeft: 6, paddingTop: 2 }}>
+            No match for &ldquo;{searchQuery}&rdquo;
+          </div>
+        )}
+        {/* Overflow hint when not searching */}
+        {!searchQuery && sortedEntityNodes.length > 10 && (
           <span style={{ fontSize: '0.62rem', color: 'rgba(238,238,248,0.2)', paddingLeft: 6, marginTop: 2 }}>
             +{sortedEntityNodes.length - 10} more — click in graph
           </span>
+        )}
+        {/* Keyboard shortcut hint */}
+        {!searchQuery && (
+          <div style={{
+            fontSize: '0.59rem',
+            color: 'rgba(238,238,248,0.14)',
+            paddingLeft: 4,
+            marginTop: 4,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+          }}>
+            <kbd style={{
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: 3,
+              padding: '0 4px',
+              fontSize: '0.58rem',
+              color: 'rgba(238,238,248,0.25)',
+            }}>/</kbd>
+            <span>to search</span>
+          </div>
         )}
       </div>
     </div>

@@ -99,7 +99,7 @@ export default function GraphPage() {
           lineHeight: 1.6,
         }}>
           Signal-driven map of AI companies, models, investors, and regulatory actors.
-          Node size reflects signal activity. Click any entity to isolate its ecosystem.
+          Search or click any entity to explore its ecosystem. Pin a node to keep context while navigating.
         </p>
       </div>
 
@@ -229,10 +229,12 @@ export default function GraphPage() {
         justifyContent: 'flex-end',
       }}>
         {[
-          { key: 'Click entity', desc: 'isolate ecosystem' },
+          { key: '/',            desc: 'search entities' },
+          { key: 'Click entity', desc: 'focus + center' },
+          { key: 'Pin',          desc: 'anchor while exploring' },
           { key: 'Hover node',   desc: 'preview connections' },
           { key: 'Hover edge',   desc: 'relationship detail' },
-          { key: 'Esc',          desc: 'exit focus' },
+          { key: 'Esc',          desc: 'back / exit focus' },
         ].map(({ key, desc }) => (
           <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <kbd style={{
