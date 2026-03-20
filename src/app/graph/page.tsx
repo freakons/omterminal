@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { IntelligenceGraph } from '@/ui/graph/IntelligenceGraph';
+import { GraphErrorBoundary } from '@/ui/graph/GraphErrorBoundary';
 import { PageViewTracker } from '@/components/analytics/PageViewTracker';
 
 export const metadata: Metadata = {
@@ -163,7 +164,9 @@ export default function GraphPage() {
         backdropFilter: 'blur(20px) saturate(160%)',
         WebkitBackdropFilter: 'blur(20px) saturate(160%)',
       }}>
-        <IntelligenceGraph />
+        <GraphErrorBoundary>
+          <IntelligenceGraph />
+        </GraphErrorBoundary>
       </div>
     </>
   );
