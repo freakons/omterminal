@@ -1,10 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { SignalCard } from '@/components/cards/SignalCard';
 import { NewsCard } from '@/components/cards/NewsCard';
 import type { SignalWithRankMeta } from '@/lib/signals/feedComposer';
 import type { Article } from '@/lib/data/news';
+import { readPreferences, trackCategoryClick } from '@/lib/personalization/userPreferences';
+import { personalizeSignals } from '@/lib/personalization/personalizeSignals';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Filter categories — must match signal.category values from the DB
@@ -42,18 +44,34 @@ interface IntelligenceFeedProps {
 export function IntelligenceFeed({ signals, articles }: IntelligenceFeedProps) {
   const [active, setActive] = useState<FilterKey>('all');
 
+  // ── Personalization ─────────────────────────────────────────────────────
+  // Read preferences client-side (after hydration) and re-rank signals.
+  // Falls back to global order on first visit or when no preferences exist.
+  const [rankedSignals, setRankedSignals] = useState<SignalWithRankMeta[]>(signals);
+
+  useEffect(() => {
+    const prefs = readPreferences();
+    setRankedSignals(personalizeSignals(signals, prefs));
+  }, [signals]);
+
+  // Track category filter clicks so preferences accumulate naturally
+  function handleCategoryClick(key: FilterKey) {
+    setActive(key);
+    trackCategoryClick(key);
+  }
+
   // Count signals per category for filter badges
-  const counts = signals.reduce<Record<string, number>>((acc, s) => {
+  const counts = rankedSignals.reduce<Record<string, number>>((acc, s) => {
     acc[s.category] = (acc[s.category] ?? 0) + 1;
     return acc;
   }, {});
 
-  // Section partitioning — signals are pre-ranked by feedComposer
+  // Section partitioning — signals are pre-ranked by feedComposer + personalization
   // top 5 by rank score → Top Signals section
   // remaining recent (≤72h) → Emerging Signals section
   // rest → More Signals section
-  const topSignals = signals.slice(0, 5);
-  const afterTop = signals.slice(5);
+  const topSignals = rankedSignals.slice(0, 5);
+  const afterTop = rankedSignals.slice(5);
   const emergingSignals = afterTop.filter(isRecentSignal);
   const remainingSignals = afterTop.filter((s) => !isRecentSignal(s));
 
@@ -62,8 +80,8 @@ export function IntelligenceFeed({ signals, articles }: IntelligenceFeedProps) {
 
   // Filtered flat list for category views
   const filtered = active === 'all'
-    ? signals
-    : signals.filter((s) => s.category === active);
+    ? rankedSignals
+    : rankedSignals.filter((s) => s.category === active);
 
   return (
     <>
@@ -75,7 +93,7 @@ export function IntelligenceFeed({ signals, articles }: IntelligenceFeedProps) {
             role="tab"
             aria-selected={active === key}
             className={`fp${active === key ? ' on' : ''}`}
-            onClick={() => setActive(key)}
+            onClick={() => handleCategoryClick(key)}
           >
             {label}
             {key !== 'all' && counts[key] != null && counts[key] > 0 && (
@@ -155,7 +173,7 @@ export function IntelligenceFeed({ signals, articles }: IntelligenceFeedProps) {
           <button
             className="fp on"
             style={{ marginTop: 12 }}
-            onClick={() => setActive('all')}
+            onClick={() => handleCategoryClick('all')}
           >
             Show all signals
           </button>
