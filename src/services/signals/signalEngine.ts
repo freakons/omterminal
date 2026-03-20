@@ -19,6 +19,8 @@
 
 import type { Event, Signal, SignalType, SignalDirection } from '@/types/intelligence';
 import { type SignalMode, getModeConfig, DEFAULT_SIGNAL_MODE } from '@/lib/signals/signalModes';
+import { computeSignificance, type ClusterContext } from '@/services/signals/signalSignificance';
+import { computeSourceTrust } from '@/lib/sourceTrust';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Detection rule configuration
@@ -325,6 +327,51 @@ function buildRecommendation(type: SignalType, cluster: Event[]): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Cluster-context derivation
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Derive story-cluster metadata from a raw event cluster.
+ *
+ * Since events carry only source names (not tier/weight from the DB), we
+ * infer source quality from computeSourceTrust() and map trust scores to
+ * the standard tier weights (1.0 / 0.7 / 0.4).
+ *
+ * This keeps computeSignificance as a pure function (no DB calls here).
+ */
+function deriveClusterContext(cluster: Event[]): ClusterContext {
+  const sources = cluster
+    .map((e) => e.sourceArticle?.source)
+    .filter((s): s is string => !!s);
+
+  const uniqueSources = [...new Set(sources)];
+  const uniqueSourceCount = Math.max(uniqueSources.length, 1);
+
+  // Map each unique source name → tier weight via trust scoring.
+  const tierWeights = uniqueSources.map((src) => {
+    const { trustScore } = computeSourceTrust(src);
+    if (trustScore >= 85) return 1.0; // Tier 1: official / government / primary
+    if (trustScore >= 70) return 0.7; // Tier 2: major media / well-known publications
+    return 0.4;                       // Tier 3: community, aggregators, unknown
+  });
+
+  const avgSourceWeight =
+    tierWeights.length > 0
+      ? Math.round((tierWeights.reduce((s, w) => s + w, 0) / tierWeights.length) * 1000) / 1000
+      : 0.7; // default tier 2 when no source info is available
+
+  // Count distinct tiers present in this cluster (1–3).
+  const tierSet = new Set(tierWeights.map((w) => (w >= 1.0 ? 1 : w >= 0.7 ? 2 : 3)));
+
+  return {
+    articleCount: cluster.length,
+    uniqueSourceCount,
+    avgSourceWeight,
+    sourceTierDiversity: tierSet.size,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Cross-signal deduplication within a single run
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -412,6 +459,19 @@ export function generateSignalsFromEvents(
       const confidence = computeConfidence(cluster.length, effectiveMinCount, cluster);
       const affectedEntities = [...new Set(cluster.map((e) => e.company))];
 
+      // Derive cluster-level metadata from the event cluster and compute significance.
+      const clusterContext = deriveClusterContext(cluster);
+      const sig = computeSignificance({
+        signalType:      rule.type,
+        confidenceScore: confidence,
+        sourceCount:     clusterContext.uniqueSourceCount,
+        eventCount:      cluster.length,
+        windowHours:     rule.windowMs / (1000 * 60 * 60),
+        entityCount:     affectedEntities.length,
+        entityNames:     affectedEntities,
+        clusterContext,
+      });
+
       const signal: Signal = {
         id: generateSignalId(rule.type, eventIds),
         type: rule.type,
@@ -424,6 +484,8 @@ export function generateSignalsFromEvents(
         recommendation: buildRecommendation(rule.type, cluster),
         createdAt: now,
         humanVerified: false,
+        significanceScore:  sig.significanceScore,
+        sourceSupportCount: sig.sourceSupportCount,
       };
 
       signals.push(signal);
