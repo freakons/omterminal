@@ -64,6 +64,16 @@ export interface ArticleInput {
    * Nullable for backward compatibility with older ingestion paths.
    */
   titleFingerprint?: string;
+  /**
+   * Source tier (1 | 2 | 3) derived from the source's reliability score.
+   * Nullable for backward compatibility with pre-weighting ingestion paths.
+   */
+  sourceTier?: 1 | 2 | 3;
+  /**
+   * Numeric weight for this article's source (1.0 | 0.7 | 0.4).
+   * Nullable for backward compatibility with pre-weighting ingestion paths.
+   */
+  sourceWeight?: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -137,7 +147,7 @@ export async function saveArticle(article: ArticleInput): Promise<boolean> {
 
   // Layer 2: Exact URL dedup via DB UNIQUE constraint
   const rows = await dbQuery<{ id: string }>`
-    INSERT INTO articles (id, title, source, url, published_at, category, title_fingerprint)
+    INSERT INTO articles (id, title, source, url, published_at, category, title_fingerprint, source_tier, source_weight)
     VALUES (
       ${article.id},
       ${article.title},
@@ -145,7 +155,9 @@ export async function saveArticle(article: ArticleInput): Promise<boolean> {
       ${article.url},
       ${article.publishedAt},
       ${article.category},
-      ${article.titleFingerprint ?? null}
+      ${article.titleFingerprint ?? null},
+      ${article.sourceTier ?? null},
+      ${article.sourceWeight ?? null}
     )
     ON CONFLICT (url) DO NOTHING
     RETURNING id

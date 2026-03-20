@@ -78,6 +78,22 @@ export interface Article {
   /** Raw tags or topics attached by the source */
   tags?: string[];
 
+  // ── Source weighting fields (populated by ingestion layer) ────────────────
+
+  /**
+   * Source tier derived from the source's reliability score.
+   *   1 — reliability 9–10 (model labs, primary official sources)
+   *   2 — reliability 7–8  (major media, established company blogs)
+   *   3 — reliability ≤ 6  (community, aggregators, social)
+   */
+  sourceTier?: 1 | 2 | 3;
+  /**
+   * Numeric weight corresponding to the source tier.
+   *   Tier 1 → 1.0  |  Tier 2 → 0.7  |  Tier 3 → 0.4
+   * Intended for use by scoring and signal systems — not applied to ranking yet.
+   */
+  sourceWeight?: number;
+
   // ── Normalization layer outputs (populated by articleNormalizer) ──────────
 
   /** Canonical category assigned by the normalization layer */
