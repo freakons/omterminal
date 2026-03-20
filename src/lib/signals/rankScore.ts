@@ -3,8 +3,8 @@
  *
  * Pure, deterministic scoring function that produces a single rank score
  * (0–100) for ordering signals across all endpoints.  Combines the
- * persisted significance score with freshness decay and optional
- * tracked-entity priority into a final ordering value.
+ * persisted significance score with freshness decay, cluster strength,
+ * and optional tracked-entity priority into a final ordering value.
  *
  * Design principles:
  *   • Deterministic — same inputs always produce the same output.
@@ -12,17 +12,23 @@
  *   • Explainable — returns a component breakdown alongside the score.
  *   • No double-counting — significance already incorporates confidence,
  *     source diversity, source trust, velocity, type weight, and entity
- *     spread.  Rank score adds only freshness decay and entity prominence
- *     as new, orthogonal factors.
+ *     spread.  Rank score adds only freshness decay, cluster corroboration
+ *     strength, and entity prominence as new, orthogonal factors.
  *   • No external I/O — pure function safe to call anywhere.
  *
  * Formula:
- *   rankScore = significance × W_sig + freshness × W_fresh + entityBoost × W_entity
+ *   rankScore = significance × W_sig
+ *             + freshness    × W_fresh
+ *             + clusterStrength × W_cluster
+ *             + novelty      × W_novelty
+ *             + entityBoost  × W_entity
  *
  * Where:
- *   significance  — persisted 0–100 from signalSignificance.ts (write-time composite)
- *   freshness     — exponential decay based on age: 100 × e^(-λ × ageHours)
- *   entityBoost   — 100 if the signal mentions a tracked/priority entity, else 0
+ *   significance     — persisted 0–100 from signalSignificance.ts (write-time composite)
+ *   freshness        — exponential decay based on age: 100 × e^(-λ × ageHours)
+ *   clusterStrength  — log2-scaled corroboration score based on sourceSupportCount (0–100)
+ *   novelty          — uniqueness vs. recent signals (0–100, default 80)
+ *   entityBoost      — 100 if the signal mentions a tracked/priority entity, else 0
  */
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -39,6 +45,13 @@ export interface RankScoreInput {
 
   /** Signal creation timestamp (ISO 8601 or epoch ms). */
   createdAt: string | number;
+
+  /**
+   * Number of distinct sources corroborating this signal.
+   * Used to compute cluster strength: more sources → higher boost.
+   * Null/undefined → treated as single-source (default strength ~33).
+   */
+  sourceSupportCount?: number | null;
 
   /** Whether this signal mentions a tracked/priority entity. */
   isTrackedEntity?: boolean;
@@ -59,6 +72,8 @@ export interface RankScoreBreakdown {
   significance: number;
   /** Freshness component before weighting (0–100). */
   freshness: number;
+  /** Cluster strength component before weighting (0–100). */
+  clusterStrength: number;
   /** Entity boost component before weighting (0 or 100). */
   entityBoost: number;
   /** Novelty component before weighting (0–100). */
@@ -80,13 +95,19 @@ export interface RankScoreResult {
 
 export const RANK_WEIGHTS = {
   /** Significance carries most of the ranking weight. */
-  significance: 0.55,
+  significance: 0.50,
   /** Freshness rewards recency without overwhelming quality. */
   freshness: 0.20,
+  /**
+   * Cluster strength rewards multi-source corroboration.
+   * Signals backed by 3+ distinct sources rank measurably higher than
+   * single-source signals of identical significance.
+   */
+  clusterStrength: 0.15,
   /** Novelty rewards unique signals and penalizes repetitive ones. */
-  novelty: 0.15,
+  novelty: 0.10,
   /** Entity boost gives a small lift to tracked-entity signals. */
-  entityBoost: 0.10,
+  entityBoost: 0.05,
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -117,6 +138,34 @@ const DECAY_LAMBDA = Math.LN2 / FRESHNESS_HALF_LIFE_HOURS;
 export function computeFreshness(ageHours: number): number {
   if (ageHours <= 0) return 100;
   return Math.round(100 * Math.exp(-DECAY_LAMBDA * ageHours));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cluster strength
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Compute cluster strength from source support count using a log2 scale.
+ *
+ * Rationale: each additional corroborating source adds meaningful weight, but
+ * with diminishing returns beyond ~5 sources.  A single source gets ~33/100;
+ * three sources get ~66/100; eight sources saturate at 100.
+ *
+ * Scale (approximate):
+ *   0 sources (unknown) → 33  (single-source assumption)
+ *   1 source            → 33
+ *   2 sources           → 53
+ *   3 sources           → 66
+ *   4 sources           → 77
+ *   5 sources           → 86
+ *   8 sources           → 100
+ *
+ * @param sourceSupportCount  Number of distinct corroborating sources (≥ 0).
+ * @returns                   Cluster strength score in [0, 100].
+ */
+export function computeClusterStrength(sourceSupportCount: number | null | undefined): number {
+  const count = sourceSupportCount != null && sourceSupportCount >= 0 ? sourceSupportCount : 1;
+  return Math.min(100, Math.round(Math.log2(count + 1) * 33.2));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -159,6 +208,9 @@ export function computeRankScore(input: RankScoreInput): RankScoreResult {
   const ageHours = Math.max(ageMs / (1000 * 60 * 60), 0);
   const freshness = computeFreshness(ageHours);
 
+  // ── Cluster strength (0–100) ─────────────────────────────────────────────
+  const clusterStrength = computeClusterStrength(input.sourceSupportCount);
+
   // ── Entity boost (0 or 100) ──────────────────────────────────────────────
   const entityBoost = input.isTrackedEntity ? 100 : 0;
 
@@ -167,10 +219,11 @@ export function computeRankScore(input: RankScoreInput): RankScoreResult {
 
   // ── Weighted composite ───────────────────────────────────────────────────
   const raw =
-    significance * RANK_WEIGHTS.significance +
-    freshness    * RANK_WEIGHTS.freshness +
-    novelty      * RANK_WEIGHTS.novelty +
-    entityBoost  * RANK_WEIGHTS.entityBoost;
+    significance    * RANK_WEIGHTS.significance +
+    freshness       * RANK_WEIGHTS.freshness +
+    clusterStrength * RANK_WEIGHTS.clusterStrength +
+    novelty         * RANK_WEIGHTS.novelty +
+    entityBoost     * RANK_WEIGHTS.entityBoost;
 
   const rankScore = Math.round(Math.min(Math.max(raw, 0), 100));
 
@@ -179,6 +232,7 @@ export function computeRankScore(input: RankScoreInput): RankScoreResult {
     breakdown: {
       significance,
       freshness,
+      clusterStrength,
       entityBoost,
       novelty,
       significanceFallback,

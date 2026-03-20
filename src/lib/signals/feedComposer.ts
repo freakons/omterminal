@@ -20,7 +20,7 @@
  */
 
 import type { Signal } from '@/data/mockSignals';
-import { computeRankScore, type RankScoreResult } from './rankScore';
+import { computeRankScore, type RankScoreResult, type RankScoreBreakdown } from './rankScore';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration
@@ -58,6 +58,13 @@ export interface FeedComposerConfig {
    * Enables the frontend to display significance indicators.  Default: true.
    */
   attachRankMetadata: boolean;
+
+  /**
+   * When true, attach full per-component rank score breakdown to each signal
+   * as `_rankBreakdown`.  Useful for inspecting why signals are ordered the
+   * way they are.  Default: false.
+   */
+  debug: boolean;
 }
 
 export const DEFAULT_FEED_CONFIG: FeedComposerConfig = {
@@ -66,6 +73,7 @@ export const DEFAULT_FEED_CONFIG: FeedComposerConfig = {
   minSignificance: 0,
   duplicateSimilarityThreshold: 0.7,
   attachRankMetadata: true,
+  debug: false,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -79,6 +87,11 @@ export interface SignalWithRankMeta extends Signal {
   _significanceTier?: 'critical' | 'high' | 'standard' | 'low';
   /** Number of corroborating sources (pass-through from signal). */
   _sourceCount?: number;
+  /**
+   * Per-component rank score breakdown.  Only present when
+   * `FeedComposerConfig.debug` is true.
+   */
+  _rankBreakdown?: RankScoreBreakdown;
 }
 
 /**
@@ -279,6 +292,7 @@ export function composeFeed(
       significanceScore: signal.significanceScore ?? null,
       confidenceScore: signal.confidence,
       createdAt: signal.date,
+      sourceSupportCount: signal.sourceSupportCount ?? null,
     });
     return { signal, rankResult: result };
   });
@@ -326,6 +340,7 @@ export function composeFeed(
         _rankScore: rank?.rankScore ?? 0,
         _significanceTier: getSignificanceTier(signal.significanceScore),
         _sourceCount: signal.sourceSupportCount ?? undefined,
+        ...(cfg.debug && rank ? { _rankBreakdown: rank.breakdown } : {}),
       };
     });
   }
