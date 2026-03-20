@@ -551,6 +551,21 @@ body {
   font-family: var(--fm); font-size: 11px; font-weight: 600;
   letter-spacing: 0.1em; text-transform: uppercase; color: var(--emerald-l);
 }
+/* System awareness layer — subtle, informational */
+.feed-system-status {
+  display: flex; align-items: center; gap: 6px; margin-top: 6px;
+}
+.feed-system-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--emerald-l); opacity: 0.7; flex-shrink: 0;
+}
+.feed-system-label {
+  font-family: var(--fm); font-size: 10px; font-weight: 400;
+  color: var(--text3); letter-spacing: 0.03em;
+}
+.feed-system-sep {
+  font-size: 10px; color: var(--text3); opacity: 0.4;
+}
 
 /* Feed empty state */
 .feed-empty { text-align: center; padding: 72px 24px; }
@@ -662,19 +677,41 @@ body {
 .eco-delta--down { color: var(--rose-l); }
 .eco-delta--flat { color: var(--text3); }
 @media (max-width: 768px) { .eco-grid { grid-template-columns: 1fr; } }
-/* V2 elevated panel variants — deeper, more distinct visual identity */
+/* Index panel title — slightly more weight to signal these are computed indices */
+.eco-panel-title--index {
+  font-size: 11px; letter-spacing: 0.06em;
+}
+/* Index badge variants */
+.eco-badge--index {
+  font-family: var(--fm); font-size: 9px; font-weight: 700;
+  letter-spacing: 0.10em; text-transform: uppercase;
+  padding: 2px 6px; border-radius: 3px; border: 1px solid;
+}
+.eco-badge--momentum {
+  background: rgba(5,150,105,0.12); color: var(--emerald-l); border-color: rgba(5,150,105,0.24);
+}
+.eco-badge--strategic {
+  background: rgba(124,58,237,0.12); color: #c084fc; border-color: rgba(124,58,237,0.26);
+}
+/* High-corroboration eco row variant */
+.eco-src-count--high {
+  color: var(--emerald-l); font-weight: 600;
+}
+/* V3 elevated panel variants — index panels carry more visual weight than standard panels */
 .eco-panel--momentum {
-  border-color: rgba(5,150,105,0.28);
+  border-color: rgba(5,150,105,0.34);
+  border-left: 2px solid rgba(5,150,105,0.6);
   background: var(--glass);
-  background-image: linear-gradient(155deg, rgba(5,150,105,0.07) 0%, rgba(5,150,105,0.02) 40%, transparent 65%);
-  box-shadow: var(--shadow-card), 0 0 20px rgba(5,150,105,0.06);
+  background-image: linear-gradient(155deg, rgba(5,150,105,0.09) 0%, rgba(5,150,105,0.03) 40%, transparent 65%);
+  box-shadow: var(--shadow-card), 0 0 24px rgba(5,150,105,0.09);
 }
 .eco-panel--momentum .eco-panel-title { color: var(--emerald-l); }
 .eco-panel--strategic {
-  border-color: rgba(124,58,237,0.28);
+  border-color: rgba(124,58,237,0.34);
+  border-left: 2px solid rgba(124,58,237,0.55);
   background: var(--glass);
-  background-image: linear-gradient(155deg, rgba(124,58,237,0.08) 0%, rgba(124,58,237,0.03) 40%, transparent 65%);
-  box-shadow: var(--shadow-card), 0 0 20px rgba(124,58,237,0.06);
+  background-image: linear-gradient(155deg, rgba(124,58,237,0.10) 0%, rgba(124,58,237,0.04) 40%, transparent 65%);
+  box-shadow: var(--shadow-card), 0 0 24px rgba(124,58,237,0.09);
 }
 .eco-panel--strategic .eco-panel-title { color: #c084fc; }
 /* Recency + corroboration inline labels for eco rows */
@@ -696,71 +733,78 @@ body {
 /* ══════════════════════════════════════
    INTELLIGENCE SIGNAL HERO
 ══════════════════════════════════════ */
-/* V2 intelligence signal hero — more premium, stronger visual presence */
+/* V3: intelligence signal hero — dominant anchor element, visually heavier than all panels */
 .intel-signal-hero {
-  margin-bottom: 24px; padding: 22px 24px;
+  margin-bottom: 32px; padding: 28px 30px;
   border-radius: var(--r);
-  background: linear-gradient(140deg, rgba(79,70,229,0.10) 0%, rgba(6,182,212,0.04) 55%, rgba(124,58,237,0.05) 100%);
-  border: 1px solid rgba(79,70,229,0.28);
-  border-left: 3px solid var(--indigo-l);
-  box-shadow: var(--shadow-card), var(--shadow-glow-indigo);
+  background: linear-gradient(140deg, rgba(79,70,229,0.13) 0%, rgba(6,182,212,0.05) 55%, rgba(124,58,237,0.07) 100%);
+  border: 1px solid rgba(79,70,229,0.36);
+  border-left: 4px solid var(--indigo-l);
+  box-shadow: var(--shadow-card), var(--shadow-glow-indigo), 0 8px 32px rgba(79,70,229,0.10);
   position: relative; overflow: hidden;
 }
-/* V2: subtle top shimmer line on the hero */
+/* Shimmer top line */
 .intel-signal-hero::after {
-  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
-  background: linear-gradient(90deg, rgba(129,140,248,0.5), rgba(6,182,212,0.25), transparent 70%);
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, rgba(129,140,248,0.7), rgba(6,182,212,0.35), transparent 70%);
   pointer-events: none;
 }
 .intel-signal-hero-header {
   display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
+/* V3: eyebrow more legible — slightly larger, stronger presence */
 .intel-signal-hero-eyebrow {
-  font-family: var(--fm); font-size: 9px; font-weight: 700;
-  letter-spacing: 0.14em; text-transform: uppercase;
+  font-family: var(--fm); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.16em; text-transform: uppercase;
   color: var(--indigo-l);
 }
 .intel-signal-hero-score {
-  display: flex; align-items: center; gap: 6px;
+  display: flex; align-items: center; gap: 8px;
 }
-/* V2: hero score — larger, more impactful */
+/* V3: score number — larger, unmistakable */
 .intel-signal-hero-score-num {
-  font-family: var(--fm); font-size: 20px; font-weight: 700; line-height: 1;
-  letter-spacing: -0.01em;
+  font-family: var(--fm); font-size: 26px; font-weight: 700; line-height: 1;
+  letter-spacing: -0.02em;
 }
 .intel-signal-hero-score-num--high { color: var(--emerald-l); }
 .intel-signal-hero-score-num--mid  { color: var(--amber-l); }
 .intel-signal-hero-score-num--low  { color: var(--text3); }
+/* V3: score label — color-matched to score tier */
 .intel-signal-hero-score-label {
-  font-family: var(--fm); font-size: 9px; font-weight: 600;
+  font-family: var(--fm); font-size: 10px; font-weight: 600;
   letter-spacing: 0.08em; text-transform: uppercase;
-  color: var(--text3); padding: 2px 5px;
-  border-radius: 3px; border: 1px solid var(--border);
+  color: var(--text2); padding: 3px 7px;
+  border-radius: 4px; border: 1px solid var(--border);
 }
 .intel-signal-hero-cat-row {
-  display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+  display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
 }
 .intel-signal-hero-entity {
-  font-family: var(--fm); font-size: 10px; font-weight: 500;
+  font-family: var(--fm); font-size: 11px; font-weight: 500;
   color: var(--text2); letter-spacing: 0.02em;
 }
 .intel-signal-hero-title-link { display: block; text-decoration: none; color: inherit; }
-/* V2: hero signal title — more impact */
+/* V3: hero title — clearly dominant over all panel text */
 .intel-signal-hero-title {
-  font-family: var(--fd); font-size: 22px; font-style: italic;
-  font-weight: 600; line-height: 1.26; letter-spacing: -0.018em;
-  color: var(--text); margin-bottom: 12px;
+  font-family: var(--fd); font-size: 26px; font-style: italic;
+  font-weight: 600; line-height: 1.24; letter-spacing: -0.020em;
+  color: var(--text); margin-bottom: 14px;
 }
 .intel-signal-hero-title-link:hover .intel-signal-hero-title { color: var(--indigo-l); }
-.intel-signal-hero-why { margin-bottom: 12px; }
+.intel-signal-hero-why { margin-bottom: 14px; }
 .intel-signal-hero-foot {
-  display: flex; align-items: center; gap: 12px; padding-top: 10px;
-  border-top: 1px solid var(--border);
+  display: flex; align-items: center; gap: 14px; padding-top: 12px;
+  border-top: 1px solid rgba(79,70,229,0.18);
 }
 .intel-signal-hero-date {
   font-family: var(--fm); font-size: 10px; font-weight: 500;
   color: var(--text3); letter-spacing: 0.03em;
+}
+/* High corroboration variant on hero */
+.corroboration-badge--high {
+  background: rgba(5,150,105,0.12); border: 1px solid rgba(5,150,105,0.24);
+  padding: 2px 7px; border-radius: 4px; font-weight: 600;
 }
 
 /* ══════════════════════════════════════

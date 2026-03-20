@@ -3,10 +3,15 @@ import type { SignalWithRankMeta } from '@/lib/signals/feedComposer';
 import { formatSignalAge } from '@/lib/signals/signalAge';
 
 function getScoreLabel(score: number): string {
-  if (score >= 75) return 'High';
-  if (score >= 55) return 'Strong';
-  if (score >= 35) return 'Moderate';
+  if (score >= 80) return 'High';
+  if (score >= 60) return 'Strong';
+  if (score >= 40) return 'Moderate';
   return 'Low';
+}
+
+function getCorroborationLabel(count: number): string {
+  if (count >= 5) return 'High corroboration';
+  return `${count} sources`;
 }
 
 function getScoreNumClass(score: number): string {
@@ -35,7 +40,7 @@ export function TopSignalHero({ signal }: TopSignalHeroProps) {
   return (
     <div className="intel-signal-hero">
       <div className="intel-signal-hero-header">
-        <span className="intel-signal-hero-eyebrow">Top Intelligence Signal</span>
+        <span className="intel-signal-hero-eyebrow">Today&apos;s Top Intelligence</span>
         <div className="intel-signal-hero-score">
           <span className={getScoreNumClass(score)}>{score}</span>
           <span className="intel-signal-hero-score-label">{label}</span>
@@ -63,9 +68,9 @@ export function TopSignalHero({ signal }: TopSignalHeroProps) {
       <div className="intel-signal-hero-foot">
         <span className="intel-signal-hero-date">{formatSignalAge(signal.date)}</span>
         {sourceCount != null && sourceCount > 1 && (
-          <span className="corroboration-badge">
+          <span className={sourceCount >= 5 ? 'corroboration-badge corroboration-badge--high' : 'corroboration-badge'}>
             <span className="indicator-dot indicator-dot--emerald" />
-            {sourceCount} sources
+            {getCorroborationLabel(sourceCount)}
           </span>
         )}
       </div>
