@@ -14,11 +14,39 @@
  *   const graph    = buildGraphData({ entities, events, signals });
  */
 
-import type { GraphData, GraphNode, GraphLink } from '@/data/mockGraph';
+import type { GraphData, GraphNode, GraphLink, NodeSubtype } from '@/data/mockGraph';
 import type { EntityProfile } from '@/data/mockEntities';
 import type { AiEvent } from '@/data/mockEvents';
 import type { Signal } from '@/data/mockSignals';
 import { computeAllRelationships, type EntityRelationship } from '@/lib/relationshipIntelligence';
+import { slugify } from '@/utils/sanitize';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Entity subtype inference
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Infers NodeSubtype from EntityProfile sector.
+ * Falls back to 'company' for unrecognised sectors.
+ */
+function inferEntitySubtype(entity: EntityProfile): NodeSubtype {
+  const sector = (entity.sector ?? '').toLowerCase();
+  if (
+    sector.includes('invest') ||
+    sector.includes('fund') ||
+    sector.includes('venture') ||
+    sector.includes('capital') ||
+    sector.includes(' vc ')
+  ) return 'investor';
+  if (
+    sector.includes('regulat') ||
+    sector.includes('government') ||
+    sector.includes('policy') ||
+    sector.includes('authority') ||
+    sector.includes('commission')
+  ) return 'regulator';
+  return 'company';
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Input shape
@@ -63,7 +91,14 @@ export function buildGraphData({ entities = [], events = [], signals = [] }: Gra
 
   // ── Entity nodes ──────────────────────────────────────────────────────────
   for (const e of entities) {
-    addNode({ id: e.id, type: 'entity', label: e.name });
+    addNode({
+      id:         e.id,
+      type:       'entity',
+      label:      e.name,
+      subtype:    inferEntitySubtype(e),
+      slug:       slugify(e.name),
+      importance: e.signalCount > 0 ? e.signalCount : undefined,
+    });
   }
 
   // ── Event nodes + links to entities ──────────────────────────────────────

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { staticSanityGraph, type GraphNode, type GraphLink, type GraphData, type NodeSubtype, type EdgeType } from '@/data/mockGraph';
 import { ConnectionExplanationPanel } from './ConnectionExplanationPanel';
+import { slugify } from '@/utils/sanitize';
 
 // SSR-safe useLayoutEffect — avoids React warnings during server render
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
@@ -22,17 +23,17 @@ const ForceGraph2D = dynamic<any>(
 
 /** Colour per node base type (fallback when subtype is absent) */
 const NODE_COLORS: Record<GraphNode['type'], string> = {
-  entity: '#3b82f6', // blue
-  event:  '#f59e0b', // amber
-  signal: '#10b981', // emerald
+  entity: '#60a5fa', // softer blue
+  event:  '#fbbf24', // softer amber
+  signal: '#22d3ee', // cyan
 };
 
 /** Colour per entity subtype — overrides NODE_COLORS for entity nodes */
 const NODE_SUBTYPE_COLORS: Record<NodeSubtype, string> = {
-  company:   '#3b82f6', // blue      — AI companies / labs
-  investor:  '#a855f7', // purple    — VCs / funds
-  model:     '#06b6d4', // cyan      — AI model entities
-  regulator: '#f97316', // orange    — government / policy bodies
+  company:   '#60a5fa', // soft blue    — AI companies / labs
+  investor:  '#a78bfa', // soft violet  — VCs / funds
+  model:     '#34d399', // teal-green   — AI model entities
+  regulator: '#fb923c', // orange       — government / policy bodies
 };
 
 /** Human-readable label per node type / subtype */
@@ -71,7 +72,7 @@ const EDGE_STYLES: Record<EdgeType, EdgeStyle> = {
   'funding':       { color: '#4ade80', dash: undefined,  label: 'Funding' },
   'competition':   { color: '#f87171', dash: [5, 3],     label: 'Competition' },
   'partnership':   { color: '#60a5fa', dash: undefined,  label: 'Partnership' },
-  'model-release': { color: '#c084fc', dash: undefined,  label: 'Model Release' },
+  'model-release': { color: '#a78bfa', dash: undefined,  label: 'Model Release' },
   'regulation':    { color: '#fb923c', dash: [7, 4],     label: 'Regulation' },
 };
 
@@ -104,6 +105,19 @@ function drawTriangle(ctx: CanvasRenderingContext2D, x: number, y: number, r: nu
 /** Node as enriched by force-graph at runtime */
 type RuntimeNode = GraphNode & { x?: number; y?: number };
 type RuntimeLink = GraphLink & { source: string | RuntimeNode; target: string | RuntimeNode };
+
+/**
+ * Returns the base node radius, scaled by importance.
+ * Entity radius grows with signal count so high-activity entities
+ * are visually dominant without hard-coding any specific node.
+ */
+function nodeRadius(node: GraphNode): number {
+  const base = node.type === 'entity' ? 6 : node.type === 'event' ? 4.5 : 3.5;
+  if (node.importance != null && node.importance > 0) {
+    return base + Math.min(7, Math.log(node.importance + 1) * 1.8);
+  }
+  return base;
+}
 
 function nodeId(n: string | RuntimeNode): string {
   return typeof n === 'object' ? n.id : n;
@@ -286,11 +300,15 @@ function sanitizeGraphData(raw: unknown): GraphData {
     ) {
       seen.add(id);
       // Shallow copy strips D3-added x/y/vx/vy so force sim starts fresh
+      const gnode = gn as unknown as GraphNode;
       nodes.push({
         id,
         type: type as GraphNode['type'],
         label,
-        ...((gn as unknown as GraphNode).subtype ? { subtype: (gn as unknown as GraphNode).subtype } : {}),
+        ...(gnode.subtype    ? { subtype:    gnode.subtype }    : {}),
+        ...(gnode.slug       ? { slug:       gnode.slug }       : {}),
+        ...(gnode.importance != null ? { importance: gnode.importance } : {}),
+        ...(gnode.momentum   != null ? { momentum:   gnode.momentum }   : {}),
       });
     }
   }
@@ -365,6 +383,8 @@ interface IntelligenceGraphProps {
 export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraphProps = {}) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const graphRef = useRef<any>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [hoveredNode, setHoveredNode] = useState<RuntimeNode | null>(null);
   const [hoveredLink, setHoveredLink] = useState<RuntimeLink | null>(null);
@@ -433,6 +453,34 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
     }
   }, [initialFocusId, graphData.nodes, focusedNode]);
 
+  // Tune D3 forces for a more stable, deliberate layout
+  const tuneForces = useCallback(() => {
+    const g = graphRef.current;
+    if (!g) return;
+    try {
+      const charge = g.d3Force('charge');
+      if (charge) {
+        charge.strength(-180);
+        charge.distanceMax(220);
+      }
+      const link = g.d3Force('link');
+      if (link) {
+        link.distance(65);
+        link.strength(0.4);
+      }
+      g.d3ReheatSimulation();
+    } catch { /* ignore — force access is best-effort */ }
+  }, []);
+
+  // Retune whenever graph data changes (new data or focus mode swap)
+  useEffect(() => {
+    if (graphData.nodes.length > 0) {
+      // Small delay so ForceGraph2D has mounted and registered forces
+      const t = setTimeout(tuneForces, 80);
+      return () => clearTimeout(t);
+    }
+  }, [graphData, tuneForces]);
+
   // Track mouse position for tooltip placement
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const rect = containerRef.current?.getBoundingClientRect();
@@ -441,51 +489,51 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
     }
   }, []);
 
-  // ── Focus mode: compute filtered graph data ────────────────────────────────
+  // ── displayGraphData: always the full graph (deep-copied to prevent D3 mutation) ──
+  //
+  // Focus mode no longer swaps graph data — instead, it dims non-focused nodes
+  // and edges via canvas opacity. This preserves the existing layout so there
+  // is no disorienting restart when clicking a node.
+
+  const displayGraphData = useMemo<GraphData>(() => {
+    return sanitizeGraphData(graphData);
+  }, [graphData]);
+
+  // ── Focus neighbourhood: nodes directly connected to the focused node ──────
 
   /**
-   * When a node is focused, filter the graph to show only:
-   *   - the focused node
-   *   - all directly connected nodes
-   *   - their shared links, sorted strongest-first
-   *
-   * IMPORTANT: Always deep-copy nodes and links so D3's force simulation
-   * can freely mutate source/target without corrupting the canonical graphData.
-   * Without this, switching focus modes causes crashes because D3 replaces
-   * string IDs with node object references in-place.
+   * Set of node IDs that are direct neighbours of the focused node.
+   * Used by paintNode / getLinkColor to calculate focus-dim opacity.
    */
-  const displayGraphData = useMemo<GraphData>(() => {
-    if (!focusedNodeId) {
-      // Deep-copy even in unfocused mode — D3 mutates source/target from
-      // strings to node objects, which breaks subsequent sanitizeGraphData calls.
-      return sanitizeGraphData(graphData);
-    }
-
-    const neighborIds = new Set<string>();
-    const focusedLinks: GraphLink[] = [];
-
+  const focusNeighbors = useMemo<Set<string>>(() => {
+    if (!focusedNodeId) return new Set();
+    const s = new Set<string>();
     for (const link of graphData.links) {
       const src = nodeId(link.source as string | RuntimeNode);
       const tgt = nodeId(link.target as string | RuntimeNode);
-      if (src === focusedNodeId) {
-        neighborIds.add(tgt);
-        focusedLinks.push(link as GraphLink);
-      } else if (tgt === focusedNodeId) {
-        neighborIds.add(src);
-        focusedLinks.push(link as GraphLink);
+      if (src === focusedNodeId) s.add(tgt);
+      if (tgt === focusedNodeId) s.add(src);
+    }
+    return s;
+  }, [focusedNodeId, graphData.links]);
+
+  // ── topConnections: strongest links for the ConnectionExplanationPanel ──────
+  //
+  // Previously derived from displayGraphData (filtered subgraph). Now derived
+  // from the full graphData directly so it works without a data swap.
+  const topConnections = useMemo<GraphLink[]>(() => {
+    if (!focusedNodeId) return [];
+    const related: GraphLink[] = [];
+    for (const link of graphData.links) {
+      const src = nodeId(link.source as string | RuntimeNode);
+      const tgt = nodeId(link.target as string | RuntimeNode);
+      if ((src === focusedNodeId || tgt === focusedNodeId) && (link.tier != null || link.strength != null)) {
+        related.push(link as GraphLink);
       }
     }
-
-    // Sort strongest relationships first
-    focusedLinks.sort((a, b) => (b.strength ?? 0) - (a.strength ?? 0));
-
-    const nodeIds = new Set([focusedNodeId, ...neighborIds]);
-    const focusedNodes = graphData.nodes.filter(n => nodeIds.has(n.id));
-
-    // Deep-copy through sanitize to strip D3 mutations (x/y/vx/vy on nodes,
-    // object refs on link source/target) so force sim starts fresh.
-    return sanitizeGraphData({ nodes: focusedNodes, links: focusedLinks });
-  }, [focusedNodeId, graphData]);
+    related.sort((a, b) => (b.strength ?? 0) - (a.strength ?? 0));
+    return related.slice(0, 3);
+  }, [focusedNodeId, graphData.links]);
 
   const resetFocus = useCallback(() => {
     setFocusedNodeId(null);
@@ -536,17 +584,7 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
     return connections.slice(0, 3);
   }, [hoveredId, displayGraphData]);
 
-  /**
-   * Top 2–3 entity↔entity links for the explanation panel.
-   * displayGraphData.links is already sorted strongest-first; we keep only
-   * links that carry relationship metadata (tier / strength).
-   */
-  const topConnections = useMemo<GraphLink[]>(() => {
-    if (!focusedNodeId) return [];
-    return displayGraphData.links
-      .filter((l) => l.tier != null || l.strength != null)
-      .slice(0, 3);
-  }, [focusedNodeId, displayGraphData.links]);
+  // (topConnections is now computed above in the focus neighbourhood section)
 
   /**
    * One-line insight summarising the strongest relationship.
@@ -632,88 +670,130 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
     (node: RuntimeNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
       if (!node || !ctx || typeof node.id !== 'string') return;
       try {
-      const color      = nodeColor(node);
-      const isHovered  = node.id === hoveredId;
-      const isNeighbor = neighbors.has(node.id);
-      const isFocused  = node.id === focusedNodeId;
-      const isDimmed   = !!hoveredId && !isHovered && !isNeighbor;
-      const r          = isFocused ? 10 : isHovered ? 9 : 6;
+        const color      = nodeColor(node);
+        const isHovered  = node.id === hoveredId;
+        const isNeighbor = neighbors.has(node.id);
+        const isFocused  = node.id === focusedNodeId;
+        const isInFocusZone = !focusedNodeId || isFocused || focusNeighbors.has(node.id);
 
-      const x = node.x ?? 0;
-      const y = node.y ?? 0;
+        // Two-level dimming: hover dims unfocused-neighbours; focus dims non-zone nodes
+        const isHoverDimmed = !!hoveredId && !isHovered && !isNeighbor;
+        const isFocusDimmed = !!focusedNodeId && !isInFocusZone;
+        const isDimmed      = isHoverDimmed || isFocusDimmed;
 
-      ctx.save();
-      ctx.globalAlpha = isDimmed ? 0.15 : 1;
+        // Importance-based radius — high-signal entities read as more significant
+        const baseR  = nodeRadius(node);
+        const r      = isFocused ? baseR + 3 : isHovered ? baseR + 2 : baseR;
 
-      // Glow — intensity reflects importance
-      ctx.shadowBlur  = isFocused ? 40 : isHovered ? 32 : 16;
-      ctx.shadowColor = color;
+        const x = node.x ?? 0;
+        const y = node.y ?? 0;
 
-      // ── Shape by node type ──────────────────────────────────────────────
-      // entity  → circle  (stable, central actors)
-      // event   → diamond (moment in time, sharp angles)
-      // signal  → triangle (directional trend / insight)
+        ctx.save();
+        ctx.globalAlpha = isDimmed ? 0.08 : 1;
 
-      ctx.fillStyle = color;
+        // ── Outer importance ring (entity nodes with high importance only) ──
+        if (
+          !isDimmed &&
+          node.type === 'entity' &&
+          node.importance != null &&
+          node.importance >= 4
+        ) {
+          ctx.beginPath();
+          ctx.arc(x, y, r + 5, 0, 2 * Math.PI);
+          ctx.strokeStyle = `${color}28`;
+          ctx.lineWidth   = 3;
+          ctx.shadowBlur  = 0;
+          ctx.stroke();
+        }
 
-      if (node.type === 'event') {
-        drawDiamond(ctx, x, y, r);
-      } else if (node.type === 'signal') {
-        drawTriangle(ctx, x, y, r);
-      } else {
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, 2 * Math.PI);
-      }
+        // Glow — intensity reflects state and importance
+        const importanceGlow = node.importance != null ? Math.min(8, node.importance * 1.2) : 0;
+        ctx.shadowBlur  = isFocused ? 42 : isHovered ? 34 : 14 + importanceGlow;
+        ctx.shadowColor = color;
 
-      ctx.fill();
+        // ── Shape by node type ────────────────────────────────────────────
+        ctx.fillStyle = color;
 
-      // Border ring — focused gets bright white, hovered gets semi-bright
-      ctx.shadowBlur = 0;
-      ctx.strokeStyle = isFocused
-        ? 'rgba(255,255,255,1)'
-        : isHovered
-          ? 'rgba(255,255,255,0.85)'
-          : 'rgba(255,255,255,0.18)';
-      ctx.lineWidth = isFocused ? 2 : isHovered ? 1.5 : 0.75;
+        if (node.type === 'event') {
+          drawDiamond(ctx, x, y, r);
+        } else if (node.type === 'signal') {
+          drawTriangle(ctx, x, y, r);
+        } else {
+          ctx.beginPath();
+          ctx.arc(x, y, r, 0, 2 * Math.PI);
+        }
 
-      if (node.type === 'event') {
-        drawDiamond(ctx, x, y, r);
-      } else if (node.type === 'signal') {
-        drawTriangle(ctx, x, y, r);
-      } else {
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, 2 * Math.PI);
-      }
+        ctx.fill();
 
-      ctx.stroke();
+        // Border ring
+        ctx.shadowBlur  = 0;
+        ctx.strokeStyle = isFocused
+          ? 'rgba(255,255,255,1)'
+          : isHovered
+            ? 'rgba(255,255,255,0.88)'
+            : isInFocusZone && focusedNodeId
+              ? `${color}90`
+              : 'rgba(255,255,255,0.16)';
+        ctx.lineWidth = isFocused ? 2.2 : isHovered ? 1.8 : 0.8;
 
-      // Label
-      const fontSize   = Math.max(10, 11 / globalScale);
-      ctx.font         = `500 ${fontSize}px DM Sans, sans-serif`;
-      ctx.textAlign    = 'center';
-      ctx.textBaseline = 'top';
-      ctx.fillStyle    = isFocused || isHovered ? '#ffffff' : 'rgba(238,238,248,0.78)';
-      ctx.fillText(node.label, x, y + r + 3);
+        if (node.type === 'event') {
+          drawDiamond(ctx, x, y, r);
+        } else if (node.type === 'signal') {
+          drawTriangle(ctx, x, y, r);
+        } else {
+          ctx.beginPath();
+          ctx.arc(x, y, r, 0, 2 * Math.PI);
+        }
 
-      ctx.restore();
+        ctx.stroke();
+
+        // Label — only show for non-dimmed nodes, scale visibility by zoom
+        if (!isDimmed) {
+          const fontSize = Math.max(9, 10.5 / globalScale);
+          ctx.font         = isFocused || isHovered
+            ? `600 ${fontSize}px DM Sans, sans-serif`
+            : `500 ${fontSize}px DM Sans, sans-serif`;
+          ctx.textAlign    = 'center';
+          ctx.textBaseline = 'top';
+
+          // Text shadow for legibility against graph background
+          ctx.shadowBlur  = 4;
+          ctx.shadowColor = 'rgba(0,0,0,0.9)';
+          ctx.fillStyle   = isFocused || isHovered
+            ? '#ffffff'
+            : isInFocusZone && focusedNodeId
+              ? 'rgba(240,240,250,0.95)'
+              : 'rgba(240,240,250,0.62)';
+          ctx.fillText(node.label, x, y + r + 3);
+        }
+
+        ctx.restore();
       } catch (err) {
         console.warn('[IntelligenceGraph] paintNode error:', err);
       }
     },
-    [hoveredId, neighbors, focusedNodeId],
+    [hoveredId, neighbors, focusedNodeId, focusNeighbors],
   );
 
   const getLinkColor = useCallback(
     (link: RuntimeLink) => {
-      if (!link) return 'rgba(255,255,255,0.1)';
+      if (!link) return 'rgba(255,255,255,0.06)';
       try {
         const src = nodeId(link.source as string | RuntimeNode);
         const tgt = nodeId(link.target as string | RuntimeNode);
 
+        // Hover state — brighten connected edges, near-hide others
         if (hoveredId) {
           return src === hoveredId || tgt === hoveredId
-            ? 'rgba(255,255,255,0.65)'
-            : 'rgba(255,255,255,0.025)';
+            ? 'rgba(255,255,255,0.7)'
+            : 'rgba(255,255,255,0.02)';
+        }
+
+        // Focus state — brighten edges within focus zone, dim everything else
+        if (focusedNodeId) {
+          const inZone = src === focusedNodeId || tgt === focusedNodeId ||
+            (focusNeighbors.has(src) && focusNeighbors.has(tgt));
+          if (!inZone) return 'rgba(255,255,255,0.03)';
         }
 
         const alpha = baseLinkAlpha(link);
@@ -721,44 +801,49 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
         const edgeStyle = getEdgeStyle(link);
         if (edgeStyle) {
           const hex = edgeStyle.color.replace('#', '');
-          const r = parseInt(hex.substring(0, 2), 16);
-          const g = parseInt(hex.substring(2, 4), 16);
-          const b = parseInt(hex.substring(4, 6), 16);
-          return `rgba(${r},${g},${b},${alpha})`;
+          const rr = parseInt(hex.substring(0, 2), 16);
+          const gg = parseInt(hex.substring(2, 4), 16);
+          const bb = parseInt(hex.substring(4, 6), 16);
+          return `rgba(${rr},${gg},${bb},${alpha})`;
         }
 
-        if (link.tier) return `rgba(147,197,253,${alpha})`;
+        if (link.tier) return `rgba(148,163,184,${alpha})`;
 
         return `rgba(255,255,255,${alpha})`;
       } catch {
-        return 'rgba(255,255,255,0.1)';
+        return 'rgba(255,255,255,0.06)';
       }
     },
-    [hoveredId],
+    [hoveredId, focusedNodeId, focusNeighbors],
   );
 
   const getLinkWidth = useCallback(
     (link: RuntimeLink) => {
-      if (!link) return 0.6;
+      if (!link) return 0.5;
       try {
         const src = nodeId(link.source as string | RuntimeNode);
         const tgt = nodeId(link.target as string | RuntimeNode);
 
         if (hoveredId) {
-          return src === hoveredId || tgt === hoveredId ? 2.5 : 0.25;
+          return src === hoveredId || tgt === hoveredId ? 2.5 : 0.2;
         }
 
-        if (link.strength != null) return Math.max(0.6, link.strength / 100 * 2.2);
-        if (link.tier === 'strong')   return 2.0;
-        if (link.tier === 'moderate') return 1.4;
-        if (link.edgeType) return 1.2;
+        if (focusedNodeId) {
+          const inZone = src === focusedNodeId || tgt === focusedNodeId;
+          if (!inZone) return 0.2;
+        }
 
-        return 0.6;
+        if (link.strength != null) return Math.max(0.7, link.strength / 100 * 2.4);
+        if (link.tier === 'strong')   return 2.2;
+        if (link.tier === 'moderate') return 1.5;
+        if (link.edgeType) return 1.3;
+
+        return 0.7;
       } catch {
-        return 0.6;
+        return 0.5;
       }
     },
-    [hoveredId],
+    [hoveredId, focusedNodeId],
   );
 
   /** Dashed line patterns per edge type — undefined means solid */
@@ -777,7 +862,7 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
   const handleNodeClick = useCallback((node: RuntimeNode) => {
     if (!node || typeof node.id !== 'string') return;
     if (node.type === 'entity') {
-      // Always enter focus mode on entity click — toggle off if already focused
+      // Toggle focus mode — click focused entity again to exit
       if (focusedNodeId === node.id) {
         resetFocus();
       } else {
@@ -787,7 +872,7 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
     } else if (node.type === 'signal') {
       router.push(`/signals/${node.id}`);
     }
-    // event nodes: graceful no-op
+    // event nodes: no dedicated page yet
   }, [router, focusedNodeId, resetFocus]);
 
   const handleNodeHover = useCallback((node: RuntimeNode | null) => {
@@ -820,17 +905,17 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
   const TOOLTIP_STYLE: React.CSSProperties = {
     position: 'absolute',
     zIndex: 20,
-    background: 'rgba(15,15,25,0.92)',
+    background: 'rgba(8,8,20,0.96)',
     border: '1px solid rgba(255,255,255,0.1)',
-    borderRadius: 8,
-    padding: '10px 14px',
+    borderRadius: 10,
+    padding: '11px 15px',
     fontSize: '0.76rem',
     color: 'rgba(238,238,248,0.85)',
-    backdropFilter: 'blur(12px)',
+    backdropFilter: 'blur(16px)',
     pointerEvents: 'none',
-    maxWidth: 240,
+    maxWidth: 248,
     lineHeight: 1.55,
-    boxShadow: '0 4px 24px rgba(0,0,0,0.5)',
+    boxShadow: '0 6px 32px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,255,255,0.04)',
   };
 
   // Offset tooltip from cursor to avoid flickering
@@ -840,30 +925,54 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
   const nodeTooltip = hoveredNode && (
     <div style={{ ...TOOLTIP_STYLE, left: tooltipX, top: tooltipY }}>
       {/* Label */}
-      <div style={{ fontWeight: 600, color: nodeColor(hoveredNode), marginBottom: 3 }}>
+      <div style={{ fontWeight: 600, color: nodeColor(hoveredNode), marginBottom: 4, fontSize: '0.8rem' }}>
         {hoveredNode.label}
       </div>
 
-      {/* Type badge with shape indicator */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-        {hoveredNode.type === 'event' ? (
-          <svg width={9} height={9} viewBox="0 0 9 9">
-            <polygon points="4.5,0 9,4.5 4.5,9 0,4.5" fill={nodeColor(hoveredNode)} />
-          </svg>
-        ) : hoveredNode.type === 'signal' ? (
-          <svg width={9} height={9} viewBox="0 0 9 9">
-            <polygon points="4.5,0 9,9 0,9" fill={nodeColor(hoveredNode)} />
-          </svg>
-        ) : (
-          <svg width={9} height={9} viewBox="0 0 9 9">
-            <circle cx={4.5} cy={4.5} r={4.5} fill={nodeColor(hoveredNode)} />
-          </svg>
+      {/* Type badge + importance/momentum */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 2 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          {hoveredNode.type === 'event' ? (
+            <svg width={9} height={9} viewBox="0 0 9 9">
+              <polygon points="4.5,0 9,4.5 4.5,9 0,4.5" fill={nodeColor(hoveredNode)} />
+            </svg>
+          ) : hoveredNode.type === 'signal' ? (
+            <svg width={9} height={9} viewBox="0 0 9 9">
+              <polygon points="4.5,0 9,9 0,9" fill={nodeColor(hoveredNode)} />
+            </svg>
+          ) : (
+            <svg width={9} height={9} viewBox="0 0 9 9">
+              <circle cx={4.5} cy={4.5} r={4.5} fill={nodeColor(hoveredNode)} />
+            </svg>
+          )}
+          <span style={{ color: 'rgba(238,238,248,0.5)', fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+            {hoveredNode.type === 'entity' && hoveredNode.subtype
+              ? NODE_SUBTYPE_LABELS[hoveredNode.subtype]
+              : NODE_TYPE_LABELS[hoveredNode.type]}
+          </span>
+        </div>
+        {hoveredNode.importance != null && hoveredNode.importance > 0 && (
+          <span style={{
+            fontSize: '0.63rem',
+            color: 'rgba(34,211,238,0.8)',
+            background: 'rgba(34,211,238,0.08)',
+            border: '1px solid rgba(34,211,238,0.18)',
+            borderRadius: 4,
+            padding: '0 5px',
+            letterSpacing: '0.04em',
+          }}>
+            {hoveredNode.importance} signal{hoveredNode.importance !== 1 ? 's' : ''}
+          </span>
         )}
-        <span style={{ color: 'rgba(238,238,248,0.5)', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-          {hoveredNode.type === 'entity' && hoveredNode.subtype
-            ? NODE_SUBTYPE_LABELS[hoveredNode.subtype]
-            : NODE_TYPE_LABELS[hoveredNode.type]}
-        </span>
+        {hoveredNode.momentum != null && (
+          <span style={{
+            fontSize: '0.63rem',
+            color: 'rgba(251,191,36,0.85)',
+            letterSpacing: '0.04em',
+          }}>
+            ↑ {hoveredNode.momentum} momentum
+          </span>
+        )}
       </div>
 
       {/* Relationship explanation — top connections with edge context */}
@@ -1016,6 +1125,9 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
 
   // ── Focus mode indicator ──────────────────────────────────────────────────
 
+  const focusNodeColor = focusedNode ? nodeColor(focusedNode as RuntimeNode) : '#60a5fa';
+  const focusConnectionCount = focusNeighbors.size;
+
   const focusIndicator = focusedNode && (
     <div style={{
       position: 'absolute',
@@ -1026,47 +1138,48 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
       display: 'flex',
       alignItems: 'center',
       gap: 10,
-      background: 'rgba(15,15,30,0.88)',
-      border: '1px solid rgba(59,130,246,0.35)',
-      borderRadius: 8,
-      padding: '7px 14px',
+      background: 'rgba(8,8,20,0.92)',
+      border: `1px solid ${focusNodeColor}30`,
+      borderRadius: 9,
+      padding: '8px 16px',
       fontSize: '0.78rem',
       color: 'rgba(238,238,248,0.85)',
-      backdropFilter: 'blur(12px)',
-      boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
+      backdropFilter: 'blur(16px)',
+      boxShadow: `0 4px 28px rgba(0,0,0,0.55), 0 0 0 1px ${focusNodeColor}12`,
       whiteSpace: 'nowrap',
     }}>
-      {/* Pulsing dot */}
+      {/* Color-coded dot matching node color */}
       <span style={{
         display: 'inline-block',
-        width: 7,
-        height: 7,
+        width: 8,
+        height: 8,
         borderRadius: '50%',
-        background: '#3b82f6',
-        boxShadow: '0 0 8px #3b82f6',
+        background: focusNodeColor,
+        boxShadow: `0 0 8px ${focusNodeColor}`,
         flexShrink: 0,
       }} />
 
       <span>
-        <span style={{ color: 'rgba(238,238,248,0.45)', marginRight: 4 }}>Focused on</span>
-        <span style={{ fontWeight: 600, color: '#93c5fd' }}>{focusedNode.label}</span>
-        <span style={{ color: 'rgba(238,238,248,0.35)', marginLeft: 6 }}>
-          · {displayGraphData.nodes.length - 1} connection{displayGraphData.nodes.length !== 2 ? 's' : ''}
+        <span style={{ color: 'rgba(238,238,248,0.38)', marginRight: 4, fontSize: '0.73rem' }}>Focus</span>
+        <span style={{ fontWeight: 600, color: focusNodeColor }}>{focusedNode.label}</span>
+        <span style={{ color: 'rgba(238,238,248,0.28)', marginLeft: 6, fontSize: '0.72rem' }}>
+          · {focusConnectionCount} connection{focusConnectionCount !== 1 ? 's' : ''}
         </span>
       </span>
 
       {/* Open entity page or navigate to full graph in embedded mode */}
       <button
-        onClick={() => router.push(initialFocusId ? '/graph' : `/entity/${focusedNode.id}`)}
+        onClick={() => router.push(initialFocusId ? '/graph' : `/entity/${focusedNode.slug ?? slugify(focusedNode.label)}`)}
         style={{
-          background: 'rgba(59,130,246,0.15)',
-          border: '1px solid rgba(59,130,246,0.3)',
-          borderRadius: 5,
-          color: '#93c5fd',
-          fontSize: '0.72rem',
-          padding: '2px 9px',
+          background: `${focusNodeColor}18`,
+          border: `1px solid ${focusNodeColor}35`,
+          borderRadius: 6,
+          color: focusNodeColor,
+          fontSize: '0.7rem',
+          padding: '3px 10px',
           cursor: 'pointer',
           letterSpacing: '0.03em',
+          fontWeight: 500,
         }}
       >
         {initialFocusId ? 'Full graph →' : 'Open page →'}
@@ -1076,18 +1189,18 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
       <button
         onClick={resetFocus}
         style={{
-          background: 'rgba(255,255,255,0.06)',
-          border: '1px solid rgba(255,255,255,0.12)',
-          borderRadius: 5,
-          color: 'rgba(238,238,248,0.55)',
-          fontSize: '0.72rem',
-          padding: '2px 9px',
+          background: 'rgba(255,255,255,0.05)',
+          border: '1px solid rgba(255,255,255,0.1)',
+          borderRadius: 6,
+          color: 'rgba(238,238,248,0.42)',
+          fontSize: '0.7rem',
+          padding: '3px 10px',
           cursor: 'pointer',
           letterSpacing: '0.03em',
         }}
         title="Press Escape to reset"
       >
-        Reset  <span style={{ opacity: 0.45, fontSize: '0.65rem' }}>Esc</span>
+        Reset <span style={{ opacity: 0.4, fontSize: '0.62rem' }}>Esc</span>
       </button>
     </div>
   );
@@ -1101,65 +1214,95 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
     [graphData.nodes],
   );
 
-  const entitySelectorPanel = !focusedNodeId && !compact && entityNodes.length > 0 && (
+  // Sort entity nodes by importance desc so highest-signal entities appear first
+  const sortedEntityNodes = useMemo(
+    () => [...entityNodes].sort((a, b) => (b.importance ?? 0) - (a.importance ?? 0)),
+    [entityNodes],
+  );
+
+  const entitySelectorPanel = !focusedNodeId && !compact && sortedEntityNodes.length > 0 && (
     <div style={{
       position: 'absolute',
       top: 16,
       left: 16,
       zIndex: 10,
-      maxWidth: 180,
+      maxWidth: 190,
     }}>
       <div style={{
-        fontSize: '0.62rem',
-        color: 'rgba(238,238,248,0.28)',
+        fontSize: '0.6rem',
+        color: 'rgba(238,238,248,0.24)',
         textTransform: 'uppercase',
-        letterSpacing: '0.08em',
-        marginBottom: 6,
+        letterSpacing: '0.1em',
+        marginBottom: 7,
+        paddingLeft: 2,
       }}>
-        Focus on
+        Entities
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {entityNodes.slice(0, 8).map(node => (
-          <button
-            key={node.id}
-            onClick={() => {
-              setFocusedNodeId(node.id);
-              setFocusedNode(node as RuntimeNode);
-            }}
-            style={{
-              background: 'rgba(15,15,25,0.75)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              borderRadius: 5,
-              color: 'rgba(238,238,248,0.65)',
-              fontSize: '0.72rem',
-              padding: '4px 9px',
-              cursor: 'pointer',
-              textAlign: 'left',
-              letterSpacing: '0.02em',
-              backdropFilter: 'blur(8px)',
-              transition: 'background 0.12s, border-color 0.12s, color 0.12s',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              maxWidth: '100%',
-            }}
-            onMouseEnter={e => {
-              (e.currentTarget as HTMLButtonElement).style.background = 'rgba(59,130,246,0.14)';
-              (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(59,130,246,0.3)';
-              (e.currentTarget as HTMLButtonElement).style.color = '#93c5fd';
-            }}
-            onMouseLeave={e => {
-              (e.currentTarget as HTMLButtonElement).style.background = 'rgba(15,15,25,0.75)';
-              (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(255,255,255,0.08)';
-              (e.currentTarget as HTMLButtonElement).style.color = 'rgba(238,238,248,0.65)';
-            }}
-          >
-            {node.label}
-          </button>
-        ))}
-        {entityNodes.length > 8 && (
-          <span style={{ fontSize: '0.65rem', color: 'rgba(238,238,248,0.22)', paddingLeft: 4 }}>
-            +{entityNodes.length - 8} more — click in graph
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        {sortedEntityNodes.slice(0, 10).map(node => {
+          const dotColor = nodeColor(node as GraphNode);
+          return (
+            <button
+              key={node.id}
+              onClick={() => {
+                setFocusedNodeId(node.id);
+                setFocusedNode(node as RuntimeNode);
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                background: 'rgba(10,10,22,0.78)',
+                border: '1px solid rgba(255,255,255,0.07)',
+                borderRadius: 6,
+                color: 'rgba(238,238,248,0.58)',
+                fontSize: '0.72rem',
+                padding: '5px 10px',
+                cursor: 'pointer',
+                textAlign: 'left',
+                letterSpacing: '0.02em',
+                backdropFilter: 'blur(10px)',
+                transition: 'all 0.12s',
+                overflow: 'hidden',
+                maxWidth: '100%',
+              }}
+              onMouseEnter={e => {
+                const el = e.currentTarget as HTMLButtonElement;
+                el.style.background = `${dotColor}14`;
+                el.style.borderColor = `${dotColor}35`;
+                el.style.color = '#f0f0fa';
+              }}
+              onMouseLeave={e => {
+                const el = e.currentTarget as HTMLButtonElement;
+                el.style.background = 'rgba(10,10,22,0.78)';
+                el.style.borderColor = 'rgba(255,255,255,0.07)';
+                el.style.color = 'rgba(238,238,248,0.58)';
+              }}
+            >
+              {/* Subtype dot */}
+              <span style={{
+                display: 'inline-block',
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                background: dotColor,
+                flexShrink: 0,
+                boxShadow: `0 0 5px ${dotColor}70`,
+              }} />
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {node.label}
+              </span>
+              {node.importance != null && node.importance > 0 && (
+                <span style={{ color: 'rgba(238,238,248,0.28)', fontSize: '0.62rem', flexShrink: 0 }}>
+                  {node.importance}
+                </span>
+              )}
+            </button>
+          );
+        })}
+        {sortedEntityNodes.length > 10 && (
+          <span style={{ fontSize: '0.62rem', color: 'rgba(238,238,248,0.2)', paddingLeft: 6, marginTop: 2 }}>
+            +{sortedEntityNodes.length - 10} more — click in graph
           </span>
         )}
       </div>
@@ -1309,10 +1452,11 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
         null
       ) : (
         <ForceGraph2D
+          ref={graphRef}
           graphData={displayGraphData}
           width={dimensions.width}
           height={dimensions.height}
-          backgroundColor="transparent"
+          backgroundColor="#080814"
           nodeId="id"
           nodeCanvasObject={paintNode}
           nodeCanvasObjectMode={() => 'replace'}
@@ -1325,9 +1469,9 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
           linkColor={getLinkColor}
           linkWidth={getLinkWidth}
           linkLineDash={getLinkDash}
-          cooldownTicks={120}
-          d3AlphaDecay={0.02}
-          d3VelocityDecay={0.3}
+          cooldownTicks={180}
+          d3AlphaDecay={0.025}
+          d3VelocityDecay={0.42}
         />
       )}
     </div>

@@ -6,55 +6,52 @@ import { PageViewTracker } from '@/components/analytics/PageViewTracker';
 export const metadata: Metadata = {
   title: 'AI Ecosystem Graph',
   description:
-    'Interactive force-directed map of relationships between AI companies, events, and signals.',
+    'Interactive intelligence map of relationships between AI companies, models, investors, and regulatory signals.',
 };
 
 // ── Node legend ────────────────────────────────────────────────────────────────
 
 const NODE_LEGEND = [
-  // Entity subtypes — circles
-  { label: 'Company',   color: '#3b82f6', shape: 'circle'   as const },
-  { label: 'Investor',  color: '#a855f7', shape: 'circle'   as const },
-  { label: 'Regulator', color: '#f97316', shape: 'circle'   as const },
-  // Events — diamond
-  { label: 'Event',     color: '#f59e0b', shape: 'diamond'  as const },
-  // Signals — triangle
-  { label: 'Signal',    color: '#10b981', shape: 'triangle' as const },
+  { label: 'Company',   color: '#60a5fa', shape: 'circle'   as const },
+  { label: 'Investor',  color: '#a78bfa', shape: 'circle'   as const },
+  { label: 'Model',     color: '#34d399', shape: 'circle'   as const },
+  { label: 'Regulator', color: '#fb923c', shape: 'circle'   as const },
+  { label: 'Event',     color: '#fbbf24', shape: 'diamond'  as const },
+  { label: 'Signal',    color: '#22d3ee', shape: 'triangle' as const },
 ] as const;
 
 // ── Edge type legend ───────────────────────────────────────────────────────────
 
 const EDGE_LEGEND = [
-  { label: 'Funding',       color: '#4ade80', dash: '',      width: 2   },
-  { label: 'Partnership',   color: '#60a5fa', dash: '',      width: 2   },
-  { label: 'Model Release', color: '#c084fc', dash: '',      width: 2   },
-  { label: 'Competition',   color: '#f87171', dash: '5,3',   width: 2   },
-  { label: 'Regulation',    color: '#fb923c', dash: '7,4',   width: 2   },
-  { label: 'Co-occurrence', color: '#93c5fd', dash: '',      width: 1.5 },
+  { label: 'Funding',       color: '#4ade80', dash: '',    width: 2   },
+  { label: 'Partnership',   color: '#60a5fa', dash: '',    width: 2   },
+  { label: 'Model Release', color: '#a78bfa', dash: '',    width: 2   },
+  { label: 'Competition',   color: '#f87171', dash: '5,3', width: 2   },
+  { label: 'Regulation',    color: '#fb923c', dash: '7,4', width: 2   },
 ] as const;
 
 // ── Shape SVG helpers ──────────────────────────────────────────────────────────
 
 function NodeShape({ shape, color }: { shape: 'circle' | 'diamond' | 'triangle'; color: string }) {
-  const s = 12;
-  const glow = `drop-shadow(0 0 4px ${color})`;
+  const s = 10;
+  const glow = `drop-shadow(0 0 3px ${color}90)`;
   if (shape === 'diamond') {
     return (
-      <svg width={s} height={s} viewBox="0 0 12 12" style={{ filter: glow, flexShrink: 0 }}>
-        <polygon points="6,0 12,6 6,12 0,6" fill={color} />
+      <svg width={s} height={s} viewBox="0 0 10 10" style={{ filter: glow, flexShrink: 0 }}>
+        <polygon points="5,0 10,5 5,10 0,5" fill={color} />
       </svg>
     );
   }
   if (shape === 'triangle') {
     return (
-      <svg width={s} height={s} viewBox="0 0 12 12" style={{ filter: glow, flexShrink: 0 }}>
-        <polygon points="6,1 11,11 1,11" fill={color} />
+      <svg width={s} height={s} viewBox="0 0 10 10" style={{ filter: glow, flexShrink: 0 }}>
+        <polygon points="5,0.5 9.5,9.5 0.5,9.5" fill={color} />
       </svg>
     );
   }
   return (
-    <svg width={s} height={s} viewBox="0 0 12 12" style={{ filter: glow, flexShrink: 0 }}>
-      <circle cx={6} cy={6} r={5.5} fill={color} />
+    <svg width={s} height={s} viewBox="0 0 10 10" style={{ filter: glow, flexShrink: 0 }}>
+      <circle cx={5} cy={5} r={4.5} fill={color} />
     </svg>
   );
 }
@@ -63,110 +60,201 @@ export default function GraphPage() {
   return (
     <>
       <PageViewTracker path="/graph" />
-      {/* Page header */}
-      <div style={{ marginBottom: 20 }}>
-        <h1 style={{
-          fontFamily: 'Instrument Serif, Georgia, serif',
-          fontSize: 'clamp(1.6rem, 3vw, 2.25rem)',
-          fontWeight: 400,
-          color: 'var(--text)',
-          marginBottom: 8,
-          lineHeight: 1.2,
-        }}>
-          AI Ecosystem{' '}
-          <span style={{ color: 'var(--cyan-l, #67e8f9)' }}>Graph</span>
-        </h1>
+
+      {/* ── Page header ──────────────────────────────────────────────────────── */}
+      <div style={{ marginBottom: 18 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 7, flexWrap: 'wrap' }}>
+          <h1 style={{
+            fontFamily: 'Instrument Serif, Georgia, serif',
+            fontSize: 'clamp(1.55rem, 2.8vw, 2.1rem)',
+            fontWeight: 400,
+            color: 'var(--text)',
+            margin: 0,
+            lineHeight: 1.15,
+            letterSpacing: '-0.01em',
+          }}>
+            AI Ecosystem{' '}
+            <span style={{ color: 'var(--cyan-l, #67e8f9)', fontStyle: 'italic' }}>Graph</span>
+          </h1>
+          {/* Live badge */}
+          <span style={{
+            fontFamily: 'DM Mono, monospace',
+            fontSize: '0.62rem',
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            color: 'rgba(52,211,153,0.7)',
+            border: '1px solid rgba(52,211,153,0.22)',
+            borderRadius: 5,
+            padding: '1px 7px',
+            verticalAlign: 'middle',
+          }}>
+            Intelligence
+          </span>
+        </div>
         <p style={{
           color: 'var(--text2)',
-          fontSize: '0.9rem',
+          fontSize: '0.88rem',
           margin: 0,
           maxWidth: 520,
+          lineHeight: 1.6,
         }}>
-          Intelligence map of AI companies, models, investors, and regulatory signals.
-          Click any entity to focus and explore its ecosystem. Hover to highlight connections.
-          Press <kbd style={{ fontFamily: 'monospace', fontSize: '0.78rem', padding: '0 4px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 3 }}>Esc</kbd> or click Reset to return to full view.
+          Signal-driven map of AI companies, models, investors, and regulatory actors.
+          Node size reflects signal activity. Click any entity to isolate its ecosystem.
         </p>
       </div>
 
-      {/* Legend panel */}
+      {/* ── Legend bar ───────────────────────────────────────────────────────── */}
       <div style={{
         display: 'flex',
-        gap: 24,
-        marginBottom: 16,
-        padding: '10px 16px',
-        background: 'rgba(255,255,255,0.025)',
-        border: '1px solid rgba(255,255,255,0.06)',
+        gap: 20,
+        marginBottom: 14,
+        padding: '9px 16px',
+        background: 'rgba(255,255,255,0.022)',
+        border: '1px solid rgba(255,255,255,0.055)',
         borderRadius: 8,
         flexWrap: 'wrap',
         alignItems: 'center',
-        rowGap: 10,
+        rowGap: 8,
       }}>
 
-        {/* ── Nodes section ── */}
+        {/* Nodes section */}
         <span style={{
-          fontSize: '0.65rem',
-          color: 'rgba(238,238,248,0.3)',
+          fontFamily: 'DM Mono, monospace',
+          fontSize: '0.58rem',
+          color: 'rgba(238,238,248,0.25)',
           textTransform: 'uppercase',
-          letterSpacing: '0.08em',
+          letterSpacing: '0.1em',
           flexShrink: 0,
         }}>
           Nodes
         </span>
 
         {NODE_LEGEND.map(({ label, color, shape }) => (
-          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <NodeShape shape={shape} color={color} />
-            <span style={{ fontSize: '0.76rem', color: 'var(--text2)', letterSpacing: '0.03em' }}>
+            <span style={{
+              fontFamily: 'DM Mono, monospace',
+              fontSize: '0.68rem',
+              color: 'var(--text2)',
+              letterSpacing: '0.03em',
+            }}>
               {label}
             </span>
           </div>
         ))}
 
         {/* Divider */}
-        <span style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.08)', flexShrink: 0, alignSelf: 'center' }} />
-
-        {/* ── Edges section ── */}
         <span style={{
-          fontSize: '0.65rem',
-          color: 'rgba(238,238,248,0.3)',
+          width: 1,
+          height: 14,
+          background: 'rgba(255,255,255,0.07)',
+          flexShrink: 0,
+          alignSelf: 'center',
+        }} />
+
+        {/* Edges section */}
+        <span style={{
+          fontFamily: 'DM Mono, monospace',
+          fontSize: '0.58rem',
+          color: 'rgba(238,238,248,0.25)',
           textTransform: 'uppercase',
-          letterSpacing: '0.08em',
+          letterSpacing: '0.1em',
           flexShrink: 0,
         }}>
           Edges
         </span>
 
         {EDGE_LEGEND.map(({ label, color, dash, width }) => (
-          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <svg width={20} height={8} style={{ flexShrink: 0 }}>
+          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <svg width={18} height={6} style={{ flexShrink: 0 }}>
               <line
-                x1={0} y1={4} x2={20} y2={4}
+                x1={0} y1={3} x2={18} y2={3}
                 stroke={color}
                 strokeWidth={width}
                 strokeDasharray={dash || undefined}
                 strokeLinecap="round"
               />
             </svg>
-            <span style={{ fontSize: '0.76rem', color: 'var(--text2)', letterSpacing: '0.03em' }}>
+            <span style={{
+              fontFamily: 'DM Mono, monospace',
+              fontSize: '0.68rem',
+              color: 'var(--text2)',
+              letterSpacing: '0.03em',
+            }}>
               {label}
             </span>
           </div>
         ))}
+
+        {/* Hint */}
+        <span style={{ marginLeft: 'auto', flexShrink: 0 }}>
+          <span style={{
+            fontFamily: 'DM Mono, monospace',
+            fontSize: '0.62rem',
+            color: 'rgba(238,238,248,0.2)',
+          }}>
+            Node size = signal volume
+          </span>
+        </span>
       </div>
 
-      {/* Graph panel */}
+      {/* ── Graph panel ──────────────────────────────────────────────────────── */}
       <div style={{
-        background: 'var(--glass, rgba(255,255,255,0.032))',
-        border: '1px solid var(--border, rgba(255,255,255,0.065))',
+        border: '1px solid rgba(255,255,255,0.06)',
         borderRadius: 12,
         overflow: 'hidden',
-        minHeight: 620,
-        backdropFilter: 'blur(20px) saturate(160%)',
-        WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+        minHeight: 640,
+        boxShadow: '0 2px 24px rgba(0,0,0,0.38), inset 0 0 0 1px rgba(255,255,255,0.03)',
+        position: 'relative',
       }}>
+        {/* Vignette overlay */}
+        <div style={{
+          position: 'absolute',
+          inset: 0,
+          pointerEvents: 'none',
+          zIndex: 1,
+          background: 'radial-gradient(ellipse at center, transparent 55%, rgba(4,4,14,0.35) 100%)',
+        }} />
         <GraphErrorBoundary>
           <IntelligenceGraph />
         </GraphErrorBoundary>
+      </div>
+
+      {/* ── Usage hint ───────────────────────────────────────────────────────── */}
+      <div style={{
+        display: 'flex',
+        gap: 20,
+        marginTop: 12,
+        flexWrap: 'wrap',
+        justifyContent: 'flex-end',
+      }}>
+        {[
+          { key: 'Click entity', desc: 'isolate ecosystem' },
+          { key: 'Hover node',   desc: 'preview connections' },
+          { key: 'Hover edge',   desc: 'relationship detail' },
+          { key: 'Esc',          desc: 'exit focus' },
+        ].map(({ key, desc }) => (
+          <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <kbd style={{
+              fontFamily: 'DM Mono, monospace',
+              fontSize: '0.62rem',
+              padding: '1px 6px',
+              background: 'rgba(255,255,255,0.055)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: 4,
+              color: 'rgba(238,238,248,0.5)',
+            }}>
+              {key}
+            </kbd>
+            <span style={{
+              fontFamily: 'DM Mono, monospace',
+              fontSize: '0.62rem',
+              color: 'rgba(238,238,248,0.22)',
+            }}>
+              {desc}
+            </span>
+          </div>
+        ))}
       </div>
     </>
   );

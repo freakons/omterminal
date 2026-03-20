@@ -10,6 +10,12 @@ export type GraphNode = {
   label: string;
   /** Optional sub-classification for entity nodes (company, investor, model, regulator). */
   subtype?: NodeSubtype;
+  /** URL slug for entity page navigation (slugify(entity.name)). */
+  slug?: string;
+  /** Signal count / importance score — drives node sizing in the graph. */
+  importance?: number;
+  /** Momentum score 0–100 — surface via glow intensity or ring highlight. */
+  momentum?: number;
 };
 
 export type GraphLink = {
@@ -47,8 +53,8 @@ export type GraphData = {
  */
 export const staticSanityGraph: GraphData = {
   nodes: [
-    { id: 'openai',        type: 'entity', label: 'OpenAI',              subtype: 'company' },
-    { id: 'anthropic',     type: 'entity', label: 'Anthropic',           subtype: 'company' },
+    { id: 'openai',        type: 'entity', label: 'OpenAI',              subtype: 'company',  slug: 'openai',    importance: 7 },
+    { id: 'anthropic',     type: 'entity', label: 'Anthropic',           subtype: 'company',  slug: 'anthropic', importance: 6 },
     { id: 'claude-4',      type: 'event',  label: 'Claude 4 Release' },
     { id: 'frontier-race', type: 'signal', label: 'Frontier model race' },
   ],
@@ -62,12 +68,12 @@ export const staticSanityGraph: GraphData = {
 export const mockGraphData: GraphData = {
   nodes: [
     // Entities — with subtypes for richer visual meaning
-    { id: "openai",     type: "entity", label: "OpenAI",           subtype: "company" },
-    { id: "anthropic",  type: "entity", label: "Anthropic",        subtype: "company" },
-    { id: "deepmind",   type: "entity", label: "Google DeepMind",  subtype: "company" },
-    { id: "nvidia",     type: "entity", label: "NVIDIA",           subtype: "company" },
-    { id: "a16z",       type: "entity", label: "a16z",             subtype: "investor" },
-    { id: "eu-ai-act",  type: "entity", label: "EU AI Act",        subtype: "regulator" },
+    { id: "openai",     type: "entity", label: "OpenAI",           subtype: "company",   slug: "openai",          importance: 7 },
+    { id: "anthropic",  type: "entity", label: "Anthropic",        subtype: "company",   slug: "anthropic",       importance: 6 },
+    { id: "deepmind",   type: "entity", label: "Google DeepMind",  subtype: "company",   slug: "google-deepmind", importance: 5 },
+    { id: "nvidia",     type: "entity", label: "NVIDIA",           subtype: "company",   slug: "nvidia",          importance: 5 },
+    { id: "a16z",       type: "entity", label: "a16z",             subtype: "investor",  slug: "a16z",            importance: 3 },
+    { id: "eu-ai-act",  type: "entity", label: "EU AI Act",        subtype: "regulator", slug: "eu-ai-act",       importance: 3 },
 
     // Events
     { id: "gpt5",        type: "event", label: "GPT-5 Release" },
