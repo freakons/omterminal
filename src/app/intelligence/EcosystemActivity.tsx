@@ -10,6 +10,7 @@ import { HeatIndicator } from '@/components/intelligence/HeatIndicator';
 import { EntityMomentumBadge } from '@/components/entity/EntityMomentumBadge';
 import { computeSectionHeat } from '@/lib/intelligence/heatScore';
 import { slugify } from '@/utils/sanitize';
+import { formatSignalAge } from '@/lib/signals/signalAge';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sub-section renderers
@@ -17,6 +18,7 @@ import { slugify } from '@/utils/sanitize';
 
 function SignalRow({ signal }: { signal: Signal }) {
   const cat = signal.category ?? 'signal';
+  const sourceCount = signal.sourceSupportCount;
   return (
     <Link href={`/intelligence/signal/${signal.id}`} className="eco-row">
       <span className="eco-cat" data-cat={cat}>{cat}</span>
@@ -30,7 +32,13 @@ function SignalRow({ signal }: { signal: Signal }) {
         }}
         showLabel={false}
       />
-      <span className="eco-meta">{signal.entityName}</span>
+      {sourceCount != null && sourceCount > 1 && (
+        <span className="eco-src-count">
+          <span className="indicator-dot indicator-dot--emerald" />
+          {sourceCount}
+        </span>
+      )}
+      <span className="eco-recency">{formatSignalAge(signal.date)}</span>
     </Link>
   );
 }
@@ -77,6 +85,13 @@ function scoreClass(score: number): string {
   return 'eco-score eco-score--low';
 }
 
+function scoreLabel(score: number): string {
+  if (score >= 75) return 'High';
+  if (score >= 55) return 'Strong';
+  if (score >= 35) return 'Moderate';
+  return 'Low';
+}
+
 function MomentumLeaderRow({ entity }: { entity: EntityMomentum }) {
   const deltaClass = entity.momentum_delta > 0
     ? 'eco-delta eco-delta--up'
@@ -88,7 +103,9 @@ function MomentumLeaderRow({ entity }: { entity: EntityMomentum }) {
   return (
     <Link href={`/entity/${slugify(entity.entity_name)}`} className="eco-row">
       <span className="eco-title">{entity.entity_name}</span>
-      <span className={scoreClass(entity.momentum_score)}>{entity.momentum_score}</span>
+      <span className={scoreClass(entity.momentum_score)}>
+        {entity.momentum_score}<span className="eco-score-lbl">{scoreLabel(entity.momentum_score)}</span>
+      </span>
       <span className={deltaClass}>{deltaSymbol}</span>
     </Link>
   );
@@ -100,9 +117,18 @@ function StrategicSignalRow({ signal }: { signal: SignalStrategic }) {
     <Link href={`/intelligence/signal/${signal.signal_id}`} className="eco-row">
       <span className="eco-cat" data-cat={cat}>{cat}</span>
       <span className="eco-title">{signal.signal_title}</span>
+      {signal.source_support_count != null && signal.source_support_count > 1 && (
+        <span className="eco-src-count">
+          <span className="indicator-dot indicator-dot--emerald" />
+          {signal.source_support_count}
+        </span>
+      )}
       <span className={scoreClass(signal.strategic_importance_score)}>
-        {signal.strategic_importance_score}
+        {signal.strategic_importance_score}<span className="eco-score-lbl">{scoreLabel(signal.strategic_importance_score)}</span>
       </span>
+      {signal.signal_date && (
+        <span className="eco-recency">{formatSignalAge(signal.signal_date)}</span>
+      )}
     </Link>
   );
 }
@@ -205,7 +231,7 @@ export function EcosystemActivity({
 
         {/* ── Momentum Leaders (Entity Momentum Index) ─────────────── */}
         {momentumLeaders.length > 0 && (
-          <div className="eco-panel">
+          <div className="eco-panel eco-panel--momentum">
             <div className="eco-panel-header">
               <h3 className="eco-panel-title">Momentum Leaders</h3>
               <span className="eco-badge" style={{ background: 'rgba(5,150,105,0.1)', color: 'var(--emerald-l)', borderColor: 'rgba(5,150,105,0.2)' }}>Index</span>
@@ -218,7 +244,7 @@ export function EcosystemActivity({
 
         {/* ── Strategic Signals (Strategic Importance Index) ───────── */}
         {strategicSignals.length > 0 && (
-          <div className="eco-panel">
+          <div className="eco-panel eco-panel--strategic">
             <div className="eco-panel-header">
               <h3 className="eco-panel-title">Strategic Signals</h3>
               <span className="eco-badge" style={{ background: 'rgba(124,58,237,0.1)', color: '#c084fc', borderColor: 'rgba(124,58,237,0.2)' }}>Index</span>

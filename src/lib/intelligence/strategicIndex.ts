@@ -81,6 +81,10 @@ export interface SignalStrategic {
   entity_name: string | undefined;
   /** Signal category / type (passthrough). */
   signal_type: string | undefined;
+  /** Signal date (passthrough for recency display). */
+  signal_date?: string;
+  /** Source support count (passthrough for corroboration display). */
+  source_support_count?: number | null;
   /** Strategic importance score, bounded 0–100. */
   strategic_importance_score: number;
   /** Per-factor breakdown (only present when debug=true). */
@@ -217,6 +221,8 @@ export function computeSignalStrategic(
     signal_title:               signal.title,
     entity_name:                signal.entityName ?? undefined,
     signal_type:                signal.category,
+    signal_date:                signal.date ?? undefined,
+    source_support_count:       signal.sourceSupportCount ?? null,
     strategic_importance_score,
   };
 
