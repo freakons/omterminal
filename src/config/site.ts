@@ -14,7 +14,7 @@ export const siteConfig = {
 
   nav: {
     platform: [
-      { label: 'Dashboard', href: '/', id: 'home', icon: 'home', chip: null },
+      { label: "Today's Intelligence", href: '/', id: 'home', icon: 'home', chip: 'TODAY' },
       { label: 'Intelligence Feed', href: '/intelligence', id: 'intelligence', icon: 'zap', chip: 'LIVE' },
       { label: 'Signals', href: '/signals', id: 'signals', icon: 'activity', chip: null },
       { label: 'Regulation', href: '/regulation', id: 'regulation', icon: 'scale', chip: null },

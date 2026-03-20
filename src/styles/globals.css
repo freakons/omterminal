@@ -2342,3 +2342,194 @@ body {
   font-family: var(--f); font-size: 13px; line-height: 1.7;
   color: var(--text); margin: 0; white-space: pre-wrap; word-wrap: break-word;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   Daily Intelligence Loop — welcome banner, sections, quick actions
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* Welcome Banner */
+.welcome-banner {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 18px; margin-bottom: 16px;
+  border-radius: var(--r); border: 1px solid rgba(6,182,212,0.15);
+  background: linear-gradient(135deg, rgba(6,182,212,0.06) 0%, rgba(79,70,229,0.04) 100%);
+}
+.welcome-banner-icon {
+  flex-shrink: 0; color: var(--cyan-l, #67e8f9); opacity: 0.8;
+}
+.welcome-banner-content {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
+  font-size: 12px; line-height: 1.5;
+}
+.welcome-banner-greeting {
+  color: var(--text); font-weight: 500;
+}
+.welcome-banner-updates {
+  color: var(--text2);
+}
+.welcome-banner-sep {
+  color: var(--text3); opacity: 0.5;
+}
+
+/* Daily Pulse Indicator */
+.daily-pulse {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 18px; padding: 0 2px;
+}
+.daily-pulse-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--cyan-l, #67e8f9);
+  box-shadow: 0 0 8px var(--cyan-l, #67e8f9);
+  animation: daily-pulse-glow 2s ease-in-out infinite;
+}
+@keyframes daily-pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.daily-pulse-text {
+  font-family: var(--fm); font-size: 10px;
+  letter-spacing: 0.06em; color: var(--text3);
+}
+
+/* Section shared styles */
+.daily-section {
+  margin-bottom: 20px;
+}
+.daily-section-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px; padding: 0 2px;
+}
+.daily-section-label {
+  font-family: var(--fm); font-size: 9px;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--text3);
+}
+.daily-section-link {
+  font-family: var(--fm); font-size: 10px;
+  color: var(--cyan-l, #67e8f9); text-decoration: none;
+  letter-spacing: 0.04em; opacity: 0.7;
+  transition: opacity 0.15s;
+}
+.daily-section-link:hover { opacity: 1; }
+
+/* Top Entities Grid */
+.top-entities-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+}
+.top-entity-card {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 12px 14px; border-radius: var(--r);
+  background: var(--glass); border: 1px solid var(--border);
+  text-decoration: none; transition: border-color 0.15s, background 0.15s;
+}
+.top-entity-card:hover {
+  border-color: rgba(6,182,212,0.25);
+  background: rgba(255,255,255,0.03);
+}
+.top-entity-row {
+  display: flex; align-items: center; justify-content: space-between;
+}
+.top-entity-name {
+  font-size: 13px; font-weight: 500; color: var(--text);
+}
+.top-entity-count {
+  font-family: var(--fm); font-size: 10px; color: var(--text3);
+  letter-spacing: 0.04em;
+}
+.top-entity-cats {
+  display: flex; gap: 4px;
+}
+.top-entity-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+}
+.top-entity-signal {
+  font-size: 11px; color: var(--text3); line-height: 1.4;
+}
+
+/* Emerging Trends Preview */
+.trends-preview-grid {
+  display: flex; flex-direction: column; gap: 10px;
+}
+.trend-preview-card {
+  padding: 14px 16px; border-radius: var(--r);
+  background: var(--glass); border: 1px solid var(--border);
+}
+.trend-preview-top {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+}
+.trend-preview-cat-dot {
+  width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+}
+.trend-preview-title {
+  flex: 1; font-size: 13px; font-weight: 500; color: var(--text);
+}
+.trend-preview-momentum {
+  font-family: var(--fm); font-size: 9px; letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.trend-preview-summary {
+  font-size: 12px; color: var(--text2); line-height: 1.5;
+  margin-bottom: 8px;
+}
+.trend-preview-meta {
+  display: flex; align-items: center; gap: 12px;
+  font-family: var(--fm); font-size: 10px; color: var(--text3);
+  letter-spacing: 0.04em;
+}
+.trend-preview-entities {
+  opacity: 0.7;
+}
+
+/* Quick Actions */
+.quick-actions-row {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+.quick-action-card {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px; border-radius: var(--r);
+  background: var(--glass); border: 1px solid var(--border);
+  text-decoration: none; transition: border-color 0.15s, background 0.15s;
+}
+.quick-action-card:hover {
+  border-color: rgba(6,182,212,0.25);
+  background: rgba(255,255,255,0.03);
+}
+.quick-action-icon {
+  flex-shrink: 0; color: var(--cyan-l, #67e8f9); opacity: 0.7;
+}
+.quick-action-text {
+  display: flex; flex-direction: column; gap: 2px; min-width: 0;
+}
+.quick-action-label {
+  font-size: 12px; font-weight: 500; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.quick-action-detail {
+  font-family: var(--fm); font-size: 10px; color: var(--text3);
+  letter-spacing: 0.04em;
+}
+
+/* Hero daily variant */
+.hero--daily .hero-h1 {
+  font-size: clamp(28px, 4vw, 42px);
+}
+
+/* New signal highlight (unseen indicator) */
+.signal-new-indicator {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: var(--fm); font-size: 9px;
+  color: var(--cyan-l, #67e8f9); letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.signal-new-indicator::before {
+  content: ''; display: inline-block;
+  width: 4px; height: 4px; border-radius: 50%;
+  background: var(--cyan-l, #67e8f9);
+}
+
+/* Nav chip TODAY */
+.nav-chip {
+  transition: background 0.15s, color 0.15s;
+}
