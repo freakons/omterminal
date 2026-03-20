@@ -84,16 +84,31 @@ export function normalizeEntityName(name: string): string {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const AMBIGUOUS_SHORT_TOKENS = new Set([
-  'ai',       // too generic
-  'gc',       // General Catalyst alias - too short
-  'gv',       // Google Ventures alias - too short
-  'scale',    // Scale AI alias - common word
-  'together', // Together AI alias - common word
-  'spark',    // Spark Capital alias - common word
-  'insight',  // Insight Partners alias - common word
-  'accel',    // common word fragment
-  'fair',     // Facebook AI Research alias - common word
-  'cohere',   // borderline: could be verb "cohere"
+  'ai',        // too generic
+  'gc',        // General Catalyst alias - too short
+  'gv',        // Google Ventures alias - too short
+  'scale',     // Scale AI alias - common word
+  'together',  // Together AI alias - common word
+  'spark',     // Spark Capital alias - common word
+  'insight',   // Insight Partners alias - common word
+  'accel',     // common word fragment
+  'fair',      // Facebook AI Research alias - common word
+  'cohere',    // borderline: could be verb "cohere"
+  'modal',     // Modal Labs alias - common adjective
+  'replicate', // Replicate alias - common verb
+  'lambda',    // Lambda Labs alias - common in math/programming
+  'aurora',    // Aurora Innovation alias - common proper noun
+  'figure',    // Figure AI alias - common noun (figures, figure 1)
+  'mila',      // Mila Institute alias - common first name
+  'covariant', // Covariant AI alias - mathematics term
+  'writer',    // Writer AI alias - common noun
+  'nous',      // Nous Research alias - philosophy term
+  'arc',       // ARC Evals alias - common abbreviation
+  'adept',     // Adept AI alias - common adjective
+  'ray',       // Anyscale/Ray alias - common name
+  'pai',       // Partnership on AI alias - too short
+  'fli',       // Future of Life Institute alias - too short
+  'snow',      // Snowflake ticker - too short
 ]);
 
 /**
@@ -121,19 +136,29 @@ function containsWholeWord(text: string, term: string): boolean {
 /**
  * Returns true if `normalizedTerm` appears as a normalized match in `normalizedText`.
  * Used as a fallback when exact matching fails, to catch punctuation/casing variants.
+ *
+ * Word-boundary check in normalized text: the character immediately before and
+ * after the match must be a space (or the text boundary), ensuring we don't
+ * match "amazon" inside "amazonian".
  */
 function containsNormalizedMatch(normalizedText: string, normalizedTerm: string): boolean {
   if (normalizedTerm.length < 3) return false; // too short for substring matching
-  const idx = normalizedText.indexOf(normalizedTerm);
-  if (idx === -1) return false;
 
-  // Check word boundaries in normalized text
-  const before = idx > 0 ? normalizedText[idx - 1] : ' ';
-  const after = idx + normalizedTerm.length < normalizedText.length
-    ? normalizedText[idx + normalizedTerm.length]
-    : ' ';
+  let idx = normalizedText.indexOf(normalizedTerm);
+  while (idx !== -1) {
+    const atStart = idx === 0;
+    const atEnd = idx + normalizedTerm.length === normalizedText.length;
+    const before = atStart ? ' ' : normalizedText[idx - 1];
+    const after = atEnd ? ' ' : normalizedText[idx + normalizedTerm.length];
 
-  return /\s/.test(before) || idx === 0 ? (/\s/.test(after) || idx + normalizedTerm.length === normalizedText.length) : false;
+    // Word boundary: surrounding chars must be whitespace or the text edge
+    if (/\s/.test(before) && /\s/.test(after)) {
+      return true;
+    }
+    // Advance to next occurrence
+    idx = normalizedText.indexOf(normalizedTerm, idx + 1);
+  }
+  return false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
