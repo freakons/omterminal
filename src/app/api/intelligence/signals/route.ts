@@ -18,12 +18,14 @@ export async function GET(req: NextRequest) {
   const mode  = parseSignalMode(searchParams.get('mode'));
   const limit = Math.min(parseInt(searchParams.get('limit') ?? '50', 10), 200);
   const includeLinks = searchParams.get('links') === 'true';
+  const debug = searchParams.get('debug') === 'true';
 
   // In-process memory cache (instance-local, 10 s).
   // Reduces repeated DB reads on hot polling cycles between pipeline runs.
+  // Debug mode bypasses cache so breakdowns are always fresh.
   const memKey = `intelligence:signals:${mode}:${limit}:${includeLinks}:v3`;
   const memCached = getCache<Record<string, unknown>>(memKey, MEM_TTL.INTELLIGENCE_SIGNALS);
-  if (memCached) {
+  if (memCached && !debug) {
     logWithRequestId(reqId, 'intelligence/signals', `cache_hit source=memory mode=${mode} ms=${Date.now() - t0}`);
     return NextResponse.json(memCached, { headers: { ...CACHE_HEADERS, 'x-data-origin': 'cache' } });
   }
@@ -35,6 +37,7 @@ export async function GET(req: NextRequest) {
     // For standard mode, apply a minimum significance threshold to filter noise.
     const composed = composeFeed(rawSignals, {
       minSignificance: mode === 'standard' ? 30 : mode === 'premium' ? 50 : 0,
+      debug,
     });
 
     // Optionally enrich signals with cross-signal intelligence links.

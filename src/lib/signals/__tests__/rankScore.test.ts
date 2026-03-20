@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import {
   computeRankScore,
   computeFreshness,
+  computeClusterStrength,
   compareByRankScore,
   FRESHNESS_HALF_LIFE_HOURS,
   RANK_WEIGHTS,
@@ -65,6 +66,49 @@ describe('computeFreshness', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// computeClusterStrength
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('computeClusterStrength', () => {
+  it('treats null/undefined as single-source (~33)', () => {
+    assert.equal(computeClusterStrength(null), computeClusterStrength(1));
+    assert.equal(computeClusterStrength(undefined), computeClusterStrength(1));
+  });
+
+  it('increases monotonically with source count', () => {
+    const s1 = computeClusterStrength(1);
+    const s2 = computeClusterStrength(2);
+    const s3 = computeClusterStrength(3);
+    const s5 = computeClusterStrength(5);
+    assert.ok(s1 < s2, `1 source (${s1}) < 2 sources (${s2})`);
+    assert.ok(s2 < s3, `2 sources (${s2}) < 3 sources (${s3})`);
+    assert.ok(s3 < s5, `3 sources (${s3}) < 5 sources (${s5})`);
+  });
+
+  it('saturates at 100 for large counts', () => {
+    const large = computeClusterStrength(100);
+    assert.equal(large, 100);
+  });
+
+  it('multi-source signal ranks higher than single-source at same significance', () => {
+    const multiSource = computeRankScore(makeInput({
+      significanceScore: 60,
+      createdAt: hoursAgo(4),
+      sourceSupportCount: 5,
+    }));
+    const singleSource = computeRankScore(makeInput({
+      significanceScore: 60,
+      createdAt: hoursAgo(4),
+      sourceSupportCount: 1,
+    }));
+    assert.ok(
+      multiSource.rankScore > singleSource.rankScore,
+      `Multi-source (${multiSource.rankScore}) should outrank single-source (${singleSource.rankScore})`,
+    );
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // computeRankScore — basic behavior
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -78,6 +122,7 @@ describe('computeRankScore — basic behavior', () => {
     const result = computeRankScore(makeInput());
     assert.ok('significance' in result.breakdown);
     assert.ok('freshness' in result.breakdown);
+    assert.ok('clusterStrength' in result.breakdown);
     assert.ok('entityBoost' in result.breakdown);
     assert.ok('novelty' in result.breakdown);
     assert.ok('significanceFallback' in result.breakdown);
@@ -224,7 +269,7 @@ describe('computeRankScore — ordering stability', () => {
   });
 
   it('weights sum to 1.0', () => {
-    const sum = RANK_WEIGHTS.significance + RANK_WEIGHTS.freshness + RANK_WEIGHTS.novelty + RANK_WEIGHTS.entityBoost;
+    const sum = RANK_WEIGHTS.significance + RANK_WEIGHTS.freshness + RANK_WEIGHTS.clusterStrength + RANK_WEIGHTS.novelty + RANK_WEIGHTS.entityBoost;
     assert.ok(Math.abs(sum - 1.0) < 0.001, `Weights should sum to 1.0, got ${sum}`);
   });
 });
