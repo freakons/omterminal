@@ -57,7 +57,9 @@ const ARTICLES_PER_SOURCE = 15;
 
 export interface RssIngestResult {
   sourcesAttempted: number;
+  sourcesSkipped: number;
   sourcesFailed: number;
+  sourcesTimedOut: number;
   sourcesRateLimited: number;
   sourcesEmpty: number;
   articlesNew: number;
@@ -98,13 +100,25 @@ export async function ingestRss(): Promise<RssIngestResult> {
 
   // Map canonical sources to legacy Source shape for rssFetcher compatibility
   const sourceIds = [...highPriority, ...normalPriority].map((s) => s.id);
-  const sources = INTELLIGENCE_SOURCES.filter((s) => sourceIds.includes(s.id));
+  const allSources = INTELLIGENCE_SOURCES.filter((s) => sourceIds.includes(s.id));
+
+  // Skip sources with no RSS URL — log each one so operators can fix the registry
+  const skipped = allSources.filter((s) => !s.rss);
+  const sources  = allSources.filter((s) => !!s.rss);
+
+  if (skipped.length > 0) {
+    console.warn(
+      `[rssIngester] SKIPPED ${skipped.length} sources with no RSS URL: ${skipped.map((s) => s.id).join(', ')}`,
+    );
+  }
 
   if (sources.length === 0) {
     console.warn('[rssIngester] No enabled sources found — check sources registry');
     return {
       sourcesAttempted: 0,
+      sourcesSkipped: skipped.length,
       sourcesFailed: 0,
+      sourcesTimedOut: 0,
       sourcesRateLimited: 0,
       sourcesEmpty: 0,
       articlesNew: 0,
@@ -114,11 +128,13 @@ export async function ingestRss(): Promise<RssIngestResult> {
     };
   }
 
-  console.log(`[rssIngester] Fetching from ${sources.length} sources (${sources.map((s) => s.id).join(', ')})`);
+  console.log(`[rssIngester] Fetching from ${sources.length} sources (${skipped.length} skipped, no RSS URL)`);
 
   const result: RssIngestResult = {
     sourcesAttempted: sources.length,
+    sourcesSkipped: skipped.length,
     sourcesFailed: 0,
+    sourcesTimedOut: 0,
     sourcesRateLimited: 0,
     sourcesEmpty: 0,
     articlesNew: 0,
@@ -134,7 +150,10 @@ export async function ingestRss(): Promise<RssIngestResult> {
     // ── Source-level error handling ──────────────────────────────────────────
     if (fetchResult.error) {
       const err = fetchResult.error;
-      if (err.includes('429') || err.toLowerCase().includes('rate limit')) {
+      if (fetchResult.timedOut) {
+        console.warn(`[rssIngester] TIMEOUT source="${fetchResult.sourceId}"`);
+        result.sourcesTimedOut++;
+      } else if (err.includes('429') || err.toLowerCase().includes('rate limit')) {
         console.warn(`[rssIngester] RATE_LIMITED source="${fetchResult.sourceId}" error="${err}"`);
         result.sourcesRateLimited++;
       } else {
@@ -288,7 +307,8 @@ export async function ingestRss(): Promise<RssIngestResult> {
 
   console.log(
     `[rssIngester] Done. ` +
-    `sources=${result.sourcesAttempted} failed=${result.sourcesFailed} ` +
+    `sources=${result.sourcesAttempted} skipped=${result.sourcesSkipped} ` +
+    `failed=${result.sourcesFailed} timedOut=${result.sourcesTimedOut} ` +
     `rateLimited=${result.sourcesRateLimited} empty=${result.sourcesEmpty} ` +
     `articlesNew=${result.articlesNew} articlesDeduped=${result.articlesDeduped} ` +
     `eventsNew=${result.eventsNew} eventsDeduped=${result.eventsDeduped} ` +
