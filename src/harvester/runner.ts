@@ -2,7 +2,7 @@ import { normalizeSignal } from './normalizer';
 import { sendSignal } from './sender';
 import { processSignal } from '@/intelligence/processor';
 import { scoreSignal } from '@/intelligence/scoring';
-import { isDuplicate } from '@/intelligence/deduplicator';
+import { isDuplicate, resetDeduplicator, getDeduplicatorStats } from '@/intelligence/deduplicator';
 import { getSources } from './sources/registry';
 import { getProvider, getActiveProviderName } from '@/lib/ai';
 
@@ -12,6 +12,10 @@ const MIN_SCORE = 40;
 export async function runHarvester(): Promise<void> {
   const sources = getSources();
   console.log(`[harvester/runner] Harvester running with ${sources.length} sources`);
+
+  // Reset per-run dedup state so stale fingerprints from previous invocations
+  // do not incorrectly filter signals in this run.
+  resetDeduplicator();
 
   // Resolve the active AI provider once per run; log which one is in use.
   let aiProviderName = 'none';
@@ -25,7 +29,10 @@ export async function runHarvester(): Promise<void> {
 
   let totalFetched = 0;
   let totalProcessed = 0;
-  let duplicatesSkipped = 0;
+  // exactDuplicatesSkipped: same URL or same normalized title within this run
+  let exactDuplicatesSkipped = 0;
+  // nearDuplicatesSkipped: fuzzy title match or content fingerprint match within this run
+  let nearDuplicatesSkipped = 0;
   let lowScoreSkipped = 0;
   let totalSent = 0;
 
@@ -46,6 +53,22 @@ export async function runHarvester(): Promise<void> {
     for (const raw of rawSignals) {
       const normalized = normalizeSignal(raw, aiProviderName);
 
+      // ── Dedup check (BEFORE AI processing to avoid wasted calls) ───────────
+      if (await isDuplicate(normalized)) {
+        const stats = getDeduplicatorStats();
+        // Determine if the most recent drop was exact or near-dup for per-source logging
+        const isNear = stats.fuzzyTitle + stats.contentFingerprint >
+          (nearDuplicatesSkipped);
+        if (isNear) {
+          console.log(`[harvester/runner] near-duplicate skipped: "${normalized.title}"`);
+          nearDuplicatesSkipped++;
+        } else {
+          console.log(`[harvester/runner] exact duplicate skipped: "${normalized.title}"`);
+          exactDuplicatesSkipped++;
+        }
+        continue;
+      }
+
       let intelligence;
       try {
         intelligence = await processSignal(normalized);
@@ -56,12 +79,6 @@ export async function runHarvester(): Promise<void> {
       }
 
       const score = scoreSignal(normalized, intelligence);
-
-      if (await isDuplicate(normalized)) {
-        console.log(`[harvester/runner] duplicate skipped: "${normalized.title}"`);
-        duplicatesSkipped++;
-        continue;
-      }
 
       if (score < MIN_SCORE) {
         console.log(`[harvester/runner] low score skipped: "${normalized.title}" (score: ${score})`);
@@ -80,8 +97,17 @@ export async function runHarvester(): Promise<void> {
     }
   }
 
+  const dedupStats = getDeduplicatorStats();
+
   console.log(
-    `[harvester/runner] done — signals fetched: ${totalFetched}, signals processed: ${totalProcessed}, ` +
-    `duplicates skipped: ${duplicatesSkipped}, low score skipped: ${lowScoreSkipped}, signals sent: ${totalSent}`,
+    `[harvester/runner] done — ` +
+    `fetched: ${totalFetched} | ` +
+    `processed: ${totalProcessed} | ` +
+    `exact duplicates dropped: ${dedupStats.exactUrl + dedupStats.exactTitle} ` +
+      `(url=${dedupStats.exactUrl} title=${dedupStats.exactTitle}) | ` +
+    `near duplicates dropped: ${dedupStats.fuzzyTitle + dedupStats.contentFingerprint} ` +
+      `(fuzzy=${dedupStats.fuzzyTitle} content=${dedupStats.contentFingerprint}) | ` +
+    `low score skipped: ${lowScoreSkipped} | ` +
+    `sent: ${totalSent}`,
   );
 }

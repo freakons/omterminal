@@ -34,6 +34,7 @@ import {
   generateArticleId,
   generateStableEventId,
   generateTitleFingerprint,
+  generateContentFingerprint,
   categoryToEventType,
   categoryToDbCategory,
 } from '../normalization/helpers';
@@ -120,7 +121,8 @@ export async function ingestGNews(): Promise<GNewsIngestResult> {
   );
 
   let ingested = 0;
-  let skipped = 0;
+  let skippedDuplicates = 0;   // near/exact article duplicates (articleStore returned false)
+  let skippedErrors = 0;       // fetch/parse/save failures
   let total = 0;
   let rateLimited = false;
 
@@ -202,7 +204,7 @@ export async function ingestGNews(): Promise<GNewsIngestResult> {
       const publishedAt      = normalizeTimestamp(article.publishedAt);
 
       if (!cleanTitle || !cleanUrl) {
-        skipped++;
+        skippedErrors++;
         continue;
       }
 
@@ -212,6 +214,7 @@ export async function ingestGNews(): Promise<GNewsIngestResult> {
       const articleId = generateArticleId(cleanUrl);
       const eventId = generateStableEventId(cleanUrl);
       const titleFingerprint = generateTitleFingerprint(cleanTitle);
+      const contentFingerprint = generateContentFingerprint(cleanTitle, cleanDescription);
 
       // Step 1: Write to articles table first.
       // This must succeed before the event insert to satisfy the FK constraint:
@@ -227,10 +230,11 @@ export async function ingestGNews(): Promise<GNewsIngestResult> {
           publishedAt,
           category: dbCategory,
           titleFingerprint,
+          contentFingerprint,
         });
       } catch (err) {
         console.error(`[ingest:gnews] Article save failed for "${cleanUrl}":`, err);
-        skipped++;
+        skippedErrors++;
         continue;
       }
 
@@ -266,10 +270,10 @@ export async function ingestGNews(): Promise<GNewsIngestResult> {
         if (inserted) {
           ingested++;
         } else {
-          skipped++; // duplicate (ON CONFLICT DO NOTHING)
+          skippedDuplicates++; // event duplicate (ON CONFLICT DO NOTHING)
         }
       } catch {
-        skipped++;
+        skippedErrors++;
       }
 
       // Legacy backward-compat write to intelligence_events.
@@ -303,9 +307,16 @@ export async function ingestGNews(): Promise<GNewsIngestResult> {
   }
 
   console.log(
-    `[ingest:gnews] Done. queries=${queries.length} total=${total}` +
-    ` ingested=${ingested} skipped=${skipped} rateLimited=${rateLimited}`
+    `[ingest:gnews] Done. queries=${queries.length} total=${total} ` +
+    `ingested=${ingested} duplicates dropped=${skippedDuplicates} errors=${skippedErrors} ` +
+    `rateLimited=${rateLimited}`,
   );
 
-  return { ingested, skipped, total, rateLimited, queriesAttempted: queries.length };
+  return {
+    ingested,
+    skipped: skippedDuplicates + skippedErrors,
+    total,
+    rateLimited,
+    queriesAttempted: queries.length,
+  };
 }
