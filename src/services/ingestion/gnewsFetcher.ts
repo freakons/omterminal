@@ -39,6 +39,7 @@ import {
   categoryToDbCategory,
 } from '../normalization/helpers';
 import { detectAndLinkEntities } from '@/lib/entityResolver';
+import { getSourceTierAndWeight } from '@/lib/sourceWeighting';
 
 // Per-query fetch timeout.  Override with GNEWS_FETCH_TIMEOUT_MS env var.
 const GNEWS_FETCH_TIMEOUT_MS = parseInt(process.env.GNEWS_FETCH_TIMEOUT_MS ?? '15000', 10);
@@ -216,6 +217,11 @@ export async function ingestGNews(): Promise<GNewsIngestResult> {
       const titleFingerprint = generateTitleFingerprint(cleanTitle);
       const contentFingerprint = generateContentFingerprint(cleanTitle, cleanDescription);
 
+      // GNews is an aggregator API — articles come from unregistered publishers.
+      // Assign Tier 3 (weight 0.4) as a conservative default for all GNews articles.
+      // Source category defaults to 'news' since GNews is a news search API.
+      const { sourceTier, sourceWeight } = getSourceTierAndWeight(5);
+
       // Step 1: Write to articles table first.
       // This must succeed before the event insert to satisfy the FK constraint:
       //   events.source_article_id → articles.id
@@ -231,6 +237,9 @@ export async function ingestGNews(): Promise<GNewsIngestResult> {
           category: dbCategory,
           titleFingerprint,
           contentFingerprint,
+          sourceTier,
+          sourceWeight,
+          sourceCategory: 'news',
         });
       } catch (err) {
         console.error(`[ingest:gnews] Article save failed for "${cleanUrl}":`, err);

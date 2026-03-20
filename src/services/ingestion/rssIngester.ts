@@ -207,12 +207,13 @@ export async function ingestRss(): Promise<RssIngestResult> {
       const eventId = generateStableEventId(cleanUrl);
       const titleFingerprint = generateTitleFingerprint(cleanTitle);
 
-      // Derive source tier and weight from the source's reliability score.
-      // Falls back to Tier 3 (weight 0.4) if the source is not in the registry.
+      // Derive source tier, weight, and category from the source registry.
+      // Falls back to Tier 3 (weight 0.4, no category) if the source is not found.
       const sourceDef = getSourceById(fetchResult.sourceId);
       const { sourceTier, sourceWeight } = getSourceTierAndWeight(
         sourceDef?.reliability ?? 5,
       );
+      const sourceCategory = sourceDef?.category;
 
       // Step 1: Write to articles table first.
       // Must succeed before writing the event — events.source_article_id
@@ -229,6 +230,7 @@ export async function ingestRss(): Promise<RssIngestResult> {
           titleFingerprint,
           sourceTier,
           sourceWeight,
+          sourceCategory,
         });
 
         if (articleInserted) {

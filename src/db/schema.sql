@@ -14,13 +14,23 @@ CREATE TABLE IF NOT EXISTS articles (
   published_at      TIMESTAMPTZ NOT NULL,
   category          TEXT        NOT NULL,
   title_fingerprint TEXT,
+  -- Added migration 022: cross-field near-duplicate detection
+  content_fingerprint TEXT,
+  -- Added migration 021: source quality metadata for downstream scoring
+  source_tier       SMALLINT,
+  source_weight     NUMERIC(3, 1),
+  -- Added migration 023: source registry category
+  source_category   TEXT,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_articles_published_at      ON articles (published_at DESC);
-CREATE INDEX IF NOT EXISTS idx_articles_category          ON articles (category);
-CREATE INDEX IF NOT EXISTS idx_articles_source            ON articles (source);
-CREATE INDEX IF NOT EXISTS idx_articles_title_fingerprint ON articles (title_fingerprint);
+CREATE INDEX IF NOT EXISTS idx_articles_published_at        ON articles (published_at DESC);
+CREATE INDEX IF NOT EXISTS idx_articles_category            ON articles (category);
+CREATE INDEX IF NOT EXISTS idx_articles_source              ON articles (source);
+CREATE INDEX IF NOT EXISTS idx_articles_title_fingerprint   ON articles (title_fingerprint);
+CREATE INDEX IF NOT EXISTS idx_articles_content_fingerprint ON articles (content_fingerprint);
+CREATE INDEX IF NOT EXISTS idx_articles_source_tier         ON articles (source_tier);
+CREATE INDEX IF NOT EXISTS idx_articles_source_category     ON articles (source_category);
 
 -- ── Events ────────────────────────────────────────────────────────────────────
 -- Structured intelligence events extracted from articles.
