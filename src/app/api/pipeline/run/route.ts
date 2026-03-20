@@ -50,6 +50,8 @@ import { saveSignals, updateSignalInsight, markInsightGenerationError } from '@/
 import { generateSignalInsightWithMeta }        from '@/lib/intelligence/generateSignalInsight';
 import { corroborateSignals }                    from '@/lib/signals/clusterSignals';
 import type { SignalCluster, CorroborationCluster } from '@/lib/signals/clusterSignals';
+import { clusterStories }                          from '@/lib/articles/storyClustering';
+import type { StoryClusteringSummary }             from '@/lib/articles/storyClustering';
 import { generateAlerts }                          from '@/lib/alerts/generateAlerts';
 import { withPipelineLock, pipelineLockedResponse } from '@/lib/pipelineLock';
 import { generatePageSnapshots }               from '@/lib/pipeline/snapshot';
@@ -478,6 +480,37 @@ export async function POST(req: NextRequest) {
           stage: 'ingest', status: 'ok', durationMs: ingest.durationMs,
           articlesFetched, articlesInserted, articlesDeduped,
           sources: r.sources,
+        });
+      }
+
+      // Stage 1b — Story clustering (article-level) — non-blocking
+      // Groups multiple articles covering the same underlying story into a
+      // story cluster without removing any records. Runs after ingestion so
+      // freshly written articles are included. Failures are non-fatal.
+      const storyClustering = await runStage(
+        'story_clustering',
+        () => clusterStories(),
+        TIMEOUT.SIGNALS, // shares the 30s signals budget
+        correlationId,
+      );
+      if (storyClustering.error) {
+        stages.push({
+          stage: 'story_clustering',
+          status: 'error',
+          durationMs: storyClustering.durationMs,
+          error: storyClustering.error,
+          timedOut: storyClustering.timedOut,
+        });
+      } else {
+        const sc = storyClustering.result as StoryClusteringSummary;
+        stages.push({
+          stage: 'story_clustering',
+          status: 'ok',
+          durationMs: storyClustering.durationMs,
+          articlesProcessed:    sc.articlesProcessed,
+          clustersFormed:       sc.clustersFormed,
+          articlesInClusters:   sc.articlesInClusters,
+          avgArticlesPerCluster: sc.avgArticlesPerCluster,
         });
       }
 
