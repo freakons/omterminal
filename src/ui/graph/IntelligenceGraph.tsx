@@ -118,7 +118,13 @@ async function fetchGraphData(): Promise<{ data: GraphData; isDemo: boolean; sou
   try {
     const res = await fetch('/api/graph/relationships', { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = await res.json();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let json: any;
+    try {
+      json = await res.json();
+    } catch {
+      throw new Error('Invalid JSON response');
+    }
 
     const source: string = json.source ?? 'unknown';
     const graph: GraphData | undefined = json.graph;
@@ -296,11 +302,21 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
   useEffect(() => {
     fetchGraphData()
       .then(({ data, isDemo: demo, source }) => {
-        setGraphData(sanitizeGraphData(data));
+        const sanitized = sanitizeGraphData(data);
+        console.debug('[IntelligenceGraph] data loaded', {
+          source,
+          isDemo: demo,
+          nodes: sanitized.nodes.length,
+          links: sanitized.links.length,
+          sampleNode: sanitized.nodes[0] ?? null,
+          sampleLink: sanitized.links[0] ?? null,
+        });
+        setGraphData(sanitized);
         setIsDemo(demo);
         setDataSource(source);
       })
-      .catch(() => {
+      .catch((err) => {
+        console.warn('[IntelligenceGraph] fetch failed, using static fallback', err);
         setGraphData(sanitizeGraphData(staticSanityGraph));
       })
       .finally(() => {
@@ -331,9 +347,18 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
    *   - the focused node
    *   - all directly connected nodes
    *   - their shared links, sorted strongest-first
+   *
+   * IMPORTANT: Always deep-copy nodes and links so D3's force simulation
+   * can freely mutate source/target without corrupting the canonical graphData.
+   * Without this, switching focus modes causes crashes because D3 replaces
+   * string IDs with node object references in-place.
    */
   const displayGraphData = useMemo<GraphData>(() => {
-    if (!focusedNodeId) return graphData;
+    if (!focusedNodeId) {
+      // Deep-copy even in unfocused mode — D3 mutates source/target from
+      // strings to node objects, which breaks subsequent sanitizeGraphData calls.
+      return sanitizeGraphData(graphData);
+    }
 
     const neighborIds = new Set<string>();
     const focusedLinks: GraphLink[] = [];
@@ -356,7 +381,9 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
     const nodeIds = new Set([focusedNodeId, ...neighborIds]);
     const focusedNodes = graphData.nodes.filter(n => nodeIds.has(n.id));
 
-    return { nodes: focusedNodes, links: focusedLinks };
+    // Deep-copy through sanitize to strip D3 mutations (x/y/vx/vy on nodes,
+    // object refs on link source/target) so force sim starts fresh.
+    return sanitizeGraphData({ nodes: focusedNodes, links: focusedLinks });
   }, [focusedNodeId, graphData]);
 
   const resetFocus = useCallback(() => {
@@ -502,6 +529,8 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
   /** Custom canvas renderer — draws glowing nodes with labels and semantic shapes */
   const paintNode = useCallback(
     (node: RuntimeNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
+      if (!node || !ctx || typeof node.id !== 'string') return;
+      try {
       const color      = nodeColor(node);
       const isHovered  = node.id === hoveredId;
       const isNeighbor = neighbors.has(node.id);
@@ -566,6 +595,9 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
       ctx.fillText(node.label, x, y + r + 3);
 
       ctx.restore();
+      } catch (err) {
+        console.warn('[IntelligenceGraph] paintNode error:', err);
+      }
     },
     [hoveredId, neighbors, focusedNodeId],
   );
@@ -1101,28 +1133,68 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
       {isLoading && displayGraphData.nodes.length === 0 ? (
         <div style={{
           display: 'flex',
+          flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
           height: '100%',
           minHeight: minH,
-          color: 'rgba(238,238,248,0.35)',
-          fontSize: '0.82rem',
-          letterSpacing: '0.04em',
+          gap: 16,
         }}>
-          Loading graph…
+          {/* Pulsing skeleton dots to simulate graph loading */}
+          <div style={{ display: 'flex', gap: 18, alignItems: 'center' }}>
+            {[28, 20, 24, 16, 22].map((size, i) => (
+              <div
+                key={i}
+                style={{
+                  width: size,
+                  height: size,
+                  borderRadius: '50%',
+                  background: 'rgba(99,102,241,0.12)',
+                  border: '1px solid rgba(99,102,241,0.15)',
+                  animation: `pulse 1.5s ease-in-out ${i * 0.15}s infinite`,
+                }}
+              />
+            ))}
+          </div>
+          <style>{`@keyframes pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }`}</style>
+          <div style={{
+            color: 'rgba(238,238,248,0.35)',
+            fontSize: '0.82rem',
+            letterSpacing: '0.04em',
+          }}>
+            Loading ecosystem graph…
+          </div>
         </div>
       ) : displayGraphData.nodes.length === 0 ? (
         <div style={{
           display: 'flex',
+          flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
           height: '100%',
           minHeight: minH,
+          gap: 12,
           color: 'rgba(238,238,248,0.35)',
-          fontSize: '0.82rem',
-          letterSpacing: '0.04em',
         }}>
-          No graph data available.
+          <div style={{
+            width: 40,
+            height: 40,
+            borderRadius: '50%',
+            background: 'rgba(255,255,255,0.03)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '1.1rem',
+          }}>
+            ○
+          </div>
+          <div style={{ fontSize: '0.82rem', letterSpacing: '0.04em' }}>
+            No ecosystem data available yet
+          </div>
+          <div style={{ fontSize: '0.72rem', color: 'rgba(238,238,248,0.22)' }}>
+            Graph will populate once the ingestion pipeline runs.
+          </div>
         </div>
       ) : (
         <ForceGraph2D
