@@ -78,11 +78,20 @@ const TIMEOUT = {
 } as const;
 
 /**
- * Maximum insights generated per pipeline run (Groq free-tier protection).
+ * Maximum LLM-enhanced insights generated per pipeline run (Groq free-tier protection).
  * Prevents exhausting quota when a large batch of articles is ingested.
  * Override via INTELLIGENCE_BATCH_LIMIT env var.
  */
 const MAX_INSIGHTS_PER_RUN = parseInt(process.env.INTELLIGENCE_BATCH_LIMIT ?? '10', 10);
+
+/**
+ * Minimum significance score a signal must reach to be eligible for LLM insight
+ * generation.  Low-significance signals already receive a deterministic
+ * why_this_matters from the signal engine; this threshold reserves LLM quota
+ * for signals that are more likely to surface on premium views.
+ * Override via INTELLIGENCE_MIN_SIGNIFICANCE env var.
+ */
+const MIN_SIGNIFICANCE_FOR_LLM = parseInt(process.env.INTELLIGENCE_MIN_SIGNIFICANCE ?? '30', 10);
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -552,13 +561,33 @@ export async function POST(req: NextRequest) {
       // Signals with existing insight (insight_generated=true) are skipped.
       // Dedup/reuse is handled inside generateSignalInsightWithMeta.
       if (generatedSigs.length > 0) {
+        // Sort by significance score descending so the highest-value signals
+        // receive LLM treatment first when the batch is capped.
+        const sortedBySignificance = [...generatedSigs].sort(
+          (a, b) => (b.significanceScore ?? 0) - (a.significanceScore ?? 0),
+        );
+
+        // Only elevate signals that exceed the significance threshold to LLM
+        // generation.  Low-significance signals already have a deterministic
+        // why_this_matters from the signal engine — no LLM quota needed.
+        const eligibleSigs = sortedBySignificance.filter(
+          s => (s.significanceScore ?? 0) >= MIN_SIGNIFICANCE_FOR_LLM,
+        );
+        const belowThreshold = generatedSigs.length - eligibleSigs.length;
+        if (belowThreshold > 0) {
+          console.log(
+            `[pipeline] intelligence: ${belowThreshold} signal(s) below significance threshold` +
+            ` (MIN_SIGNIFICANCE_FOR_LLM=${MIN_SIGNIFICANCE_FOR_LLM}) — deterministic why_this_matters already set`,
+          );
+        }
+
         // Batch cap: protect Groq free-tier quota by limiting insights per run.
-        const sigsToProcess = generatedSigs.slice(0, MAX_INSIGHTS_PER_RUN);
-        const batchCapped   = sigsToProcess.length < generatedSigs.length;
+        const sigsToProcess = eligibleSigs.slice(0, MAX_INSIGHTS_PER_RUN);
+        const batchCapped   = sigsToProcess.length < eligibleSigs.length;
         if (batchCapped) {
           console.log(
-            `[pipeline] intelligence batch capped at ${MAX_INSIGHTS_PER_RUN} of ${generatedSigs.length}` +
-            ` signals — free-tier rate-limit protection (INTELLIGENCE_BATCH_LIMIT=${MAX_INSIGHTS_PER_RUN})`,
+            `[pipeline] intelligence batch capped at ${MAX_INSIGHTS_PER_RUN} of ${eligibleSigs.length}` +
+            ` eligible signals — free-tier rate-limit protection (INTELLIGENCE_BATCH_LIMIT=${MAX_INSIGHTS_PER_RUN})`,
           );
         }
 
@@ -585,9 +614,11 @@ export async function POST(req: NextRequest) {
                 insightsReused: 0,
                 insightsFailed: sigsToProcess.length,
                 signalsProcessed: sigsToProcess.length,
-                signalsSkippedByBatchCap: generatedSigs.length - sigsToProcess.length,
+                signalsSkippedBelowThreshold: belowThreshold,
+                signalsSkippedByBatchCap: eligibleSigs.length - sigsToProcess.length,
                 batchCapped,
                 batchLimit: MAX_INSIGHTS_PER_RUN,
+                minSignificanceThreshold: MIN_SIGNIFICANCE_FOR_LLM,
                 provider: providerName,
                 providerError,
               };
@@ -625,6 +656,18 @@ export async function POST(req: NextRequest) {
                   await updateSignalInsight(sig.id, insight);
                   insightsGenerated++;
                   if (result.reused) insightsReused++;
+
+                  // Log first example for observability / report verification
+                  if (insightsGenerated === 1) {
+                    console.log(
+                      `[pipeline] intelligence example` +
+                      ` provider=${providerName ?? 'none'}` +
+                      ` reused=${result.reused}` +
+                      ` significance=${sig.significanceScore ?? 'n/a'}` +
+                      ` signal="${sig.title.slice(0, 60)}"` +
+                      ` why_this_matters="${(insight.why_this_matters ?? '').slice(0, 140)}"`,
+                    );
+                  }
                 }
               } catch (err) {
                 // Per-signal failure is non-fatal
@@ -641,9 +684,11 @@ export async function POST(req: NextRequest) {
               insightsReused,
               insightsFailed,
               signalsProcessed: sigsToProcess.length,
-              signalsSkippedByBatchCap: generatedSigs.length - sigsToProcess.length,
+              signalsSkippedBelowThreshold: belowThreshold,
+              signalsSkippedByBatchCap: eligibleSigs.length - sigsToProcess.length,
               batchCapped,
               batchLimit: MAX_INSIGHTS_PER_RUN,
+              minSignificanceThreshold: MIN_SIGNIFICANCE_FOR_LLM,
               provider: providerName,
               providerError,
               lastError: insightsFailed > 0 ? lastError : null,
