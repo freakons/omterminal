@@ -3,6 +3,8 @@ import { Card } from './Card';
 import { Badge } from './Badge';
 import { StatusIndicator } from './StatusIndicator';
 import { SignalConfidenceMeter } from './SignalConfidenceMeter';
+import { EntityLink } from './EntityLink';
+import { slugify } from '@/utils/sanitize';
 import type { SignalType } from '@/types/intelligence';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -178,7 +180,7 @@ export function SignalCard({ signal, className = '' }: SignalCardProps) {
                   color: 'var(--text2)',
                 }}
               >
-                {entity}
+                <EntityLink name={entity} slug={slugify(entity)} />
                 {i < keyEntities.length - 1 && (
                   <span
                     style={{

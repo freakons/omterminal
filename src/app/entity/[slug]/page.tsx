@@ -8,8 +8,10 @@ import {
   getEntityMetrics,
   getEntityTimeline,
   getEntityMomentum,
+  getRelatedEntities,
 } from '@/db/queries';
-import type { TimelineItem } from '@/db/queries';
+import type { TimelineItem, RelatedEntity } from '@/db/queries';
+import { generateEntityInsight } from '@/lib/entities/entityInsightGenerator';
 import { SupportingEventRow } from '@/components/events/SupportingEventRow';
 import { WatchlistButton } from '@/components/watchlist/WatchlistButton';
 import { EntityTimeline } from '@/components/entity/TimelineNavigator';
@@ -192,7 +194,7 @@ export default async function EntityDossierPage(
 
   const entityName = entity.name;
 
-  const [rawSignals, events, metrics, timeline, momentum] = await Promise.all([
+  const [rawSignals, events, metrics, timeline, momentum, relatedEntities] = await Promise.all([
     getSignalsForEntity(entityName, 20).catch(() => [] as Signal[]),
     getEventsForEntity(entityName, 15).catch(() => []),
     getEntityMetrics(entityName).catch(() => ({
@@ -201,6 +203,7 @@ export default async function EntityDossierPage(
     })),
     getEntityTimeline(entityName, 25).catch(() => [] as TimelineItem[]),
     getEntityMomentum(entityName).catch(() => null),
+    getRelatedEntities(entityName, 10).catch(() => [] as RelatedEntity[]),
   ]);
 
   // Rank signals by significance + recency via composeFeed
@@ -215,6 +218,22 @@ export default async function EntityDossierPage(
   // Derived intelligence
   const entitySummary = buildEntitySummary(entityName, signals, metrics.lastActivity);
   const categoryBreakdown = getCategoryBreakdown(rawSignals);
+
+  // Structured insight from the entity insight generator
+  const entityInsight = generateEntityInsight({
+    entityName,
+    sector: entity.sector,
+    country: entity.country,
+    signals,
+    relatedEntities,
+    metrics: {
+      signalsTotal: metrics.signalsTotal,
+      signals7d: metrics.signals7d,
+      signals30d: metrics.signals30d,
+      avgConfidence: metrics.avgConfidence,
+      lastActivity: metrics.lastActivity,
+    },
+  });
 
   // Top-priority signals for the summary section
   const topSignals = signalsWithExplanations.filter(
@@ -595,6 +614,81 @@ export default async function EntityDossierPage(
         <h2 style={{ ...SECTION_HEADER, margin: 0, marginBottom: 16 }}>Entity Timeline</h2>
         <EntityTimeline timeline={timeline} />
       </div>
+
+      {/* ── Ecosystem Role ──────────────────────────────────────────────────── */}
+      {entityInsight.ecosystemRole && (
+        <div style={{ ...GLASS_CARD, marginBottom: 16, borderLeft: '2px solid rgba(16,185,129,0.4)' }}>
+          <h2 style={{ ...SECTION_HEADER, margin: 0, marginBottom: 12 }}>Ecosystem Role</h2>
+          <p style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.7, margin: 0, marginBottom: 10 }}>
+            {entityInsight.ecosystemRole}
+          </p>
+          <p style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.55, margin: 0 }}>
+            {entityInsight.statusLine}
+          </p>
+          {entityInsight.activityAreas.length > 0 && (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
+              {entityInsight.activityAreas.map((area) => (
+                <span key={area} style={TAG}>{area}</span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Related Entities ────────────────────────────────────────────────── */}
+      {relatedEntities.length > 0 && (
+        <div style={{ ...GLASS_CARD, marginBottom: 16 }}>
+          <h2 style={{ ...SECTION_HEADER, margin: 0, marginBottom: 16 }}>Related Entities</h2>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+            gap: 10,
+          }}>
+            {relatedEntities.map((rel) => (
+              <Link
+                key={rel.name}
+                href={`/entity/${rel.slug}`}
+                style={{
+                  display: 'flex', flexDirection: 'column', gap: 4,
+                  padding: '12px 14px', borderRadius: 8,
+                  border: '1px solid var(--border2)', background: 'var(--glass2)',
+                  textDecoration: 'none', transition: 'border-color 0.15s',
+                }}
+              >
+                <span style={{ fontFamily: 'var(--fm)', fontSize: 12, color: 'var(--text)' }}>
+                  {rel.name}
+                </span>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  {rel.type && (
+                    <span style={{
+                      fontFamily: 'var(--fm)', fontSize: 8, letterSpacing: '0.1em',
+                      textTransform: 'uppercase', color: 'var(--text3)',
+                      padding: '1px 6px', borderRadius: 6,
+                      border: '1px solid var(--border2)',
+                    }}>
+                      {rel.type}
+                    </span>
+                  )}
+                  {rel.sector && (
+                    <span style={{
+                      fontFamily: 'var(--fm)', fontSize: 8, letterSpacing: '0.1em',
+                      textTransform: 'uppercase', color: 'var(--text3)',
+                    }}>
+                      {rel.sector}
+                    </span>
+                  )}
+                  <span style={{
+                    fontFamily: 'var(--fm)', fontSize: 9, color: 'var(--text3)',
+                    marginLeft: 'auto',
+                  }}>
+                    {rel.mentions} shared
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Main content grid */}
       <div className="detail-grid-wide">

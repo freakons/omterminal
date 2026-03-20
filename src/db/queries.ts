@@ -1154,6 +1154,68 @@ export async function getEntityMetrics(entityName: string): Promise<EntityDossie
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Related Entities
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Entity that co-occurs with a given entity across signals. */
+export interface RelatedEntity {
+  name: string;
+  slug: string;
+  type: string | null;
+  sector: string | null;
+  mentions: number;
+}
+
+/**
+ * Fetch entities that co-occur with the given entity across shared signals.
+ * Uses the signal_entities junction table; falls back to empty array if
+ * the table doesn't exist or the query fails.
+ */
+export async function getRelatedEntities(
+  entityName: string,
+  limit = 10,
+): Promise<RelatedEntity[]> {
+  try {
+    const hasJunction = await tableExists('signal_entities');
+    if (!hasJunction) return [];
+
+    const { slugify } = await import('@/utils/sanitize');
+
+    type Row = {
+      name: string;
+      type: string | null;
+      sector: string | null;
+      mentions: string;
+    };
+
+    const safeLimit = Math.min(Math.max(1, limit), 30);
+
+    const rows = await dbQuery<Row>`
+      SELECT e2.name, e2.type, e2.sector, COUNT(*)::text AS mentions
+      FROM signal_entities se
+      JOIN entities e1 ON e1.id = se.entity_id
+      JOIN signal_entities se2 ON se2.signal_id = se.signal_id
+      JOIN entities e2 ON e2.id = se2.entity_id
+      WHERE LOWER(e1.name) = LOWER(${entityName})
+        AND e2.name != e1.name
+      GROUP BY e2.name, e2.type, e2.sector
+      ORDER BY mentions DESC
+      LIMIT ${safeLimit}
+    `;
+
+    return rows.map((r) => ({
+      name: r.name,
+      slug: slugify(r.name),
+      type: r.type,
+      sector: r.sector,
+      mentions: parseInt(r.mentions, 10),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Entity Comparison
 // ─────────────────────────────────────────────────────────────────────────────
 
