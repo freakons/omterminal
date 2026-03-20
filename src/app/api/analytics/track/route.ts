@@ -31,6 +31,12 @@ const ALLOWED_EVENT_TYPES = new Set<ProductEventType>([
   'digest_sent',
   'digest_skipped',
   'email_click',
+  'page_view',
+  'filter_used',
+  'quick_action_clicked',
+  'graph_interaction',
+  'compare_used',
+  'copy_insight',
 ]);
 
 export async function POST(req: NextRequest) {

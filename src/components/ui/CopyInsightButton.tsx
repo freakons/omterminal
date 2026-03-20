@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useAnalytics } from '@/hooks/useAnalytics';
 
 interface CopyInsightButtonProps {
   text: string;
@@ -8,10 +9,12 @@ interface CopyInsightButtonProps {
 
 export function CopyInsightButton({ text }: CopyInsightButtonProps) {
   const [copied, setCopied] = useState(false);
+  const { trackCopyInsight } = useAnalytics();
 
   function handleCopy() {
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
+      trackCopyInsight();
       setTimeout(() => setCopied(false), 2000);
     });
   }

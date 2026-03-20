@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { siteConfig } from '@/config/site';
+import { useAnalytics } from '@/hooks/useAnalytics';
 import { useWatchlist, type WatchedEntity } from '@/hooks/useWatchlist';
 import { Badge } from '@/components/ui/Badge';
 import { SignalImpactBadge } from '@/components/signals/SignalImpactBadge';
@@ -72,6 +73,8 @@ export default function WatchlistPage() {
   const { entities, remove } = useWatchlist();
   const entityNames = entities.map((e) => e.name);
   const feed = useWatchlistSignals(entityNames);
+  const { trackPageView } = useAnalytics();
+  useEffect(() => { trackPageView('/watchlist'); }, [trackPageView]);
 
   return (
     <div className="page-enter">
