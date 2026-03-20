@@ -119,6 +119,15 @@ const AMBIGUOUS_SHORT_TOKENS = new Set([
   'titan',     // Amazon Titan - common English noun
   'falcon',    // TII Falcon - common English noun (also IBM Falcon)
   'mj',        // Midjourney shorthand - too short to match safely
+  // Additional model-specific ambiguous terms
+  'sam',       // Segment Anything Model - very common proper name
+  'opt',       // Meta OPT - common English verb/adjective
+  'bloom',     // BigScience BLOOM - common English word
+  'arctic',    // Snowflake Arctic - common English adjective
+  'sonar',     // Perplexity Sonar - common English noun (also Sonar by Atlassian)
+  'core',      // Reka Core - common English noun
+  'gen',       // Runway Gen-2/Gen-3 prefix - too ambiguous alone
+  't5',        // Google T5 - too short, common in other contexts
 ]);
 
 /**
