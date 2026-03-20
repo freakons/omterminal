@@ -379,7 +379,7 @@ function scoreClusterIntelligence(ctx: ClusterContext): number {
 // Entity prominence
 // ─────────────────────────────────────────────────────────────────────────────
 
-const PROMINENT_ENTITIES = new Set([
+export const PROMINENT_ENTITIES = new Set([
   'openai', 'anthropic', 'google', 'google deepmind', 'deepmind', 'meta',
   'microsoft', 'nvidia', 'apple', 'amazon', 'aws', 'mistral', 'xai',
   'cohere', 'stability ai', 'hugging face', 'inflection', 'character ai',
