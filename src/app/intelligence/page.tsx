@@ -83,6 +83,14 @@ export default async function IntelligencePage() {
         <div className="feed-header-left">
           <h1 className="feed-title">Intelligence Feed</h1>
           <p className="feed-subtitle">Live AI signals — ranked by importance and freshness</p>
+          <div className="feed-system-status">
+            <span className="feed-system-dot" />
+            <span className="feed-system-label">System stable</span>
+            <span className="feed-system-sep">·</span>
+            <span className="feed-system-label">Live intelligence</span>
+            <span className="feed-system-sep">·</span>
+            <span className="feed-system-label">Refreshes every 60s</span>
+          </div>
         </div>
         <div className="feed-live-indicator">
           <span className="feed-live-dot" />

@@ -86,9 +86,9 @@ function scoreClass(score: number): string {
 }
 
 function scoreLabel(score: number): string {
-  if (score >= 75) return 'High';
-  if (score >= 55) return 'Strong';
-  if (score >= 35) return 'Moderate';
+  if (score >= 80) return 'High';
+  if (score >= 60) return 'Strong';
+  if (score >= 40) return 'Moderate';
   return 'Low';
 }
 
@@ -118,9 +118,9 @@ function StrategicSignalRow({ signal }: { signal: SignalStrategic }) {
       <span className="eco-cat" data-cat={cat}>{cat}</span>
       <span className="eco-title">{signal.signal_title}</span>
       {signal.source_support_count != null && signal.source_support_count > 1 && (
-        <span className="eco-src-count">
+        <span className={signal.source_support_count >= 5 ? 'eco-src-count eco-src-count--high' : 'eco-src-count'}>
           <span className="indicator-dot indicator-dot--emerald" />
-          {signal.source_support_count}
+          {signal.source_support_count >= 5 ? 'High corroboration' : `${signal.source_support_count} sources`}
         </span>
       )}
       <span className={scoreClass(signal.strategic_importance_score)}>
@@ -233,8 +233,8 @@ export function EcosystemActivity({
         {momentumLeaders.length > 0 && (
           <div className="eco-panel eco-panel--momentum">
             <div className="eco-panel-header">
-              <h3 className="eco-panel-title">Momentum Leaders</h3>
-              <span className="eco-badge" style={{ background: 'rgba(5,150,105,0.1)', color: 'var(--emerald-l)', borderColor: 'rgba(5,150,105,0.2)' }}>Index</span>
+              <h3 className="eco-panel-title eco-panel-title--index">Momentum Index</h3>
+              <span className="eco-badge eco-badge--index eco-badge--momentum">Index</span>
             </div>
             {momentumLeaders.map((e) => (
               <MomentumLeaderRow key={e.entity_id} entity={e} />
@@ -246,8 +246,8 @@ export function EcosystemActivity({
         {strategicSignals.length > 0 && (
           <div className="eco-panel eco-panel--strategic">
             <div className="eco-panel-header">
-              <h3 className="eco-panel-title">Strategic Signals</h3>
-              <span className="eco-badge" style={{ background: 'rgba(124,58,237,0.1)', color: '#c084fc', borderColor: 'rgba(124,58,237,0.2)' }}>Index</span>
+              <h3 className="eco-panel-title eco-panel-title--index">Strategic Importance</h3>
+              <span className="eco-badge eco-badge--index eco-badge--strategic">Index</span>
             </div>
             {strategicSignals.map((s) => (
               <StrategicSignalRow key={s.signal_id} signal={s} />
