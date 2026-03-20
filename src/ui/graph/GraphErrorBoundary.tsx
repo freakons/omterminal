@@ -26,7 +26,8 @@ export class GraphErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    console.error('[GraphErrorBoundary] caught error:', error);
+    console.error('[GraphErrorBoundary] caught error:', error.message);
+    console.error('[GraphErrorBoundary] stack:', error.stack);
     console.error('[GraphErrorBoundary] component stack:', info.componentStack);
   }
 
@@ -69,6 +70,23 @@ export class GraphErrorBoundary extends Component<Props, State> {
             <div style={{ fontSize: '0.78rem', lineHeight: 1.5 }}>
               The ecosystem graph encountered an error. Try refreshing the page.
             </div>
+            {this.state.error && (
+              <div style={{
+                marginTop: 8,
+                padding: '6px 10px',
+                background: 'rgba(248,113,113,0.08)',
+                border: '1px solid rgba(248,113,113,0.15)',
+                borderRadius: 4,
+                fontSize: '0.68rem',
+                color: 'rgba(248,113,113,0.7)',
+                fontFamily: 'monospace',
+                wordBreak: 'break-word',
+                maxHeight: 80,
+                overflow: 'auto',
+              }}>
+                {this.state.error.message}
+              </div>
+            )}
           </div>
           <button
             onClick={() => {

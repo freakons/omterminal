@@ -2,9 +2,12 @@
 
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { staticSanityGraph, type GraphNode, type GraphLink, type GraphData, type NodeSubtype, type EdgeType } from '@/data/mockGraph';
 import { ConnectionExplanationPanel } from './ConnectionExplanationPanel';
+
+// SSR-safe useLayoutEffect — avoids React warnings during server render
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
 // Disable SSR — ForceGraph2D uses canvas and window APIs
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -199,6 +202,55 @@ function tierLabel(tier: string): string {
 // Data sanitization — prevents D3/ForceGraph crashes from bad data
 // ─────────────────────────────────────────────────────────────────────────────
 
+const VALID_NODE_TYPES = new Set(['entity', 'event', 'signal']);
+
+/**
+ * Strict validation: returns true only when nodes and links form a valid,
+ * render-safe graph. Logs a descriptive warning when validation fails.
+ */
+function validateGraphData(nodes: GraphNode[], links: GraphLink[]): boolean {
+  if (!Array.isArray(nodes) || !Array.isArray(links)) {
+    console.warn('[IntelligenceGraph] validateGraphData: nodes/links are not arrays');
+    return false;
+  }
+
+  const nodeIds = new Set<string>();
+  for (const n of nodes) {
+    if (typeof n?.id !== 'string' || n.id.length === 0) {
+      console.warn('[IntelligenceGraph] validateGraphData: node missing valid id', n);
+      return false;
+    }
+    if (typeof n.label !== 'string') {
+      console.warn('[IntelligenceGraph] validateGraphData: node missing label', n.id);
+      return false;
+    }
+    if (!VALID_NODE_TYPES.has(n.type)) {
+      console.warn('[IntelligenceGraph] validateGraphData: node has invalid type', n.id, n.type);
+      return false;
+    }
+    nodeIds.add(n.id);
+  }
+
+  for (const l of links) {
+    const src = typeof l.source === 'string' ? l.source : (l.source as RuntimeNode)?.id;
+    const tgt = typeof l.target === 'string' ? l.target : (l.target as RuntimeNode)?.id;
+    if (!src || !tgt) {
+      console.warn('[IntelligenceGraph] validateGraphData: link missing source/target', l);
+      return false;
+    }
+    if (!nodeIds.has(src)) {
+      console.warn('[IntelligenceGraph] validateGraphData: link source not in nodes', src);
+      return false;
+    }
+    if (!nodeIds.has(tgt)) {
+      console.warn('[IntelligenceGraph] validateGraphData: link target not in nodes', tgt);
+      return false;
+    }
+  }
+
+  return true;
+}
+
 /**
  * Deep-copies and validates graph data so ForceGraph2D always receives:
  *   - fresh objects (prevents D3 mutation of shared singletons)
@@ -207,6 +259,8 @@ function tierLabel(tier: string): string {
  *
  * Also handles already-mutated D3 links (where source/target are node objects
  * instead of strings) so re-sanitising is always safe.
+ *
+ * Returns a safe empty graph if the input is invalid or empty.
  */
 function sanitizeGraphData(raw: unknown): GraphData {
   const empty: GraphData = { nodes: [], links: [] };
@@ -218,54 +272,80 @@ function sanitizeGraphData(raw: unknown): GraphData {
   const nodes: GraphNode[] = [];
 
   for (const n of d.nodes as unknown[]) {
+    if (n == null || typeof n !== 'object') continue;
+    const gn = n as Record<string, unknown>;
+    const id = typeof gn.id === 'string' ? gn.id.trim() : '';
+    const label = typeof gn.label === 'string' ? gn.label : '';
+    const type = typeof gn.type === 'string' ? gn.type : '';
+
     if (
-      n != null &&
-      typeof n === 'object' &&
-      typeof (n as GraphNode).id === 'string' &&
-      (n as GraphNode).id.length > 0 &&
-      typeof (n as GraphNode).label === 'string' &&
-      (['entity', 'event', 'signal'] as string[]).includes((n as GraphNode).type) &&
-      !seen.has((n as GraphNode).id)
+      id.length > 0 &&
+      label.length > 0 &&
+      VALID_NODE_TYPES.has(type) &&
+      !seen.has(id)
     ) {
-      seen.add((n as GraphNode).id);
+      seen.add(id);
       // Shallow copy strips D3-added x/y/vx/vy so force sim starts fresh
-      const gn = n as GraphNode;
       nodes.push({
-        id: gn.id,
-        type: gn.type,
-        label: gn.label,
-        ...(gn.subtype ? { subtype: gn.subtype } : {}),
+        id,
+        type: type as GraphNode['type'],
+        label,
+        ...((gn as unknown as GraphNode).subtype ? { subtype: (gn as unknown as GraphNode).subtype } : {}),
       });
     }
   }
 
+  if (nodes.length === 0) {
+    console.warn('[IntelligenceGraph] sanitizeGraphData: no valid nodes found');
+    return empty;
+  }
+
   const links: GraphLink[] = [];
+  const linkKeys = new Set<string>();
 
   for (const l of d.links as unknown[]) {
     if (l == null || typeof l !== 'object') continue;
     const link = l as GraphLink;
     // D3 mutates source/target from strings to node objects — handle both
-    const rawSrc = link.source as string | RuntimeNode;
-    const rawTgt = link.target as string | RuntimeNode;
-    const src = typeof rawSrc === 'string' ? rawSrc : rawSrc?.id;
-    const tgt = typeof rawTgt === 'string' ? rawTgt : rawTgt?.id;
+    const rawSrc = link.source;
+    const rawTgt = link.target;
+    const src = typeof rawSrc === 'string' ? rawSrc
+      : (rawSrc != null && typeof rawSrc === 'object' && typeof (rawSrc as RuntimeNode).id === 'string')
+        ? (rawSrc as RuntimeNode).id
+        : '';
+    const tgt = typeof rawTgt === 'string' ? rawTgt
+      : (rawTgt != null && typeof rawTgt === 'object' && typeof (rawTgt as RuntimeNode).id === 'string')
+        ? (rawTgt as RuntimeNode).id
+        : '';
+
     if (
-      typeof src === 'string' && src.length > 0 &&
-      typeof tgt === 'string' && tgt.length > 0 &&
+      src.length > 0 &&
+      tgt.length > 0 &&
       src !== tgt &&       // reject self-loops
       seen.has(src) &&
       seen.has(tgt)
     ) {
+      // Deduplicate links (A→B and B→A count as same edge)
+      const key = src < tgt ? `${src}::${tgt}` : `${tgt}::${src}`;
+      if (linkKeys.has(key)) continue;
+      linkKeys.add(key);
+
       links.push({
         source: src,
         target: tgt,
-        ...(link.strength      != null ? { strength: link.strength }             : {}),
-        ...(link.tier                  ? { tier: link.tier }                     : {}),
-        ...(link.sharedSignals != null ? { sharedSignals: link.sharedSignals }   : {}),
-        ...(link.lastInteraction       ? { lastInteraction: link.lastInteraction }: {}),
-        ...(link.edgeType              ? { edgeType: link.edgeType }             : {}),
+        ...(link.strength      != null ? { strength: Number(link.strength) || 0 } : {}),
+        ...(link.tier                  ? { tier: link.tier }                       : {}),
+        ...(link.sharedSignals != null ? { sharedSignals: link.sharedSignals }     : {}),
+        ...(link.lastInteraction       ? { lastInteraction: link.lastInteraction } : {}),
+        ...(link.edgeType              ? { edgeType: link.edgeType }               : {}),
       });
     }
+  }
+
+  // Final validation — log but still return what we have
+  if (!validateGraphData(nodes, links)) {
+    console.warn('[IntelligenceGraph] sanitizeGraphData: post-sanitization validation failed, returning empty graph');
+    return empty;
   }
 
   return { nodes, links };
@@ -297,6 +377,27 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
   // Focus mode state — pre-seed focusedNodeId when initialFocusId is provided
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(initialFocusId ?? null);
   const [focusedNode, setFocusedNode] = useState<RuntimeNode | null>(null);
+
+  // Track container dimensions — ForceGraph2D needs explicit width/height to
+  // avoid crashes when the container hasn't laid out yet at mount time.
+  const [dimensions, setDimensions] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
+
+  useIsomorphicLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const measure = () => {
+      const { width, height } = el.getBoundingClientRect();
+      setDimensions(prev =>
+        prev.width === Math.round(width) && prev.height === Math.round(height)
+          ? prev
+          : { width: Math.round(width), height: Math.round(height) },
+      );
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Fetch live relationship graph on mount; fall back to mock data if unavailable
   useEffect(() => {
@@ -604,70 +705,77 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
 
   const getLinkColor = useCallback(
     (link: RuntimeLink) => {
-      const src = nodeId(link.source as string | RuntimeNode);
-      const tgt = nodeId(link.target as string | RuntimeNode);
+      if (!link) return 'rgba(255,255,255,0.1)';
+      try {
+        const src = nodeId(link.source as string | RuntimeNode);
+        const tgt = nodeId(link.target as string | RuntimeNode);
 
-      if (hoveredId) {
-        // On hover: highlight connected edges in white, dim everything else
-        return src === hoveredId || tgt === hoveredId
-          ? 'rgba(255,255,255,0.65)'
-          : 'rgba(255,255,255,0.025)';
+        if (hoveredId) {
+          return src === hoveredId || tgt === hoveredId
+            ? 'rgba(255,255,255,0.65)'
+            : 'rgba(255,255,255,0.025)';
+        }
+
+        const alpha = baseLinkAlpha(link);
+
+        const edgeStyle = getEdgeStyle(link);
+        if (edgeStyle) {
+          const hex = edgeStyle.color.replace('#', '');
+          const r = parseInt(hex.substring(0, 2), 16);
+          const g = parseInt(hex.substring(2, 4), 16);
+          const b = parseInt(hex.substring(4, 6), 16);
+          return `rgba(${r},${g},${b},${alpha})`;
+        }
+
+        if (link.tier) return `rgba(147,197,253,${alpha})`;
+
+        return `rgba(255,255,255,${alpha})`;
+      } catch {
+        return 'rgba(255,255,255,0.1)';
       }
-
-      const alpha = baseLinkAlpha(link);
-
-      // Semantic edge type → use type colour
-      const edgeStyle = getEdgeStyle(link);
-      if (edgeStyle) {
-        // Convert hex color to rgba — parse #rrggbb manually for canvas compat
-        const hex = edgeStyle.color.replace('#', '');
-        const r = parseInt(hex.substring(0, 2), 16);
-        const g = parseInt(hex.substring(2, 4), 16);
-        const b = parseInt(hex.substring(4, 6), 16);
-        return `rgba(${r},${g},${b},${alpha})`;
-      }
-
-      // Tier-based entity↔entity edge — subtle blue tint
-      if (link.tier) return `rgba(147,197,253,${alpha})`;
-
-      // Structural edge (entity→event, event→signal)
-      return `rgba(255,255,255,${alpha})`;
     },
     [hoveredId],
   );
 
   const getLinkWidth = useCallback(
     (link: RuntimeLink) => {
-      const src = nodeId(link.source as string | RuntimeNode);
-      const tgt = nodeId(link.target as string | RuntimeNode);
+      if (!link) return 0.6;
+      try {
+        const src = nodeId(link.source as string | RuntimeNode);
+        const tgt = nodeId(link.target as string | RuntimeNode);
 
-      if (hoveredId) {
-        return src === hoveredId || tgt === hoveredId ? 2.5 : 0.25;
+        if (hoveredId) {
+          return src === hoveredId || tgt === hoveredId ? 2.5 : 0.25;
+        }
+
+        if (link.strength != null) return Math.max(0.6, link.strength / 100 * 2.2);
+        if (link.tier === 'strong')   return 2.0;
+        if (link.tier === 'moderate') return 1.4;
+        if (link.edgeType) return 1.2;
+
+        return 0.6;
+      } catch {
+        return 0.6;
       }
-
-      // Strength-scaled width when strength data is available
-      if (link.strength != null) return Math.max(0.6, link.strength / 100 * 2.2);
-      if (link.tier === 'strong')   return 2.0;
-      if (link.tier === 'moderate') return 1.4;
-
-      // Semantic edges without strength get a moderate base width
-      if (link.edgeType) return 1.2;
-
-      return 0.6; // structural connections
     },
     [hoveredId],
   );
 
   /** Dashed line patterns per edge type — undefined means solid */
   const getLinkDash = useCallback(
-    (link: RuntimeLink): number[] | null => {
-      const edgeStyle = getEdgeStyle(link);
-      return edgeStyle?.dash ?? null;
+    (link: RuntimeLink): number[] | undefined => {
+      try {
+        const edgeStyle = getEdgeStyle(link);
+        return edgeStyle?.dash ?? undefined;
+      } catch {
+        return undefined;
+      }
     },
     [],
   );
 
   const handleNodeClick = useCallback((node: RuntimeNode) => {
+    if (!node || typeof node.id !== 'string') return;
     if (node.type === 'entity') {
       // Always enter focus mode on entity click — toggle off if already focused
       if (focusedNodeId === node.id) {
@@ -683,20 +791,20 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
   }, [router, focusedNodeId, resetFocus]);
 
   const handleNodeHover = useCallback((node: RuntimeNode | null) => {
-    setHoveredId(node?.id ?? null);
-    setHoveredNode(node ?? null);
-    // Clear link tooltip when hovering a node
-    if (node) setHoveredLink(null);
+    const validNode = node && typeof node.id === 'string' ? node : null;
+    setHoveredId(validNode?.id ?? null);
+    setHoveredNode(validNode ?? null);
+    if (validNode) setHoveredLink(null);
     if (containerRef.current) {
-      const isClickable = node?.type === 'entity' || node?.type === 'signal';
-      containerRef.current.style.cursor = isClickable ? 'pointer' : node ? 'default' : 'default';
+      const isClickable = validNode?.type === 'entity' || validNode?.type === 'signal';
+      containerRef.current.style.cursor = isClickable ? 'pointer' : 'default';
     }
   }, []);
 
   const handleLinkHover = useCallback((link: RuntimeLink | null) => {
-    setHoveredLink(link ?? null);
-    // Clear node tooltip when hovering a link
-    if (link) {
+    const validLink = link && link.source != null && link.target != null ? link : null;
+    setHoveredLink(validLink ?? null);
+    if (validLink) {
       setHoveredNode(null);
       setHoveredId(null);
     }
@@ -1196,16 +1304,24 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
             Graph will populate once the ingestion pipeline runs.
           </div>
         </div>
+      ) : dimensions.width === 0 || dimensions.height === 0 ? (
+        /* Container not yet laid out — skip ForceGraph2D to avoid canvas errors */
+        null
       ) : (
         <ForceGraph2D
           graphData={displayGraphData}
+          width={dimensions.width}
+          height={dimensions.height}
           backgroundColor="transparent"
+          nodeId="id"
           nodeCanvasObject={paintNode}
           nodeCanvasObjectMode={() => 'replace'}
           nodeLabel={() => ''}
           onNodeClick={handleNodeClick}
           onNodeHover={handleNodeHover}
           onLinkHover={handleLinkHover}
+          linkSource="source"
+          linkTarget="target"
           linkColor={getLinkColor}
           linkWidth={getLinkWidth}
           linkLineDash={getLinkDash}
