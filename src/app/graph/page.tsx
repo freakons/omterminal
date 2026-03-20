@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { IntelligenceGraph } from '@/ui/graph/IntelligenceGraph';
+import { PageViewTracker } from '@/components/analytics/PageViewTracker';
 
 export const metadata: Metadata = {
   title: 'AI Ecosystem Graph',
@@ -60,6 +61,7 @@ function NodeShape({ shape, color }: { shape: 'circle' | 'diamond' | 'triangle';
 export default function GraphPage() {
   return (
     <>
+      <PageViewTracker path="/graph" />
       {/* Page header */}
       <div style={{ marginBottom: 20 }}>
         <h1 style={{

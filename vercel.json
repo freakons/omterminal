@@ -12,6 +12,10 @@
     {
       "path": "/api/alerts/send-digest",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/admin/weekly-report",
+      "schedule": "0 6 * * 1"
     }
   ]
 }

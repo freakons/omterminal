@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { formatSignalAge, isHot, isRecent, countRecentSignals } from '@/lib/signals/signalAge';
+import { PageViewTracker } from '@/components/analytics/PageViewTracker';
 
 export const metadata: Metadata = {
   title: 'Signals — Omterminal Intelligence',
@@ -37,6 +38,7 @@ export default async function SignalsPage() {
 
   return (
     <div>
+      <PageViewTracker path="/dashboard/signals" />
       {/* Section header */}
       <div className="feed-section-header" style={{ marginBottom: 20 }}>
         <span className="feed-section-accent feed-section-accent--top" />

@@ -456,6 +456,33 @@ const STATEMENTS = [
   )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_digest_sends_user_date
      ON digest_sends (user_id, sent_for_date)`,
+
+  // ── Migration 019: Product Events ────────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS product_events (
+    id           BIGSERIAL   PRIMARY KEY,
+    event_type   TEXT        NOT NULL,
+    user_id      TEXT,
+    entity_slug  TEXT,
+    signal_id    TEXT,
+    alert_id     TEXT,
+    properties   JSONB,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_product_events_event_type ON product_events (event_type)`,
+  `CREATE INDEX IF NOT EXISTS idx_product_events_user_id    ON product_events (user_id) WHERE user_id IS NOT NULL`,
+  `CREATE INDEX IF NOT EXISTS idx_product_events_signal_id  ON product_events (signal_id) WHERE signal_id IS NOT NULL`,
+  `CREATE INDEX IF NOT EXISTS idx_product_events_created_at ON product_events (created_at DESC)`,
+
+  // ── Migration 020: Weekly Reports ────────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS weekly_reports (
+    id           BIGSERIAL   PRIMARY KEY,
+    week_start   DATE        NOT NULL,
+    week_end     DATE        NOT NULL,
+    report_data  JSONB       NOT NULL,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_weekly_reports_week UNIQUE (week_start)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_weekly_reports_week_start ON weekly_reports (week_start DESC)`,
 ];
 
 /**
@@ -519,6 +546,10 @@ const TABLES_CREATED = [
   // migration 012
   'user_email_subscriptions',
   'digest_sends',
+  // migration 019
+  'product_events',
+  // migration 020
+  'weekly_reports',
 ];
 
 export async function POST(req: NextRequest) {

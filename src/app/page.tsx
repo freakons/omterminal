@@ -12,6 +12,7 @@ import { DailyIntelligenceHeader } from '@/components/daily/DailyIntelligenceHea
 import { TopEntitiesSection } from '@/components/daily/TopEntitiesSection';
 import { EmergingTrendsPreview } from '@/components/daily/EmergingTrendsPreview';
 import { QuickActions } from '@/components/daily/QuickActions';
+import { PageViewTracker } from '@/components/analytics/PageViewTracker';
 
 /** ISR: revalidate every 30 minutes for fresher daily data */
 export const revalidate = 1800;
@@ -61,6 +62,7 @@ export default async function HomePage() {
 
   return (
     <>
+      <PageViewTracker path="/" />
       {/* Daily Intelligence Header (client) — welcome banner + activity pulse */}
       <DailyIntelligenceHeader
         signals={signalSummary}

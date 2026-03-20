@@ -23,6 +23,7 @@ import { buildEntitySchema, buildBreadcrumbSchema } from '@/lib/seo/jsonld';
 import { siteConfig } from '@/config/site';
 import { IntelligenceGraph } from '@/ui/graph/IntelligenceGraph';
 import { CopyInsightButton } from '@/components/ui/CopyInsightButton';
+import { PageViewTracker } from '@/components/analytics/PageViewTracker';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -276,6 +277,7 @@ export default async function EntityDossierPage(
 
   return (
     <div className="page-enter">
+      <PageViewTracker path={`/entity/${slug}`} />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}

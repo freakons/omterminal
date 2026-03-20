@@ -2,6 +2,7 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import { getEntityComparison } from '@/db/queries';
 import type { EntityComparisonEntry } from '@/db/queries';
+import { PageViewTracker } from '@/components/analytics/PageViewTracker';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Suggested comparisons shown in the empty state
@@ -257,6 +258,7 @@ export default async function ComparePage(
   if (slugs.length === 0) {
     return (
       <div className="page-enter">
+        <PageViewTracker path="/compare" />
         <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 20 }}>
           <Link href="/" style={BREADCRUMB}>← Home</Link>
           <span style={{ color: 'var(--border)', fontSize: 10 }}>·</span>
@@ -440,6 +442,7 @@ export default async function ComparePage(
 
   return (
     <div className="page-enter">
+      <PageViewTracker path="/compare" />
 
       {/* Breadcrumb */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 20 }}>

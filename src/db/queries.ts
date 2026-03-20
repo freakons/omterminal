@@ -2799,7 +2799,13 @@ export type ProductEventType =
   | 'entity_untracked'
   | 'digest_sent'
   | 'digest_skipped'
-  | 'email_click';
+  | 'email_click'
+  | 'page_view'
+  | 'filter_used'
+  | 'quick_action_clicked'
+  | 'graph_interaction'
+  | 'compare_used'
+  | 'copy_insight';
 
 export interface TrackEventParams {
   eventType: ProductEventType;

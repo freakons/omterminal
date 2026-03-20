@@ -1,9 +1,11 @@
 'use client';
 
+import { useEffect } from 'react';
 import Link from 'next/link';
 import { AlertsPanel } from '@/components/alerts/AlertsPanel';
 import { EmailDigestCard } from '@/components/alerts/EmailDigestCard';
 import { AlertPreferencesCard } from '@/components/alerts/AlertPreferencesCard';
+import { useAnalytics } from '@/hooks/useAnalytics';
 
 const BREADCRUMB: React.CSSProperties = {
   fontFamily: 'var(--fm)',
@@ -15,6 +17,9 @@ const BREADCRUMB: React.CSSProperties = {
 };
 
 export default function AlertsPage() {
+  const { trackPageView } = useAnalytics();
+  useEffect(() => { trackPageView('/alerts'); }, [trackPageView]);
+
   return (
     <div className="page-enter">
       {/* Breadcrumb */}
