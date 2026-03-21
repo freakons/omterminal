@@ -57,6 +57,7 @@ import { withPipelineLock, pipelineLockedResponse } from '@/lib/pipelineLock';
 import { generatePageSnapshots }               from '@/lib/pipeline/snapshot';
 import { refreshCaches }                        from '@/lib/pipeline/cacheRefresh';
 import { dbQuery }                              from '@/db/client';
+import { ensureSchema }                        from '@/db/ensureSchema';
 import { TimeoutError }                         from '@/lib/withTimeout';
 import type { TriggerType, RunStatus, PipelineStageResult } from '@/lib/pipeline/types';
 import { toDbStatus }                           from '@/lib/pipeline/types';
@@ -403,6 +404,18 @@ export async function POST(req: NextRequest) {
       },
       { headers: { 'x-request-id': correlationId } },
     );
+  }
+
+  // ── Auto-ensure schema (idempotent) ────────────────────────────────────
+  // Runs all DDL migrations before the pipeline starts.  Statements use
+  // IF NOT EXISTS / IF EXISTS guards so this is fast when schema is current.
+  // This eliminates the need for a manual POST /api/migrate after deploys.
+  try {
+    await ensureSchema();
+  } catch (schemaErr) {
+    logWithRequestId(correlationId, 'pipeline/run', `schema_ensure_failed: ${schemaErr instanceof Error ? schemaErr.message : String(schemaErr)}`);
+    // Non-fatal — continue pipeline even if a single DDL statement fails.
+    // The pipeline stages will degrade gracefully with table-existence guards.
   }
 
   // ── Concurrency lock ──────────────────────────────────────────────────────
