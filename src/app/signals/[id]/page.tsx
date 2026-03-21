@@ -336,7 +336,7 @@ export default async function SignalDetailPage(
         {/* Sidebar */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-          {/* Entity link */}
+          {/* Entity panel — enriched with live signal intelligence */}
           {signal.entityName && (
             <div style={GLASS_CARD}>
               <div style={SECTION_HEADER}>Entity</div>
@@ -356,6 +356,59 @@ export default async function SignalDetailPage(
                   View entity →
                 </span>
               </Link>
+              {/* Live entity intelligence derived from already-fetched data */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10 }}>
+                {(() => {
+                  const entityRelated = relatedSignals.filter(
+                    (s) => s.entityName?.toLowerCase() === signal.entityName?.toLowerCase(),
+                  );
+                  const momentumDir = momentum.recentCount > momentum.previousCount
+                    ? 'rising'
+                    : momentum.recentCount < momentum.previousCount
+                      ? 'cooling'
+                      : 'stable';
+                  const momentumColor = momentumDir === 'rising'
+                    ? 'var(--emerald-l)'
+                    : momentumDir === 'cooling'
+                      ? 'var(--rose-l)'
+                      : 'var(--text3)';
+                  return (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontFamily: 'var(--fm)', fontSize: 9, color: 'var(--text3)' }}>
+                          Related signals
+                        </span>
+                        <span style={{ fontFamily: 'var(--fm)', fontSize: 11, color: 'var(--text)' }}>
+                          {entityRelated.length > 0 ? entityRelated.length : relatedSignals.length}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontFamily: 'var(--fm)', fontSize: 9, color: 'var(--text3)' }}>
+                          Signal momentum
+                        </span>
+                        <span style={{ fontFamily: 'var(--fm)', fontSize: 10, color: momentumColor }}>
+                          {momentumDir}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontFamily: 'var(--fm)', fontSize: 9, color: 'var(--text3)' }}>
+                          Confidence
+                        </span>
+                        <span style={{
+                          fontFamily: 'var(--fm)', fontSize: 10,
+                          color: signal.confidence >= 90
+                            ? 'var(--emerald-l)'
+                            : signal.confidence >= 75
+                              ? 'var(--amber-l)'
+                              : 'var(--text2)',
+                        }}>
+                          {signal.confidence}%
+                        </span>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
             </div>
           )}
 
@@ -407,9 +460,65 @@ export default async function SignalDetailPage(
             </div>
           )}
 
-          {/* Explore category — internal linking for AI search traversal */}
+          {/* Category intelligence — data-driven, not just nav links */}
           <div style={GLASS_CARD}>
-            <div style={SECTION_HEADER}>Explore Category</div>
+            <div style={SECTION_HEADER}>Category Intelligence</div>
+            {(() => {
+              const catSignals = relatedSignals.filter((s) => s.category === signal.category);
+              const catEntities = Array.from(
+                new Set(catSignals.map((s) => s.entityName).filter(Boolean)),
+              ).slice(0, 3) as string[];
+              const catAvgConf = catSignals.length > 0
+                ? Math.round(catSignals.reduce((sum, s) => sum + s.confidence, 0) / catSignals.length)
+                : null;
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontFamily: 'var(--fm)', fontSize: 9, color: 'var(--text3)' }}>
+                      Related {signal.category} signals
+                    </span>
+                    <span style={{ fontFamily: 'var(--fm)', fontSize: 11, color: 'var(--text)' }}>
+                      {catSignals.length > 0 ? catSignals.length : '—'}
+                    </span>
+                  </div>
+                  {catAvgConf !== null && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontFamily: 'var(--fm)', fontSize: 9, color: 'var(--text3)' }}>
+                        Avg confidence
+                      </span>
+                      <span style={{
+                        fontFamily: 'var(--fm)', fontSize: 10,
+                        color: catAvgConf >= 80 ? 'var(--emerald-l)' : 'var(--text2)',
+                      }}>
+                        {catAvgConf}%
+                      </span>
+                    </div>
+                  )}
+                  {catEntities.length > 0 && (
+                    <div>
+                      <span style={{ fontFamily: 'var(--fm)', fontSize: 9, color: 'var(--text3)', display: 'block', marginBottom: 4 }}>
+                        Active entities
+                      </span>
+                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                        {catEntities.map((name) => (
+                          <Link
+                            key={name}
+                            href={`/entity/${slugify(name)}`}
+                            style={{
+                              fontFamily: 'var(--fm)', fontSize: 9, letterSpacing: '0.06em',
+                              color: 'var(--indigo-l)', padding: '1px 6px', borderRadius: 6,
+                              border: '1px solid rgba(79,70,229,0.3)', textDecoration: 'none',
+                            }}
+                          >
+                            {name}
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <Link
                 href={categoryPageUrl}

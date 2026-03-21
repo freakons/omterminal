@@ -835,11 +835,43 @@ export default async function EntityDossierPage(
         {/* Right column — sidebar */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-          {/* Watchlist prompt card */}
+          {/* Watchlist prompt card — enriched with live activity context */}
           <div style={{ ...GLASS_CARD, borderColor: 'rgba(79,70,229,0.2)' }}>
             <div style={SECTION_HEADER}>Track this Entity</div>
+            {/* Live activity context — makes tracking feel urgent and data-driven */}
+            {(metrics.signals7d > 0 || metrics.lastActivity) && (
+              <div style={{
+                display: 'flex', gap: 12, marginBottom: 12,
+                padding: '8px 10px', borderRadius: 8,
+                background: 'rgba(79,70,229,0.06)',
+                border: '1px solid rgba(79,70,229,0.15)',
+              }}>
+                {metrics.signals7d > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    <span style={{ fontFamily: 'var(--fm)', fontSize: 15, color: 'var(--indigo-l)', lineHeight: 1 }}>
+                      {metrics.signals7d}
+                    </span>
+                    <span style={{ fontFamily: 'var(--fm)', fontSize: 8, color: 'var(--text3)', letterSpacing: '0.08em' }}>
+                      signals · 7d
+                    </span>
+                  </div>
+                )}
+                {metrics.lastActivity && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    <span style={{ fontFamily: 'var(--fm)', fontSize: 11, color: 'var(--text)', lineHeight: 1.3 }}>
+                      {timeAgo(metrics.lastActivity)}
+                    </span>
+                    <span style={{ fontFamily: 'var(--fm)', fontSize: 8, color: 'var(--text3)', letterSpacing: '0.08em' }}>
+                      last active
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
             <p style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.6, marginBottom: 14 }}>
-              Add {entity.name} to your watchlist to get signals in your digest and stay updated on key developments.
+              {metrics.signals7d > 0
+                ? `${entity.name} generated ${metrics.signals7d} signal${metrics.signals7d !== 1 ? 's' : ''} this week. Add to your watchlist to get these in your digest.`
+                : `Add ${entity.name} to your watchlist to get signals in your digest and stay updated on key developments.`}
             </p>
             <WatchlistButton
               slug={slug}
@@ -909,32 +941,76 @@ export default async function EntityDossierPage(
             </div>
           )}
 
-          {/* Activity summary */}
+          {/* Signal Velocity — rate of change, not just totals */}
           <div style={GLASS_CARD}>
-            <div style={SECTION_HEADER}>Activity Summary</div>
+            <div style={SECTION_HEADER}>Signal Velocity</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontFamily: 'var(--fm)', fontSize: 10, color: 'var(--text3)' }}>Total Signals</span>
-                <span style={{ fontFamily: 'var(--fm)', fontSize: 13, color: 'var(--text)' }}>{metrics.signalsTotal}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontFamily: 'var(--fm)', fontSize: 10, color: 'var(--text3)' }}>Total Events</span>
-                <span style={{ fontFamily: 'var(--fm)', fontSize: 13, color: 'var(--text)' }}>{metrics.eventsTotal}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontFamily: 'var(--fm)', fontSize: 10, color: 'var(--text3)' }}>Avg Confidence</span>
-                <span style={{ fontFamily: 'var(--fm)', fontSize: 13, color: metrics.avgConfidence >= 80 ? 'var(--emerald-l)' : 'var(--text2)' }}>
-                  {metrics.avgConfidence > 0 ? `${metrics.avgConfidence.toFixed(0)}%` : '—'}
-                </span>
-              </div>
-              {metrics.lastActivity && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontFamily: 'var(--fm)', fontSize: 10, color: 'var(--text3)' }}>Last Activity</span>
-                  <span style={{ fontFamily: 'var(--fm)', fontSize: 11, color: 'var(--text2)' }}>
-                    {timeAgo(metrics.lastActivity)}
-                  </span>
-                </div>
-              )}
+              {(() => {
+                // Velocity: signals in last 7d vs prior 7d window (derived from 30d data)
+                const velocity7d = metrics.signals7d;
+                const prior = metrics.signals30d > 0
+                  ? Math.round((metrics.signals30d - velocity7d) / 3) // avg of prior 3 weeks
+                  : 0;
+                const velocityDir = velocity7d > prior
+                  ? 'accelerating'
+                  : velocity7d < prior
+                    ? 'decelerating'
+                    : 'stable';
+                const velocityColor = velocityDir === 'accelerating'
+                  ? 'var(--emerald-l)'
+                  : velocityDir === 'decelerating'
+                    ? 'var(--rose-l)'
+                    : 'var(--text2)';
+
+                // Dominant category from rawSignals
+                const dominantCat = categoryBreakdown[0];
+
+                return (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontFamily: 'var(--fm)', fontSize: 10, color: 'var(--text3)' }}>7d trend</span>
+                      <span style={{ fontFamily: 'var(--fm)', fontSize: 11, color: velocityColor }}>
+                        {velocity7d} signals · {velocityDir}
+                      </span>
+                    </div>
+                    {dominantCat && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontFamily: 'var(--fm)', fontSize: 10, color: 'var(--text3)' }}>Dominant type</span>
+                        <span style={{
+                          fontFamily: 'var(--fm)', fontSize: 10,
+                          color: (CATEGORY_COLORS[dominantCat.category] ?? { color: 'var(--text2)' }).color,
+                          textTransform: 'capitalize',
+                        }}>
+                          {dominantCat.category} ({dominantCat.count})
+                        </span>
+                      </div>
+                    )}
+                    {momentum && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontFamily: 'var(--fm)', fontSize: 10, color: 'var(--text3)' }}>Momentum score</span>
+                        <span style={{
+                          fontFamily: 'var(--fm)', fontSize: 11,
+                          color: momentum.result.momentumScore >= 70
+                            ? 'var(--amber-l)'
+                            : momentum.result.momentumScore >= 45
+                              ? 'var(--emerald-l)'
+                              : 'var(--text2)',
+                        }}>
+                          {momentum.result.momentumScore}/100
+                        </span>
+                      </div>
+                    )}
+                    {metrics.lastActivity && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontFamily: 'var(--fm)', fontSize: 10, color: 'var(--text3)' }}>Last active</span>
+                        <span style={{ fontFamily: 'var(--fm)', fontSize: 11, color: 'var(--text2)' }}>
+                          {timeAgo(metrics.lastActivity)}
+                        </span>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </div>
 
