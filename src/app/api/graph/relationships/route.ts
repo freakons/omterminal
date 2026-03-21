@@ -22,6 +22,7 @@ import { MOCK_EVENTS } from '@/data/mockEvents';
 import { MOCK_SIGNALS } from '@/data/mockSignals';
 import { buildIntelligentGraph } from '@/lib/graphUtils';
 import { getEntityConnections } from '@/lib/relationshipIntelligence';
+import { supplementWithAnchors, MIN_ENTITY_COUNT } from '@/lib/graphComposition';
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
@@ -65,6 +66,17 @@ export async function GET(req: NextRequest) {
         const countB = signalCountById.get(b.id) ?? b.signalCount ?? 0;
         return countB - countA;
       });
+    }
+
+    // ── Graph density enforcement ────────────────────────────────────────────
+    // When the entity list is below the minimum viable density threshold,
+    // supplement with structural anchor entities from the known ecosystem registry.
+    // This ensures the graph always feels like a real intelligence map even when
+    // live DB coverage is still building up.
+    // Supplemented anchor entities are marked with low signalCount so they
+    // render lighter than live high-signal entities (visible but not dominant).
+    if (entities.length < MIN_ENTITY_COUNT) {
+      entities = supplementWithAnchors(entities, MIN_ENTITY_COUNT);
     }
 
     if (entities.length === 0) {
