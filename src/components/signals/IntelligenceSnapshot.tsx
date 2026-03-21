@@ -10,6 +10,7 @@
  *   • Reuses existing signal ranking (significanceScore → confidence fallback)
  */
 
+import Link from 'next/link';
 import type { Signal, SignalCategory } from '@/data/mockSignals';
 import { CopyInsightButton } from '@/components/ui/CopyInsightButton';
 
@@ -197,11 +198,23 @@ export function IntelligenceSnapshot({ signals }: IntelligenceSnapshotProps) {
                 color: 'var(--text)',
                 lineHeight: 1.55,
               }}>
-                <strong style={{ color: 'var(--text)', fontWeight: 600 }}>
-                  {signal.entityName}
-                </strong>
+                {signal.entityName ? (
+                  <Link
+                    href={`/entity/${encodeURIComponent(signal.entityName.toLowerCase().replace(/\s+/g, '-'))}`}
+                    style={{ color: 'var(--text)', fontWeight: 600, textDecoration: 'none' }}
+                  >
+                    {signal.entityName}
+                  </Link>
+                ) : (
+                  <strong style={{ color: 'var(--text)', fontWeight: 600 }}>Signal</strong>
+                )}
                 {' — '}
-                <span style={{ color: 'var(--text2)' }}>{line}</span>
+                <Link
+                  href={`/signals/${signal.id}`}
+                  style={{ color: 'var(--text2)', textDecoration: 'none' }}
+                >
+                  {line}
+                </Link>
               </span>
 
               {/* Significance score */}

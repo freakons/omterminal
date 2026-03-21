@@ -42,10 +42,10 @@ export const siteConfig = {
   ],
 
   stats: {
-    signals: 47,
-    companies: 18,
+    signals: '40+',
+    companies: '15+',
     regulations: 7,
     markets: 8,
-    sources: 24,
+    sources: '20+',
   },
 } as const;

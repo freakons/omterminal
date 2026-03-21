@@ -65,7 +65,14 @@ function RadarCard({ signal, isNew }: { signal: RadarSignal; isNew: boolean }) {
           <p className="radar-card-summary">{signal.summary}</p>
         )}
         {signal.entityName && (
-          <span className="radar-card-entity">{signal.entityName}</span>
+          <Link
+            href={`/entity/${encodeURIComponent(signal.entityName.toLowerCase().replace(/\s+/g, '-'))}`}
+            onClick={(e) => e.stopPropagation()}
+            className="radar-card-entity"
+            style={{ textDecoration: 'none' }}
+          >
+            {signal.entityName}
+          </Link>
         )}
       </div>
 

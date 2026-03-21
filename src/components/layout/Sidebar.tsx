@@ -41,7 +41,7 @@ export function Sidebar() {
       <div className="live-pill">
         <div className="live-signal">
           <div className="live-dot" />
-          <span className="live-txt">Live &middot; {siteConfig.stats.signals} signals</span>
+          <span className="live-txt">Live &middot; Intelligence active</span>
         </div>
         <LiveClock />
       </div>

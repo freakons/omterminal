@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -153,9 +154,12 @@ export function TrendRadar() {
                   borderBottom: i < alerts.length - 1 ? '1px solid var(--border)' : 'none',
                 }}
               >
-                <span style={{ fontSize: 13, color: 'var(--text)', fontWeight: 500 }}>
+                <Link
+                  href={`/entity/${encodeURIComponent(alert.entity.toLowerCase().replace(/\s+/g, '-'))}`}
+                  style={{ fontSize: 13, color: 'var(--text)', fontWeight: 500, textDecoration: 'none' }}
+                >
                   {alert.entity}
-                </span>
+                </Link>
 
                 <span style={{
                   fontFamily: 'var(--fm)', fontSize: 10, letterSpacing: '0.06em',
