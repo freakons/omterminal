@@ -796,6 +796,32 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
     );
   }, [focusedNodeId, topConnections, graphData.nodes]);
 
+  // ── Entity selector panel — quick-pick for focus mode ──────────────────────
+  // Shows in full-graph mode (not in embedded mode) listing entity nodes so users
+  // can focus on any entity without having to locate it in the canvas first.
+
+  const entityNodes = useMemo(
+    () => graphData.nodes.filter(n => n.type === 'entity'),
+    [graphData.nodes],
+  );
+
+  // Sort entity nodes by importance desc so highest-signal entities appear first
+  const sortedEntityNodes = useMemo(
+    () => [...entityNodes].sort((a, b) => (b.importance ?? 0) - (a.importance ?? 0)),
+    [entityNodes],
+  );
+
+  /**
+   * Top 1–2 highest-importance entity IDs — get a subtle spotlight ring on the canvas
+   * when the graph is in idle (unfocused) state, signalling "start here" at a glance.
+   */
+  const topNodeIds = useMemo<Set<string>>(() => {
+    const top = sortedEntityNodes
+      .filter(n => n.importance != null && n.importance > 0)
+      .slice(0, 2);
+    return new Set(top.map(n => n.id));
+  }, [sortedEntityNodes]);
+
   /** Custom canvas renderer — draws glowing nodes with labels and semantic shapes */
   const paintNode = useCallback(
     (node: RuntimeNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -1481,32 +1507,6 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
       </button>
     </div>
   );
-
-  // ── Entity selector panel — quick-pick for focus mode ──────────────────────
-  // Shows in full-graph mode (not in embedded mode) listing entity nodes so users
-  // can focus on any entity without having to locate it in the canvas first.
-
-  const entityNodes = useMemo(
-    () => graphData.nodes.filter(n => n.type === 'entity'),
-    [graphData.nodes],
-  );
-
-  // Sort entity nodes by importance desc so highest-signal entities appear first
-  const sortedEntityNodes = useMemo(
-    () => [...entityNodes].sort((a, b) => (b.importance ?? 0) - (a.importance ?? 0)),
-    [entityNodes],
-  );
-
-  /**
-   * Top 1–2 highest-importance entity IDs — get a subtle spotlight ring on the canvas
-   * when the graph is in idle (unfocused) state, signalling "start here" at a glance.
-   */
-  const topNodeIds = useMemo<Set<string>>(() => {
-    const top = sortedEntityNodes
-      .filter(n => n.importance != null && n.importance > 0)
-      .slice(0, 2);
-    return new Set(top.map(n => n.id));
-  }, [sortedEntityNodes]);
 
   // Search-filtered entity list — used by the selector panel
   const filteredEntityNodes = useMemo(() => {
