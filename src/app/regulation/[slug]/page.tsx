@@ -88,6 +88,59 @@ export default async function RegulationDetailPage({ params }: { params: Promise
             {reg.impact}
           </p>
         </div>
+
+        {/* Related intelligence */}
+        <div style={{
+          display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12, marginTop: 20,
+        }}>
+          <Link
+            href="/signals"
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '14px 18px', borderRadius: 'var(--r, 10px)',
+              background: 'var(--glass)', border: '1px solid var(--border)',
+              textDecoration: 'none',
+            }}
+          >
+            <div>
+              <div style={{ fontFamily: 'var(--fm)', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 4 }}>Intelligence</div>
+              <div style={{ fontFamily: 'var(--fm)', fontSize: 13, color: 'var(--text2)' }}>Explore regulation signals</div>
+            </div>
+            <span style={{ fontFamily: 'var(--fm)', fontSize: 11, color: 'var(--text3)' }}>→</span>
+          </Link>
+
+          <Link
+            href="/regulation"
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '14px 18px', borderRadius: 'var(--r, 10px)',
+              background: 'var(--glass)', border: '1px solid var(--border)',
+              textDecoration: 'none',
+            }}
+          >
+            <div>
+              <div style={{ fontFamily: 'var(--fm)', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 4 }}>Tracker</div>
+              <div style={{ fontFamily: 'var(--fm)', fontSize: 13, color: 'var(--text2)' }}>All regulations</div>
+            </div>
+            <span style={{ fontFamily: 'var(--fm)', fontSize: 11, color: 'var(--text3)' }}>→</span>
+          </Link>
+
+          <Link
+            href="/intelligence"
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '14px 18px', borderRadius: 'var(--r, 10px)',
+              background: 'var(--glass)', border: '1px solid var(--border)',
+              textDecoration: 'none',
+            }}
+          >
+            <div>
+              <div style={{ fontFamily: 'var(--fm)', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 4 }}>Feed</div>
+              <div style={{ fontFamily: 'var(--fm)', fontSize: 13, color: 'var(--text2)' }}>Intelligence feed</div>
+            </div>
+            <span style={{ fontFamily: 'var(--fm)', fontSize: 11, color: 'var(--text3)' }}>→</span>
+          </Link>
+        </div>
       </div>
     </div>
   );

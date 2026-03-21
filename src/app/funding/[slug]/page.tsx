@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { FUNDING_ROUNDS } from '@/lib/data/funding';
+import { slugify } from '@/utils/sanitize';
 
 import type { Metadata } from 'next';
 
@@ -86,6 +87,59 @@ export default async function FundingDetailPage({ params }: { params: Promise<{ 
             </span>
           ))}
         </div>
+      </div>
+
+      {/* Related intelligence */}
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12, marginTop: 12,
+      }}>
+        <Link
+          href={`/entity/${slugify(round.company)}`}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '14px 18px', borderRadius: 'var(--r, 10px)',
+            background: 'var(--glass)', border: '1px solid var(--border)',
+            textDecoration: 'none',
+          }}
+        >
+          <div>
+            <div style={{ fontFamily: 'var(--fm)', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 4 }}>Entity</div>
+            <div style={{ fontFamily: 'var(--fm)', fontSize: 13, color: 'var(--indigo-l)' }}>{round.company}</div>
+          </div>
+          <span style={{ fontFamily: 'var(--fm)', fontSize: 11, color: 'var(--text3)' }}>→</span>
+        </Link>
+
+        <Link
+          href="/signals"
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '14px 18px', borderRadius: 'var(--r, 10px)',
+            background: 'var(--glass)', border: '1px solid var(--border)',
+            textDecoration: 'none',
+          }}
+        >
+          <div>
+            <div style={{ fontFamily: 'var(--fm)', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 4 }}>Intelligence</div>
+            <div style={{ fontFamily: 'var(--fm)', fontSize: 13, color: 'var(--text2)' }}>Explore funding signals</div>
+          </div>
+          <span style={{ fontFamily: 'var(--fm)', fontSize: 11, color: 'var(--text3)' }}>→</span>
+        </Link>
+
+        <Link
+          href="/funding"
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '14px 18px', borderRadius: 'var(--r, 10px)',
+            background: 'var(--glass)', border: '1px solid var(--border)',
+            textDecoration: 'none',
+          }}
+        >
+          <div>
+            <div style={{ fontFamily: 'var(--fm)', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 4 }}>Tracker</div>
+            <div style={{ fontFamily: 'var(--fm)', fontSize: 13, color: 'var(--text2)' }}>All funding rounds</div>
+          </div>
+          <span style={{ fontFamily: 'var(--fm)', fontSize: 11, color: 'var(--text3)' }}>→</span>
+        </Link>
       </div>
     </div>
   );

@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { fetchModels } from '@/lib/dataService';
 import { PageHeader } from '@/components/ui/PageHeader';
 
@@ -35,7 +36,7 @@ export default async function ModelsPage() {
       ) : (
         <div className="news-grid">
           {models.map((model) => (
-            <div key={model.id} className="nc" style={{ cursor: 'default' }}>
+            <Link key={model.id} href={`/models/${model.id}`} className="nc nc-link" style={{ display: 'block', textDecoration: 'none' }}>
               <div className="nc-top">
                 <span className="badge models">{model.type}</span>
                 <span style={{ fontFamily: 'var(--fm)', fontSize: '9.5px', color: 'var(--text3)' }}>
@@ -52,8 +53,9 @@ export default async function ModelsPage() {
               <div className="nc-body">{model.summary}</div>
               <div className="nc-foot">
                 <span style={{ color: 'var(--indigo-l)' }}>{model.keyCapability}</span>
+                <span style={{ fontFamily: 'var(--fm)', fontSize: '9px', color: 'var(--text3)' }}>View model →</span>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
       )}

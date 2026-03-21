@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { fetchRegulations } from '@/lib/dataService';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { RegulationCard } from '@/components/cards/RegulationCard';
@@ -39,7 +40,9 @@ export default async function RegulationPage() {
       ) : (
         <div className="gov-grid">
           {regulations.map((reg) => (
-            <RegulationCard key={reg.id} regulation={reg} />
+            <Link key={reg.id} href={`/regulation/${reg.id}`} style={{ textDecoration: 'none', display: 'block' }}>
+              <RegulationCard regulation={reg} />
+            </Link>
           ))}
         </div>
       )}
