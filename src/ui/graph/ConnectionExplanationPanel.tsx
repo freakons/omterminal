@@ -67,6 +67,17 @@ function tierColor(tier: string): string {
   return 'rgba(238,238,248,0.52)';
 }
 
+/**
+ * Returns a scannable importance tier label with color for the focused node detail card.
+ * Helps users understand signal weight in <1 second.
+ */
+function importanceTier(importance: number): { label: string; color: string } | null {
+  if (importance >= 8) return { label: 'High',     color: '#34d399' };
+  if (importance >= 5) return { label: 'Strong',   color: '#67e8f9' };
+  if (importance >= 3) return { label: 'Moderate', color: '#fcd34d' };
+  return null;
+}
+
 function resolveLabel(n: string | RuntimeNode, nodes: GraphNode[]): string {
   if (typeof n === 'object' && n !== null) return n.label;
   return nodes.find(node => node.id === n)?.label ?? String(n);
@@ -205,22 +216,42 @@ export function ConnectionExplanationPanel({
           {focusedNode.label}
         </div>
 
-        {/* Signal count + momentum */}
+        {/* Signal count + importance tier + momentum */}
         <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
-          {focusedNode.importance != null && focusedNode.importance > 0 && (
-            <span style={{
-              fontFamily: 'DM Mono, monospace',
-              fontSize: '0.62rem',
-              color: 'rgba(34,211,238,0.85)',
-              background: 'rgba(34,211,238,0.08)',
-              border: '1px solid rgba(34,211,238,0.2)',
-              borderRadius: 4,
-              padding: '0 5px',
-              letterSpacing: '0.02em',
-            }}>
-              {focusedNode.importance} signal{focusedNode.importance !== 1 ? 's' : ''}
-            </span>
-          )}
+          {focusedNode.importance != null && focusedNode.importance > 0 && (() => {
+            const tier = importanceTier(focusedNode.importance);
+            return (
+              <>
+                <span style={{
+                  fontFamily: 'DM Mono, monospace',
+                  fontSize: '0.62rem',
+                  color: 'rgba(34,211,238,0.85)',
+                  background: 'rgba(34,211,238,0.08)',
+                  border: '1px solid rgba(34,211,238,0.2)',
+                  borderRadius: 4,
+                  padding: '0 5px',
+                  letterSpacing: '0.02em',
+                }}>
+                  {focusedNode.importance} signal{focusedNode.importance !== 1 ? 's' : ''}
+                </span>
+                {tier && (
+                  <span style={{
+                    fontFamily: 'DM Mono, monospace',
+                    fontSize: '0.61rem',
+                    color: tier.color,
+                    background: `${tier.color}10`,
+                    border: `1px solid ${tier.color}28`,
+                    borderRadius: 4,
+                    padding: '0 5px',
+                    letterSpacing: '0.03em',
+                    fontWeight: 500,
+                  }}>
+                    {tier.label}
+                  </span>
+                )}
+              </>
+            );
+          })()}
           {focusedNode.momentum != null && focusedNode.momentum > 0 && (
             <span style={{
               fontFamily: 'DM Mono, monospace',
@@ -293,17 +324,22 @@ export function ConnectionExplanationPanel({
         const accentColor = edgeColor ?? (link.tier ? tierColor(link.tier) : 'rgba(255,255,255,0.1)');
         const rankLabel   = i === 0 ? 'strongest' : i === 1 ? '2nd' : '3rd';
 
+        // The strongest (first) connection gets a more prominent visual treatment
+        const isStrongest = i === 0;
+
         return (
           <div
             key={i}
             style={{
-              background: 'rgba(6,6,18,0.9)',
-              border: '1px solid rgba(255,255,255,0.07)',
-              borderLeft: `2px solid ${accentColor}`,
+              background: isStrongest ? 'rgba(8,8,22,0.96)' : 'rgba(6,6,18,0.9)',
+              border: `1px solid ${isStrongest ? `${accentColor}22` : 'rgba(255,255,255,0.07)'}`,
+              borderLeft: `${isStrongest ? 3 : 2}px solid ${accentColor}`,
               borderRadius: 8,
               padding: '11px 13px',
               backdropFilter: 'blur(14px)',
-              boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+              boxShadow: isStrongest
+                ? `0 4px 24px rgba(0,0,0,0.55), 0 0 0 1px ${accentColor}10`
+                : '0 4px 20px rgba(0,0,0,0.5)',
               display: 'flex',
               flexDirection: 'column',
               gap: 6,

@@ -172,12 +172,23 @@ async function fetchGraphData(): Promise<{ data: GraphData; isDemo: boolean; sou
 
 /** Base link opacity scaled by relationship strength (0–100). */
 function baseLinkAlpha(link: RuntimeLink): number {
-  if (link.tier === 'strong')   return 0.55;
-  if (link.tier === 'moderate') return 0.35;
-  if (link.strength != null)    return Math.max(0.08, link.strength / 100 * 0.5);
+  if (link.tier === 'strong')   return 0.68;
+  if (link.tier === 'moderate') return 0.45;
+  if (link.strength != null)    return Math.max(0.1, link.strength / 100 * 0.6);
   // Semantic edge types get a slightly higher base opacity for readability
-  if (link.edgeType)            return 0.3;
-  return 0.12; // structural connection (entity→event, event→signal)
+  if (link.edgeType)            return 0.38;
+  return 0.13; // structural connection (entity→event, event→signal)
+}
+
+/**
+ * Returns a human-readable importance tier label.
+ * Used in tooltips and focus panels to make importance scannable in <1 second.
+ */
+function importanceTierLabel(importance: number): { label: string; color: string } | null {
+  if (importance >= 8) return { label: 'High',     color: '#34d399' };
+  if (importance >= 5) return { label: 'Strong',   color: '#67e8f9' };
+  if (importance >= 3) return { label: 'Moderate', color: '#fcd34d' };
+  return null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -410,6 +421,9 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
   const [pinnedNodeId, setPinnedNodeId] = useState<string | null>(null);
   const [pinnedNode, setPinnedNode] = useState<RuntimeNode | null>(null);
 
+  // ── Auto-center guard — only fires once on initial data load ──────────────
+  const [hasAutoFocused, setHasAutoFocused] = useState(false);
+
 
   useIsomorphicLayoutEffect(() => {
     const el = containerRef.current;
@@ -497,6 +511,26 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
     }
   }, [graphData, tuneForces]);
 
+  // Auto-center on the highest-importance entity once the force layout stabilises.
+  // Fires once after load — gives the graph a clear "here is the core" first impression.
+  useEffect(() => {
+    if (hasAutoFocused || isLoading || graphData.nodes.length === 0 || initialFocusId) return;
+    const t = setTimeout(() => {
+      const topEntity = [...graphData.nodes]
+        .filter(n => n.type === 'entity' && n.importance != null)
+        .sort((a, b) => (b.importance ?? 0) - (a.importance ?? 0))[0] as RuntimeNode | undefined;
+      const g = graphRef.current;
+      if (topEntity && g) {
+        try {
+          g.centerAt(topEntity.x ?? 0, topEntity.y ?? 0, 900);
+          g.zoom(1.15, 900);
+        } catch { /* best effort */ }
+        setHasAutoFocused(true);
+      }
+    }, 2200); // Wait for D3 force layout to settle
+    return () => clearTimeout(t);
+  }, [graphData.nodes, isLoading, hasAutoFocused, initialFocusId]);
+
   // Track mouse position for tooltip placement
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const rect = containerRef.current?.getBoundingClientRect();
@@ -539,6 +573,29 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
     }
     return s;
   }, [focusedNodeId, pinnedNodeId, graphData.links]);
+
+  /**
+   * Second-degree neighbors — nodes exactly 2 hops from the focused node.
+   * Rendered at reduced opacity (soft faint) in focus mode to preserve context
+   * without overwhelming the focused neighborhood.
+   */
+  const focusSecondDegree = useMemo<Set<string>>(() => {
+    if (!focusedNodeId) return new Set();
+    const s = new Set<string>();
+    for (const link of graphData.links) {
+      const src = nodeId(link.source as string | RuntimeNode);
+      const tgt = nodeId(link.target as string | RuntimeNode);
+      // If one end is a first-degree neighbor (but not the focus itself),
+      // the other end (if not already in the focus zone) is second-degree.
+      if (focusNeighbors.has(src) && tgt !== focusedNodeId && !focusNeighbors.has(tgt)) {
+        s.add(tgt);
+      }
+      if (focusNeighbors.has(tgt) && src !== focusedNodeId && !focusNeighbors.has(src)) {
+        s.add(src);
+      }
+    }
+    return s;
+  }, [focusedNodeId, focusNeighbors, graphData.links]);
 
   // ── topConnections: strongest links for the ConnectionExplanationPanel ──────
   //
@@ -752,21 +809,49 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
         const isSearchMatch = searchMatchIds.has(node.id);
         // Pinned node always stays in focus zone even when exploring elsewhere
         const isInFocusZone = !focusedNodeId || isFocused || focusNeighbors.has(node.id) || isPinned;
+        const isSecondDegree = focusedNodeId ? focusSecondDegree.has(node.id) : false;
+        // Top-importance nodes get a spotlight treatment on idle state
+        const isTopNode  = !focusedNodeId && !hoveredId && topNodeIds.has(node.id);
 
-        // Two-level dimming: hover dims unfocused-neighbours; focus dims non-zone nodes
+        // ── Three-level opacity system ────────────────────────────────────
+        // Hover: binary — fades everything not immediately connected
         const isHoverDimmed = !!hoveredId && !isHovered && !isNeighbor;
-        const isFocusDimmed = !!focusedNodeId && !isInFocusZone;
-        const isDimmed      = isHoverDimmed || isFocusDimmed;
+        // Focus: three levels — first-degree full, second-degree soft, rest hidden
+        const isFocusDimmed     = !!focusedNodeId && !isInFocusZone && !isSecondDegree;
+        const isFocusSoftFade   = !!focusedNodeId && isSecondDegree;
+
+        let nodeAlpha = 1;
+        if (isHoverDimmed)     nodeAlpha = 0.07;
+        else if (isFocusDimmed) nodeAlpha = 0.06;
+        else if (isFocusSoftFade) nodeAlpha = 0.32;
+
+        const isDimmed = isHoverDimmed || isFocusDimmed;
 
         // Importance-based radius — high-signal entities read as more significant
         const baseR  = nodeRadius(node);
-        const r      = isFocused ? baseR + 3 : isHovered ? baseR + 2 : isPinned ? baseR + 1.5 : baseR;
+        const r      = isFocused ? baseR + 4 : isHovered ? baseR + 2 : isPinned ? baseR + 1.5 : baseR;
 
         const x = node.x ?? 0;
         const y = node.y ?? 0;
 
         ctx.save();
-        ctx.globalAlpha = isDimmed ? 0.08 : 1;
+        ctx.globalAlpha = nodeAlpha;
+
+        // ── Top-node spotlight rings (idle state only) ────────────────────
+        // Signals "start here" to new users without overwhelming the canvas.
+        if (isTopNode && node.type === 'entity') {
+          ctx.shadowBlur = 0;
+          ctx.beginPath();
+          ctx.arc(x, y, r + 9, 0, 2 * Math.PI);
+          ctx.strokeStyle = `${color}38`;
+          ctx.lineWidth   = 2;
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(x, y, r + 16, 0, 2 * Math.PI);
+          ctx.strokeStyle = `${color}16`;
+          ctx.lineWidth   = 1.5;
+          ctx.stroke();
+        }
 
         // ── Outer importance ring (entity nodes with high importance only) ──
         if (
@@ -777,8 +862,8 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
         ) {
           ctx.beginPath();
           ctx.arc(x, y, r + 5, 0, 2 * Math.PI);
-          ctx.strokeStyle = `${color}28`;
-          ctx.lineWidth   = 3;
+          ctx.strokeStyle = `${color}${isTopNode ? '48' : '28'}`;
+          ctx.lineWidth   = isTopNode ? 3.5 : 3;
           ctx.shadowBlur  = 0;
           ctx.stroke();
         }
@@ -876,7 +961,7 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
         console.warn('[IntelligenceGraph] paintNode error:', err);
       }
     },
-    [hoveredId, neighbors, focusedNodeId, focusNeighbors, pinnedNodeId, searchMatchIds],
+    [hoveredId, neighbors, focusedNodeId, focusNeighbors, focusSecondDegree, pinnedNodeId, searchMatchIds, topNodeIds],
   );
 
   const getLinkColor = useCallback(
@@ -894,12 +979,17 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
         }
 
         // Focus state — brighten edges within focus zone, dim everything else
-        // Pinned node's edges also stay visible alongside focused node's edges
+        // Pinned node's edges also stay visible alongside focused node's edges.
+        // Second-degree edges get a very faint rendering to preserve context.
         if (focusedNodeId) {
           const inFocusedZone = src === focusedNodeId || tgt === focusedNodeId;
           const inPinnedZone  = pinnedNodeId && (src === pinnedNodeId || tgt === pinnedNodeId);
           const inNeighborZone = focusNeighbors.has(src) && focusNeighbors.has(tgt);
-          if (!inFocusedZone && !inPinnedZone && !inNeighborZone) return 'rgba(255,255,255,0.03)';
+          if (!inFocusedZone && !inPinnedZone && !inNeighborZone) {
+            // Second-degree edges: at least one end is a second-degree node → faint but present
+            const touchesSecondDegree = focusSecondDegree.has(src) || focusSecondDegree.has(tgt);
+            return touchesSecondDegree ? 'rgba(255,255,255,0.055)' : 'rgba(255,255,255,0.018)';
+          }
         }
 
         const alpha = baseLinkAlpha(link);
@@ -920,7 +1010,7 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
         return 'rgba(255,255,255,0.06)';
       }
     },
-    [hoveredId, focusedNodeId, pinnedNodeId, focusNeighbors],
+    [hoveredId, focusedNodeId, pinnedNodeId, focusNeighbors, focusSecondDegree],
   );
 
   const getLinkWidth = useCallback(
@@ -1059,19 +1149,38 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
               : NODE_TYPE_LABELS[hoveredNode.type]}
           </span>
         </div>
-        {hoveredNode.importance != null && hoveredNode.importance > 0 && (
-          <span style={{
-            fontSize: '0.63rem',
-            color: 'rgba(34,211,238,0.8)',
-            background: 'rgba(34,211,238,0.08)',
-            border: '1px solid rgba(34,211,238,0.18)',
-            borderRadius: 4,
-            padding: '0 5px',
-            letterSpacing: '0.04em',
-          }}>
-            {hoveredNode.importance} signal{hoveredNode.importance !== 1 ? 's' : ''}
-          </span>
-        )}
+        {hoveredNode.importance != null && hoveredNode.importance > 0 && (() => {
+          const tier = importanceTierLabel(hoveredNode.importance);
+          return (
+            <>
+              <span style={{
+                fontSize: '0.63rem',
+                color: 'rgba(34,211,238,0.8)',
+                background: 'rgba(34,211,238,0.08)',
+                border: '1px solid rgba(34,211,238,0.18)',
+                borderRadius: 4,
+                padding: '0 5px',
+                letterSpacing: '0.04em',
+              }}>
+                {hoveredNode.importance} signal{hoveredNode.importance !== 1 ? 's' : ''}
+              </span>
+              {tier && (
+                <span style={{
+                  fontSize: '0.62rem',
+                  color: tier.color,
+                  background: `${tier.color}12`,
+                  border: `1px solid ${tier.color}28`,
+                  borderRadius: 4,
+                  padding: '0 5px',
+                  letterSpacing: '0.04em',
+                  fontWeight: 500,
+                }}>
+                  {tier.label}
+                </span>
+              )}
+            </>
+          );
+        })()}
         {hoveredNode.momentum != null && (
           <span style={{
             fontSize: '0.63rem',
@@ -1388,6 +1497,17 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
     [entityNodes],
   );
 
+  /**
+   * Top 1–2 highest-importance entity IDs — get a subtle spotlight ring on the canvas
+   * when the graph is in idle (unfocused) state, signalling "start here" at a glance.
+   */
+  const topNodeIds = useMemo<Set<string>>(() => {
+    const top = sortedEntityNodes
+      .filter(n => n.importance != null && n.importance > 0)
+      .slice(0, 2);
+    return new Set(top.map(n => n.id));
+  }, [sortedEntityNodes]);
+
   // Search-filtered entity list — used by the selector panel
   const filteredEntityNodes = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -1458,18 +1578,50 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
       <div style={{
         fontFamily: 'DM Mono, monospace',
         fontSize: '0.65rem',
-        color: 'rgba(238,238,248,0.28)',
+        color: 'rgba(238,238,248,0.3)',
         letterSpacing: '0.02em',
       }}>
-        Start with high-signal entities
+        Larger nodes = higher signal volume
       </div>
       <div style={{
         fontFamily: 'DM Mono, monospace',
         fontSize: '0.6rem',
-        color: 'rgba(238,238,248,0.16)',
+        color: 'rgba(238,238,248,0.18)',
         letterSpacing: '0.02em',
       }}>
-        Click a node to explore its network
+        Click any entity to explore its connections
+      </div>
+    </div>
+  );
+
+  // ── Focus guidance — shown when a node is focused, replaces entry guidance ──
+  const focusedGuidance = focusedNodeId && !compact && (
+    <div style={{
+      position: 'absolute',
+      bottom: 14,
+      right: 14,
+      zIndex: 10,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 4,
+      alignItems: 'flex-end',
+      pointerEvents: 'none',
+    }}>
+      <div style={{
+        fontFamily: 'DM Mono, monospace',
+        fontSize: '0.65rem',
+        color: 'rgba(238,238,248,0.28)',
+        letterSpacing: '0.02em',
+      }}>
+        Explore connections or jump to related entities
+      </div>
+      <div style={{
+        fontFamily: 'DM Mono, monospace',
+        fontSize: '0.6rem',
+        color: 'rgba(238,238,248,0.14)',
+        letterSpacing: '0.02em',
+      }}>
+        Pin to keep context while navigating
       </div>
     </div>
   );
@@ -1745,6 +1897,9 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
 
       {/* Entry guidance — onboarding hint when no node is focused */}
       {entryGuidance}
+
+      {/* Focus guidance — exploration hint when a node is focused */}
+      {focusedGuidance}
 
       {/* Focus mode indicator */}
       {focusIndicator}
