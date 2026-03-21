@@ -68,6 +68,10 @@ import { renderDigestEmail, buildDigestSubject } from '@/lib/alerts/renderDigest
 
 export const runtime = 'nodejs';
 
+// Vercel function timeout — digest processing iterates over subscribers with
+// per-user DB queries + Resend API calls. 60s accommodates moderate subscriber counts.
+export const maxDuration = 60;
+
 const RESEND_API = 'https://api.resend.com/emails';
 
 export async function GET(req: NextRequest) {
@@ -118,9 +122,9 @@ export async function GET(req: NextRequest) {
   }
 
   const from = process.env.DIGEST_FROM || 'OM Terminal <digest@omterminal.com>';
-  const baseUrl = req.headers.get('x-forwarded-host')
-    ? `https://${req.headers.get('x-forwarded-host')}`
-    : 'https://omterminal.com';
+  // Use a trusted env var or hardcoded default — never derive from request headers
+  // (x-forwarded-host is spoofable and could inject malicious URLs into emails).
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://omterminal.com';
 
   try {
     // ── Get subscribers ────────────────────────────────────────────────
