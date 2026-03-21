@@ -81,6 +81,106 @@ function getEdgeStyle(link: GraphLink): EdgeStyle | undefined {
   return link.edgeType ? EDGE_STYLES[link.edgeType] : undefined;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Semantic zone system — positional meaning for the intelligence map
+// ─────────────────────────────────────────────────────────────────────────────
+
+type SemanticZone = 'center' | 'left' | 'right' | 'top' | 'bottom';
+
+interface ZoneConfig {
+  /** Target graph-coordinate X — zone gravity anchor */
+  x: number;
+  /** Target graph-coordinate Y — zone gravity anchor */
+  y: number;
+  /** Zone label for subtle background hint */
+  label: string;
+  /** Very-low-opacity fill color for zone region ellipse */
+  color: string;
+  /** Zone gravity strength multiplied by D3 alpha each tick (0.04–0.08) */
+  strength: number;
+}
+
+/**
+ * Zone definitions — soft spatial anchors for semantic categories.
+ *
+ * Coordinate system: graph units (0,0 = canvas center at default zoom).
+ * These are gravity targets, NOT hard boundaries — link forces still dominate.
+ *
+ *              TOP  (regulation)
+ *                ↑
+ *  LEFT   ←   CENTER  →   RIGHT
+ * (invest)   (core AI)   (models)
+ *                ↓
+ *           BOTTOM (infra / compute)
+ */
+const ZONE_CONFIGS: Record<SemanticZone, ZoneConfig> = {
+  center: { x: 0,    y: 0,    label: 'Core AI',        color: 'rgba(96,165,250,0.022)',  strength: 0.04 },
+  left:   { x: -255, y: 10,   label: 'Investors',      color: 'rgba(167,139,250,0.022)', strength: 0.07 },
+  right:  { x: 255,  y: 10,   label: 'Models',         color: 'rgba(52,211,153,0.022)',  strength: 0.07 },
+  top:    { x: 0,    y: -195, label: 'Regulation',     color: 'rgba(251,146,60,0.022)',  strength: 0.07 },
+  bottom: { x: 0,    y: 195,  label: 'Infrastructure', color: 'rgba(148,163,184,0.022)', strength: 0.06 },
+};
+
+/** Assign each node to a semantic zone based on subtype and known label patterns. */
+function getNodeZone(node: GraphNode): SemanticZone {
+  if (node.type !== 'entity') return 'center';
+  switch (node.subtype) {
+    case 'investor':  return 'left';
+    case 'regulator': return 'top';
+    case 'model':     return 'right';
+    case 'company': {
+      // Infrastructure / compute companies → BOTTOM zone
+      const lbl = (node.label ?? '').toLowerCase();
+      const id  = (node.id   ?? '').toLowerCase();
+      if (
+        lbl.includes('nvidia')    || id.includes('nvidia')    ||
+        lbl.includes('aws')       || id.includes('aws')       ||
+        lbl.includes('microsoft') || id.includes('microsoft') ||
+        lbl.includes('intel')     || id.includes('intel')     ||
+        lbl.includes('amd')       || id.includes('amd')       ||
+        lbl.includes('cloud')     || id.includes('cloud')
+      ) return 'bottom';
+      return 'center';
+    }
+    default:
+      return 'center';
+  }
+}
+
+/**
+ * Creates a D3-compatible zone gravity force.
+ *
+ * Gently pulls each entity node toward its assigned zone center using the
+ * standard D3 custom-force pattern: `.initialize(nodes)` gives the force
+ * access to the simulation's node array (with live x/y/vx/vy), and the
+ * force function itself modifies velocities proportionally to alpha.
+ *
+ * Strength is intentionally very low (0.04–0.08 × alpha) so link clustering
+ * and charge repulsion remain dominant — nodes still group by relationships,
+ * but gain a soft positional bias that separates semantic categories.
+ */
+function createZoneGravityForce() {
+  let simNodes: RuntimeNode[] = [];
+
+  function force(alpha: number) {
+    for (const node of simNodes) {
+      if (node.x == null || node.y == null) continue;
+      const zone = getNodeZone(node);
+      const cfg  = ZONE_CONFIGS[zone];
+      const str  = cfg.strength * alpha;
+      node.vx = (node.vx ?? 0) + (cfg.x - node.x) * str;
+      node.vy = (node.vy ?? 0) + (cfg.y - node.y) * str;
+    }
+  }
+
+  // D3 calls initialize(nodes) when the force is registered on the simulation,
+  // giving us a live reference to the mutated node objects (x/y/vx/vy present).
+  (force as typeof force & { initialize: (n: RuntimeNode[]) => void }).initialize =
+    (n: RuntimeNode[]) => { simNodes = n; };
+
+  return force;
+}
+
 // ── Node shape helpers (canvas) ───────────────────────────────────────────────
 
 /** Diamond shape for event nodes */
@@ -102,8 +202,8 @@ function drawTriangle(ctx: CanvasRenderingContext2D, x: number, y: number, r: nu
   ctx.closePath();
 }
 
-/** Node as enriched by force-graph at runtime */
-type RuntimeNode = GraphNode & { x?: number; y?: number };
+/** Node as enriched by force-graph at runtime — D3 adds x/y position and vx/vy velocity */
+type RuntimeNode = GraphNode & { x?: number; y?: number; vx?: number; vy?: number };
 type RuntimeLink = GraphLink & { source: string | RuntimeNode; target: string | RuntimeNode };
 
 /**
@@ -173,14 +273,17 @@ async function fetchGraphData(): Promise<{ data: GraphData; isDemo: boolean; sou
 /** Base link opacity scaled by relationship strength (0–100).
  *  Strong semantic edges are visually dominant; structural plumbing edges stay subtle
  *  so hub topology reads clearly even in dense graphs.
+ *
+ *  Slightly reduced from pre-zone values to lower inter-zone edge noise while
+ *  keeping the strongest cross-cluster connections clearly readable.
  */
 function baseLinkAlpha(link: RuntimeLink): number {
-  if (link.tier === 'strong')   return 0.72;
-  if (link.tier === 'moderate') return 0.50;
-  if (link.strength != null)    return Math.max(0.12, link.strength / 100 * 0.65);
-  // Semantic edge types: slightly higher for clear cluster identity
-  if (link.edgeType)            return 0.42;
-  return 0.09; // structural plumbing (entity→event, event→signal) — subtle background
+  if (link.tier === 'strong')   return 0.70;
+  if (link.tier === 'moderate') return 0.46;
+  if (link.strength != null)    return Math.max(0.10, link.strength / 100 * 0.58);
+  // Semantic edge types: moderate alpha — visible but not overwhelming cross-zone
+  if (link.edgeType)            return 0.34;
+  return 0.07; // structural plumbing (entity→event, event→signal) — very subtle
 }
 
 /**
@@ -517,8 +620,13 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
       // Gentle center force — keeps the graph from drifting to corners
       const center = g.d3Force('center');
       if (center) {
-        center.strength(0.08);
+        center.strength(0.05); // reduced: zone gravity handles spatial anchoring now
       }
+
+      // Zone gravity — custom force that softly pulls each node toward its
+      // semantic zone center (investors→left, regulators→top, infra→bottom, etc.).
+      // Registered fresh each time forces are tuned so node list stays current.
+      g.d3Force('zone-gravity', createZoneGravityForce());
 
       g.d3ReheatSimulation();
     } catch { /* ignore — force access is best-effort */ }
@@ -892,6 +1000,103 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
       .slice(0, 2);
     return new Set(top.map(n => n.id));
   }, [sortedEntityNodes]);
+
+  /**
+   * Background canvas renderer — draws semantic zone hints and spatial grounding
+   * before nodes/links are painted each frame.
+   *
+   * Renders:
+   *  1. Radial gradient — very faint blue glow from canvas center (depth cue)
+   *  2. Zone ellipses  — ultra-low-opacity colored regions per semantic zone
+   *  3. Zone boundary rings — hairline strokes at zone perimeters
+   *  4. Zone labels — very faint text, only visible at normal zoom
+   *  5. Axis guide lines — dashed crosshair, 1.6% opacity (spatial grounding)
+   *
+   * All values are intentionally very subtle — the goal is a felt structure,
+   * not an annotated diagram. Nothing here should compete with the nodes.
+   */
+  const paintBackground = useCallback((ctx: CanvasRenderingContext2D, globalScale: number) => {
+    try {
+      // 1. Radial gradient — subtle depth cue emanating from canvas center
+      const gr = ctx.createRadialGradient(0, 0, 0, 0, 0, 300);
+      gr.addColorStop(0,   'rgba(96,165,250,0.014)');
+      gr.addColorStop(0.5, 'rgba(10,10,30,0.006)');
+      gr.addColorStop(1,   'rgba(0,0,0,0)');
+      ctx.fillStyle = gr;
+      ctx.beginPath();
+      ctx.arc(0, 0, 300, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Zone ellipse dimensions per zone (in graph units)
+      const ZONE_ELLIPSES: Record<SemanticZone, { rx: number; ry: number }> = {
+        center: { rx: 145, ry: 125 },
+        left:   { rx: 118, ry: 102 },
+        right:  { rx: 118, ry: 102 },
+        top:    { rx: 132, ry:  82 },
+        bottom: { rx: 132, ry:  82 },
+      };
+
+      // 2 & 3. Zone fills and boundary rings
+      for (const [zone, cfg] of Object.entries(ZONE_CONFIGS) as [SemanticZone, ZoneConfig][]) {
+        const { rx, ry } = ZONE_ELLIPSES[zone];
+        ctx.save();
+        ctx.translate(cfg.x, cfg.y);
+
+        // Zone fill — ultra-low opacity colored blob
+        ctx.beginPath();
+        ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+        ctx.fillStyle = cfg.color;
+        ctx.fill();
+
+        // Zone boundary ring — hairline, slightly more visible than fill
+        const ringColor = cfg.color.replace(/[\d.]+\)$/, '0.07)');
+        ctx.strokeStyle = ringColor;
+        ctx.lineWidth   = 0.5 / globalScale;
+        ctx.setLineDash([]);
+        ctx.stroke();
+
+        // 4. Zone label — appears only at sufficient zoom, very low opacity
+        const labelOpacity = Math.max(0, Math.min(0.10, (globalScale - 0.45) * 0.20));
+        if (labelOpacity > 0.003) {
+          const fontSize = Math.round(9 / globalScale);
+          ctx.font          = `${fontSize}px DM Mono, monospace`;
+          ctx.fillStyle     = `rgba(148,163,184,${labelOpacity})`;
+          ctx.textAlign     = 'center';
+          ctx.textBaseline  = 'middle';
+          // Position label just outside the ellipse perimeter
+          const lx = zone === 'left'  ? -(rx + 16 / globalScale)
+                   : zone === 'right' ?  (rx + 16 / globalScale)
+                   : 0;
+          const ly = zone === 'top'    ? -(ry + 14 / globalScale)
+                   : zone === 'bottom' ?  (ry + 14 / globalScale)
+                   : 0;
+          ctx.fillText(cfg.label.toUpperCase(), lx, ly);
+        }
+
+        ctx.restore();
+      }
+
+      // 5. Axis guide lines — very faint dashed crosshair for spatial grounding
+      const lineAlpha = 0.016;
+      ctx.save();
+      ctx.strokeStyle = `rgba(255,255,255,${lineAlpha})`;
+      ctx.lineWidth   = 0.4 / globalScale;
+      ctx.setLineDash([4 / globalScale, 10 / globalScale]);
+
+      ctx.beginPath();
+      ctx.moveTo(-430, 0);
+      ctx.lineTo(430, 0);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(0, -370);
+      ctx.lineTo(0, 370);
+      ctx.stroke();
+
+      ctx.setLineDash([]);
+      ctx.restore();
+    } catch { /* best effort — never crash the frame loop */ }
+  }, []);
 
   /** Custom canvas renderer — draws glowing nodes with labels and semantic shapes */
   const paintNode = useCallback(
@@ -2105,6 +2310,7 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
           nodeCanvasObject={paintNode}
           nodeCanvasObjectMode={() => 'replace'}
           nodeLabel={() => ''}
+          onRenderFramePre={paintBackground}
           onNodeClick={handleNodeClick}
           onNodeHover={handleNodeHover}
           onLinkHover={handleLinkHover}
@@ -2113,10 +2319,10 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
           linkColor={getLinkColor}
           linkWidth={getLinkWidth}
           linkLineDash={getLinkDash}
-          cooldownTicks={300}
-          d3AlphaDecay={0.018}
-          d3VelocityDecay={0.35}
-          warmupTicks={30}
+          cooldownTicks={360}
+          d3AlphaDecay={0.016}
+          d3VelocityDecay={0.40}
+          warmupTicks={40}
         />
       )}
     </div>
