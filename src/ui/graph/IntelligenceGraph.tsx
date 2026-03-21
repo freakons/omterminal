@@ -114,11 +114,11 @@ interface ZoneConfig {
  *           BOTTOM (infra / compute)
  */
 const ZONE_CONFIGS: Record<SemanticZone, ZoneConfig> = {
-  center: { x: 0,    y: 0,    label: 'Core AI',        color: 'rgba(96,165,250,0.022)',  strength: 0.05  },
-  left:   { x: -285, y: 10,   label: 'Investors',      color: 'rgba(167,139,250,0.022)', strength: 0.088 },
-  right:  { x: 285,  y: 10,   label: 'Models',         color: 'rgba(52,211,153,0.022)',  strength: 0.088 },
-  top:    { x: 0,    y: -225, label: 'Regulation',     color: 'rgba(251,146,60,0.022)',  strength: 0.088 },
-  bottom: { x: 0,    y: 225,  label: 'Infrastructure', color: 'rgba(148,163,184,0.022)', strength: 0.078 },
+  center: { x: 0,    y: 0,    label: 'Core AI',        color: 'rgba(96,165,250,0.042)',  strength: 0.05  },
+  left:   { x: -285, y: 10,   label: 'Investors',      color: 'rgba(167,139,250,0.040)', strength: 0.088 },
+  right:  { x: 285,  y: 10,   label: 'Models',         color: 'rgba(52,211,153,0.040)',  strength: 0.088 },
+  top:    { x: 0,    y: -225, label: 'Regulation',     color: 'rgba(251,146,60,0.040)',  strength: 0.088 },
+  bottom: { x: 0,    y: 225,  label: 'Infrastructure', color: 'rgba(148,163,184,0.038)', strength: 0.078 },
 };
 
 /** Assign each node to a semantic zone based on subtype and known label patterns. */
@@ -279,12 +279,12 @@ async function fetchGraphData(): Promise<{ data: GraphData; isDemo: boolean; sou
  */
 function baseLinkAlpha(link: RuntimeLink): number {
   if (link.tier === 'strong')   return 0.75;
-  if (link.tier === 'moderate') return 0.50;
-  if (link.tier === 'weak')     return 0.25;
-  if (link.strength != null)    return Math.max(0.12, link.strength / 100 * 0.62);
+  if (link.tier === 'moderate') return 0.45;
+  if (link.tier === 'weak')     return 0.10; // reduced: weak = near-background texture
+  if (link.strength != null)    return Math.max(0.08, link.strength / 100 * 0.55);
   // Semantic edge types: moderate alpha — visible but not overwhelming cross-zone
-  if (link.edgeType)            return 0.38;
-  return 0.06; // structural plumbing (entity→event, event→signal) — very subtle
+  if (link.edgeType)            return 0.32;
+  return 0.025; // structural plumbing (entity→event, event→signal) — barely visible
 }
 
 /**
@@ -597,25 +597,25 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
     try {
       const nodeCount = graphData.nodes.length;
 
-      // Scale repulsion with graph size: larger graphs need slightly more spread
-      // but we keep it tighter than the old -180 to reduce empty space
+      // Scale repulsion with graph size: stronger repulsion for decompression
+      // while keeping clusters well-defined and avoiding empty-space sprawl
       const chargeStrength = nodeCount > 40
-        ? -90   // dense: minimal spread, let edges define structure
+        ? -120  // dense: stronger push-apart for breathing room
         : nodeCount > 15
-          ? -110 // medium: moderate clustering
-          : -140; // sparse: a bit more spread for readability
+          ? -145 // medium: moderate-strong clustering with space
+          : -170; // sparse: spread enough to be individually readable
 
       const charge = g.d3Force('charge');
       if (charge) {
         charge.strength(chargeStrength);
-        charge.distanceMax(200); // local effect only — keeps cluster identity
+        charge.distanceMax(240); // slightly wider effect radius
       }
 
       const link = g.d3Force('link');
       if (link) {
-        // Shorter distance = tighter clusters; stronger = better convergence
-        link.distance(nodeCount > 40 ? 48 : 58);
-        link.strength(nodeCount > 40 ? 0.55 : 0.45);
+        // Longer distance = more breathable clusters without losing structure
+        link.distance(nodeCount > 40 ? 62 : 70);
+        link.strength(nodeCount > 40 ? 0.50 : 0.42);
       }
 
       // Gentle center force — keeps the graph from drifting to corners
@@ -1128,15 +1128,15 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
         ctx.fillStyle = cfg.color;
         ctx.fill();
 
-        // Zone boundary ring — hairline, slightly more visible than fill
-        const ringColor = cfg.color.replace(/[\d.]+\)$/, '0.09)');
+        // Zone boundary ring — slightly more defined than fill for spatial grounding
+        const ringColor = cfg.color.replace(/[\d.]+\)$/, '0.14)');
         ctx.strokeStyle = ringColor;
-        ctx.lineWidth   = 0.5 / globalScale;
+        ctx.lineWidth   = 0.7 / globalScale;
         ctx.setLineDash([]);
         ctx.stroke();
 
         // 4. Zone label — appears once zoom settles, raised cap for better readability
-        const labelOpacity = Math.max(0, Math.min(0.18, (globalScale - 0.35) * 0.30));
+        const labelOpacity = Math.max(0, Math.min(0.26, (globalScale - 0.30) * 0.36));
         if (labelOpacity > 0.003) {
           const fontSize = Math.round(9 / globalScale);
           ctx.font          = `${fontSize}px DM Mono, monospace`;
@@ -1423,7 +1423,7 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
 
   const getLinkColor = useCallback(
     (link: RuntimeLink) => {
-      if (!link) return 'rgba(255,255,255,0.06)';
+      if (!link) return 'rgba(255,255,255,0.025)';
       try {
         const src = nodeId(link.source as string | RuntimeNode);
         const tgt = nodeId(link.target as string | RuntimeNode);
@@ -1441,7 +1441,7 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
             }
             return 'rgba(255,255,255,0.75)';
           }
-          return 'rgba(255,255,255,0.012)';
+          return 'rgba(255,255,255,0.007)';
         }
 
         // Focus state — brighten edges within focus zone, dim everything else
@@ -1473,7 +1473,7 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
 
         return `rgba(255,255,255,${alpha})`;
       } catch {
-        return 'rgba(255,255,255,0.06)';
+        return 'rgba(255,255,255,0.025)';
       }
     },
     [hoveredId, focusedNodeId, pinnedNodeId, focusNeighbors, focusSecondDegree],
@@ -1487,12 +1487,12 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
         const tgt = nodeId(link.target as string | RuntimeNode);
 
         if (hoveredId) {
-          return src === hoveredId || tgt === hoveredId ? 2.5 : 0.2;
+          return src === hoveredId || tgt === hoveredId ? 2.5 : 0.15;
         }
 
         if (focusedNodeId) {
           const inZone = src === focusedNodeId || tgt === focusedNodeId;
-          if (!inZone) return 0.2;
+          if (!inZone) return 0.15;
         }
 
         // Edge-type-aware width: funding is thickest, competition slightly bolder
@@ -2201,35 +2201,37 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
     </div>
   );
 
-  // ── Intelligence Insight Overlay — top-left glass card, visible at idle ──
+  // ── Intelligence Insight Overlay — bottom-left glass card, visible at idle ──
+  // Positioned closer to the graph center (higher up) so it reads as integrated
+  // system output rather than a detached UI widget.
   const insightOverlay = graphInsight && !focusedNodeId && !compact && !isLoading && (
     <div style={{
       position: 'absolute',
-      bottom: 46,
-      left: 14,
+      bottom: 72,
+      left: 16,
       zIndex: 9,
-      maxWidth: 340,
-      background: 'rgba(6,6,18,0.78)',
-      border: '1px solid rgba(255,255,255,0.07)',
+      maxWidth: 320,
+      background: 'rgba(8,8,22,0.88)',
+      border: '1px solid rgba(255,255,255,0.09)',
       borderRadius: 8,
-      padding: '10px 14px',
-      backdropFilter: 'blur(12px)',
+      padding: '9px 13px',
+      backdropFilter: 'blur(14px)',
       pointerEvents: 'none',
-      boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
+      boxShadow: '0 4px 28px rgba(0,0,0,0.5), 0 0 0 1px rgba(96,165,250,0.05)',
     }}>
       <div style={{
         fontFamily: 'DM Mono, monospace',
-        fontSize: '0.56rem',
-        color: 'rgba(238,238,248,0.28)',
+        fontSize: '0.55rem',
+        color: 'rgba(238,238,248,0.32)',
         letterSpacing: '0.1em',
         textTransform: 'uppercase',
-        marginBottom: 6,
+        marginBottom: 5,
       }}>
         Ecosystem Intelligence
       </div>
       <div style={{
         fontSize: '0.74rem',
-        color: 'rgba(238,238,248,0.72)',
+        color: 'rgba(238,238,248,0.82)',
         lineHeight: 1.55,
         letterSpacing: '0.01em',
       }}>
@@ -2237,8 +2239,8 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
       </div>
       <div style={{
         fontFamily: 'DM Mono, monospace',
-        fontSize: '0.62rem',
-        color: 'rgba(238,238,248,0.28)',
+        fontSize: '0.60rem',
+        color: 'rgba(238,238,248,0.32)',
         marginTop: 5,
         letterSpacing: '0.02em',
       }}>
