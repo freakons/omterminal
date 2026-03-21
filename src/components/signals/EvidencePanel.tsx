@@ -241,41 +241,6 @@ export function EvidencePanel({ signal, supportingEvents }: EvidencePanelProps) 
         )}
       </div>
 
-      {/* ── Signal Context Fields ───────────────────────────────────────── */}
-      {ctx && (ctx.modelProvider || ctx.promptVersion) && (
-        <div style={GLASS_CARD}>
-          <div style={SECTION_HEADER}>Signal Context</div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {ctx.modelProvider && (
-              <span style={{
-                ...MINI_BADGE,
-                color: 'var(--text3)',
-                border: '1px solid var(--border2)',
-              }}>
-                {ctx.modelProvider}/{ctx.modelName}
-              </span>
-            )}
-            {ctx.promptVersion && (
-              <span style={{
-                ...MINI_BADGE,
-                color: 'var(--text3)',
-                border: '1px solid var(--border2)',
-              }}>
-                prompt {ctx.promptVersion}
-              </span>
-            )}
-            {ctx.status && (
-              <span style={{
-                ...MINI_BADGE,
-                color: ctx.status === 'ready' ? 'var(--emerald-l)' : 'var(--amber-l)',
-                border: `1px solid ${ctx.status === 'ready' ? 'rgba(5,150,105,0.3)' : 'rgba(217,119,6,0.3)'}`,
-              }}>
-                {ctx.status}
-              </span>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
