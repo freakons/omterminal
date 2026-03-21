@@ -170,14 +170,17 @@ async function fetchGraphData(): Promise<{ data: GraphData; isDemo: boolean; sou
 // Link helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Base link opacity scaled by relationship strength (0–100). */
+/** Base link opacity scaled by relationship strength (0–100).
+ *  Strong semantic edges are visually dominant; structural plumbing edges stay subtle
+ *  so hub topology reads clearly even in dense graphs.
+ */
 function baseLinkAlpha(link: RuntimeLink): number {
-  if (link.tier === 'strong')   return 0.68;
-  if (link.tier === 'moderate') return 0.45;
-  if (link.strength != null)    return Math.max(0.1, link.strength / 100 * 0.6);
-  // Semantic edge types get a slightly higher base opacity for readability
-  if (link.edgeType)            return 0.38;
-  return 0.13; // structural connection (entity→event, event→signal)
+  if (link.tier === 'strong')   return 0.72;
+  if (link.tier === 'moderate') return 0.50;
+  if (link.strength != null)    return Math.max(0.12, link.strength / 100 * 0.65);
+  // Semantic edge types: slightly higher for clear cluster identity
+  if (link.edgeType)            return 0.42;
+  return 0.09; // structural plumbing (entity→event, event→signal) — subtle background
 }
 
 /**
@@ -424,7 +427,6 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
   // ── Auto-center guard — only fires once on initial data load ──────────────
   const [hasAutoFocused, setHasAutoFocused] = useState(false);
 
-
   useIsomorphicLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -483,24 +485,44 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
     try { g.centerAt(node.x, node.y, 600); } catch { /* best effort */ }
   }, []);
 
-  // Tune D3 forces for a more stable, deliberate layout
+  // Tune D3 forces for a dense, well-clustered layout.
+  // Less repulsion + shorter link distance = tighter clusters with less empty space.
   const tuneForces = useCallback(() => {
     const g = graphRef.current;
     if (!g) return;
     try {
+      const nodeCount = graphData.nodes.length;
+
+      // Scale repulsion with graph size: larger graphs need slightly more spread
+      // but we keep it tighter than the old -180 to reduce empty space
+      const chargeStrength = nodeCount > 40
+        ? -90   // dense: minimal spread, let edges define structure
+        : nodeCount > 15
+          ? -110 // medium: moderate clustering
+          : -140; // sparse: a bit more spread for readability
+
       const charge = g.d3Force('charge');
       if (charge) {
-        charge.strength(-180);
-        charge.distanceMax(220);
+        charge.strength(chargeStrength);
+        charge.distanceMax(200); // local effect only — keeps cluster identity
       }
+
       const link = g.d3Force('link');
       if (link) {
-        link.distance(65);
-        link.strength(0.4);
+        // Shorter distance = tighter clusters; stronger = better convergence
+        link.distance(nodeCount > 40 ? 48 : 58);
+        link.strength(nodeCount > 40 ? 0.55 : 0.45);
       }
+
+      // Gentle center force — keeps the graph from drifting to corners
+      const center = g.d3Force('center');
+      if (center) {
+        center.strength(0.08);
+      }
+
       g.d3ReheatSimulation();
     } catch { /* ignore — force access is best-effort */ }
-  }, []);
+  }, [graphData.nodes.length]);
 
   // Retune whenever graph data changes (new data or focus mode swap)
   useEffect(() => {
@@ -513,23 +535,72 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
 
   // Auto-center on the highest-importance entity once the force layout stabilises.
   // Fires once after load — gives the graph a clear "here is the core" first impression.
+  // For dense graphs, zoomToFit first then ease into the top hub.
   useEffect(() => {
     if (hasAutoFocused || isLoading || graphData.nodes.length === 0 || initialFocusId) return;
     const t = setTimeout(() => {
-      const topEntity = [...graphData.nodes]
-        .filter(n => n.type === 'entity' && n.importance != null)
-        .sort((a, b) => (b.importance ?? 0) - (a.importance ?? 0))[0] as RuntimeNode | undefined;
       const g = graphRef.current;
-      if (topEntity && g) {
-        try {
-          g.centerAt(topEntity.x ?? 0, topEntity.y ?? 0, 900);
-          g.zoom(1.15, 900);
-        } catch { /* best effort */ }
-        setHasAutoFocused(true);
-      }
-    }, 2200); // Wait for D3 force layout to settle
+      if (!g) return;
+      try {
+        if (graphData.nodes.length > 20) {
+          // Dense graph: fit all nodes first, then gently zoom toward top hub
+          g.zoomToFit(600, 40);
+          setTimeout(() => {
+            try {
+              const topEntity = [...graphData.nodes]
+                .filter(n => n.type === 'entity' && n.importance != null)
+                .sort((a, b) => (b.importance ?? 0) - (a.importance ?? 0))[0] as RuntimeNode | undefined;
+              if (topEntity && topEntity.x != null) {
+                g.centerAt(topEntity.x, topEntity.y ?? 0, 700);
+                g.zoom(0.95, 700);
+              }
+            } catch { /* best effort */ }
+          }, 700);
+        } else {
+          // Sparse graph: center on top entity as before
+          const topEntity = [...graphData.nodes]
+            .filter(n => n.type === 'entity' && n.importance != null)
+            .sort((a, b) => (b.importance ?? 0) - (a.importance ?? 0))[0] as RuntimeNode | undefined;
+          if (topEntity) {
+            g.centerAt(topEntity.x ?? 0, topEntity.y ?? 0, 900);
+            g.zoom(1.15, 900);
+          }
+        }
+      } catch { /* best effort */ }
+      setHasAutoFocused(true);
+    }, 2400); // Wait for D3 force layout to settle
     return () => clearTimeout(t);
   }, [graphData.nodes, isLoading, hasAutoFocused, initialFocusId]);
+
+  // Keep canvas alive for subtle pulse animation after D3 simulation cools.
+  // Throttled to ~20fps — minimal CPU cost; just enough to breathe.
+  useEffect(() => {
+    if (isLoading) return;
+    let lastRefresh = 0;
+    let animId: number;
+    const INTERVAL_MS = 50; // 20fps
+
+    const animate = (time: number) => {
+      if (time - lastRefresh >= INTERVAL_MS) {
+        const g = graphRef.current;
+        if (g) {
+          try { g.refresh(); } catch { /* best effort */ }
+        }
+        lastRefresh = time;
+      }
+      animId = requestAnimationFrame(animate);
+    };
+
+    // Delay start until simulation has settled so we don't double-render during layout
+    const startDelay = setTimeout(() => {
+      animId = requestAnimationFrame(animate);
+    }, 3500);
+
+    return () => {
+      clearTimeout(startDelay);
+      cancelAnimationFrame(animId);
+    };
+  }, [isLoading]);
 
   // Track mouse position for tooltip placement
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -879,6 +950,35 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
           ctx.stroke();
         }
 
+        // ── Subtle breathing pulse for high-importance nodes (idle only) ──
+        // Creates a gentle "live intelligence" feel without animation theatrics.
+        // Only fires on entity nodes with significant signal activity.
+        if (
+          !isDimmed &&
+          !focusedNodeId &&
+          !hoveredId &&
+          node.type === 'entity' &&
+          node.importance != null &&
+          node.importance >= 4
+        ) {
+          // Slow 4-second period; each node gets a phase offset by id hash
+          // so they don't all pulse in unison (more organic feel)
+          const idHash = node.id.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+          const phase  = (Date.now() / 4000 + idHash * 0.17) * Math.PI * 2;
+          const pulse  = Math.sin(phase) * 0.5 + 0.5; // 0 → 1 → 0
+          const outerR = r + 8 + pulse * 4;            // r+8 to r+12
+          const alphaHex = Math.round((0.05 + pulse * 0.09) * 255)
+            .toString(16)
+            .padStart(2, '0');
+
+          ctx.shadowBlur = 0;
+          ctx.beginPath();
+          ctx.arc(x, y, outerR, 0, 2 * Math.PI);
+          ctx.strokeStyle = `${color}${alphaHex}`;
+          ctx.lineWidth   = 1.5;
+          ctx.stroke();
+        }
+
         // ── Outer importance ring (entity nodes with high importance only) ──
         if (
           !isDimmed &&
@@ -962,8 +1062,17 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
           ctx.shadowBlur = 0;
         }
 
-        // Label — only show for non-dimmed nodes, scale visibility by zoom
-        if (!isDimmed) {
+        // Label — entity nodes always visible (the primary map actors);
+        // event/signal labels only rendered when zoomed in (globalScale > 1.3)
+        // or when the node is directly focused/hovered to avoid text clutter
+        // in dense graphs at default zoom.
+        const showLabel = !isDimmed && (
+          node.type === 'entity' ||
+          isHovered ||
+          isFocused ||
+          globalScale > 1.3
+        );
+        if (showLabel) {
           const fontSize = Math.max(9, 10.5 / globalScale);
           ctx.font         = isFocused || isHovered
             ? `600 ${fontSize}px DM Sans, sans-serif`
@@ -2004,9 +2113,10 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
           linkColor={getLinkColor}
           linkWidth={getLinkWidth}
           linkLineDash={getLinkDash}
-          cooldownTicks={180}
-          d3AlphaDecay={0.025}
-          d3VelocityDecay={0.42}
+          cooldownTicks={300}
+          d3AlphaDecay={0.018}
+          d3VelocityDecay={0.35}
+          warmupTicks={30}
         />
       )}
     </div>

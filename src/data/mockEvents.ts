@@ -232,6 +232,119 @@ export const MOCK_EVENTS: AiEvent[] = [
     amount: '$500M',
     signalIds: ['sig-016'],
   },
+  {
+    id: 'evt-020',
+    type: 'launch',
+    entityId: 'deepseek',
+    entityName: 'DeepSeek',
+    title: 'DeepSeek V3 open-source release',
+    description:
+      'DeepSeek V3 open-weights model released under MIT licence; matches GPT-4o on key benchmarks at fraction of reported training cost.',
+    date: '2026-03-02',
+    signalIds: ['sig-018'],
+  },
+  {
+    id: 'evt-021',
+    type: 'partnership',
+    entityId: 'aws',
+    entityName: 'Amazon Web Services',
+    title: 'AWS × Anthropic $4B compute partnership',
+    description:
+      'Amazon Web Services commits $4B to Anthropic spanning Trainium 3 and Inferentia clusters; Anthropic becomes primary anchor tenant on AWS AI infrastructure.',
+    date: '2026-02-18',
+    amount: '$4B',
+    signalIds: ['sig-019'],
+  },
+  {
+    id: 'evt-022',
+    type: 'research',
+    entityId: 'sequoia',
+    entityName: 'Sequoia Capital',
+    title: 'Sequoia State of AI 2026 report published',
+    description:
+      'Annual report identifies frontier model commoditisation as the defining 2026 AI trend; warns of gross margin compression across frontier labs.',
+    date: '2026-02-28',
+    signalIds: ['sig-020'],
+  },
+  {
+    id: 'evt-023',
+    type: 'funding',
+    entityId: 'scale_ai',
+    entityName: 'Scale AI',
+    title: 'Scale AI Series F — $1B at $14B valuation',
+    description:
+      'Scale AI raises $1B led by Accel at $14B valuation; RLHF and synthetic data demand from all major frontier labs drives round.',
+    date: '2026-02-12',
+    amount: '$1B',
+    signalIds: ['sig-021'],
+  },
+  {
+    id: 'evt-024',
+    type: 'announcement',
+    entityId: 'hugging_face',
+    entityName: 'Hugging Face',
+    title: 'Hugging Face 1M open models milestone',
+    description:
+      'Platform crosses one million community-hosted models, anchored by Llama 4, Mistral, and DeepSeek releases.',
+    date: '2026-02-20',
+    signalIds: ['sig-022'],
+  },
+  {
+    id: 'evt-025',
+    type: 'regulation',
+    entityId: 'ftc',
+    entityName: 'FTC',
+    title: 'FTC opens dual AI antitrust investigation',
+    description:
+      'Federal Trade Commission opens parallel investigations into Microsoft–OpenAI and Google Cloud–Anthropic partnerships for potential competition law violations.',
+    date: '2026-02-25',
+    signalIds: ['sig-023'],
+  },
+  {
+    id: 'evt-026',
+    type: 'funding',
+    entityId: 'character_ai',
+    entityName: 'Character AI',
+    title: 'Character AI Series C — $1B led by Google',
+    description:
+      'Character AI closes $1B round led by Google; Noam Shazeer returns as CEO; company launches first-party model development programme.',
+    date: '2026-02-08',
+    amount: '$1B',
+    signalIds: ['sig-024'],
+  },
+  {
+    id: 'evt-027',
+    type: 'funding',
+    entityId: 'spark_capital',
+    entityName: 'Spark Capital',
+    title: 'Spark Capital joins Anthropic board following Series E co-lead',
+    description:
+      'Spark Capital secures board representation at Anthropic after co-leading the $3.5B Series E alongside Google.',
+    date: '2026-03-01',
+    signalIds: ['sig-025'],
+  },
+  {
+    id: 'evt-028',
+    type: 'launch',
+    entityId: 'apple',
+    entityName: 'Apple',
+    title: 'Apple Intelligence reaches 100M devices with Claude integration',
+    description:
+      'Apple Intelligence surpasses 100M active devices with Anthropic Claude powering complex Siri server-side tasks; deepens Apple–Anthropic strategic partnership.',
+    date: '2026-03-05',
+    signalIds: ['sig-026'],
+  },
+  {
+    id: 'evt-029',
+    type: 'launch',
+    entityId: 'deepseek',
+    entityName: 'DeepSeek',
+    title: 'DeepSeek R2 open-source reasoning model released',
+    description:
+      'DeepSeek R2 matches OpenAI o3 on MATH-500; released under MIT licence, forcing accelerated roadmap responses from Google DeepMind and Anthropic.',
+    date: '2026-03-08',
+    signalIds: ['sig-027'],
+  },
 ];
 
 export function getEventById(id: string): AiEvent | undefined {
