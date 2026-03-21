@@ -215,7 +215,7 @@ export default async function EventDetailPage(
           <div style={GLASS_CARD}>
             <div style={SECTION_HEADER}>Source</div>
             <p style={{ fontSize: 13, color: 'var(--text3)', lineHeight: 1.7 }}>
-              No source article linked yet
+              Source articles are linked automatically as the intelligence pipeline processes corroborating evidence.
             </p>
           </div>
         </div>
