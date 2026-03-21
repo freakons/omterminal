@@ -38,6 +38,7 @@ import { saveSignals, getRecentSignals } from '@/services/storage/signalStore';
 import { getSignals } from '@/db/queries';
 import { parseSignalMode, DEFAULT_SIGNAL_MODE } from '@/lib/signals/signalModes';
 import { attachSignalExplanations } from '@/lib/signals/explanationLayer';
+import { composeFeed } from '@/lib/signals/feedComposer';
 
 export const maxDuration = 10; // Vercel Hobby plan limit; upgrade to Pro for larger event lookbacks
 
@@ -129,7 +130,13 @@ export async function GET(req: NextRequest) {
       }
 
       if (dbSignals.length > 0) {
-        const enrichedSignals = attachSignalExplanations(dbSignals);
+        // Apply rank-score-based composition: significance-dominant ordering,
+        // freshness decay, corroboration strength, dedup, and diversity guardrails.
+        const composedSignals = composeFeed(dbSignals, {
+          minSignificance: mode === 'standard' ? 30 : mode === 'premium' ? 50 : 0,
+          debug,
+        });
+        const enrichedSignals = attachSignalExplanations(composedSignals);
         const payload: Record<string, unknown> = { ok: true, source: 'db', mode, signals: enrichedSignals, count: enrichedSignals.length, requestId: reqId };
         if (debug && diagnostics) payload.diagnostics = diagnostics;
         // Only populate edge cache for the default mode (avoids edge cache thrash across modes).
