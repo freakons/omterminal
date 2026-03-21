@@ -412,8 +412,9 @@ export async function POST(req: NextRequest) {
     let articlesFetched = 0, articlesInserted = 0, articlesDeduped = 0;
     let signalsDetected = 0, signalsInserted = 0, signalsSkipped = 0;
 
-    const overallTimer = new Promise<never>((_, reject) =>
-      setTimeout(
+    let overallTimerHandle: ReturnType<typeof setTimeout> | undefined;
+    const overallTimer = new Promise<never>((_, reject) => {
+      overallTimerHandle = setTimeout(
         () => {
           console.warn(
             `[pipeline] timeout requestId=${correlationId} stage=overall` +
@@ -422,8 +423,8 @@ export async function POST(req: NextRequest) {
           reject(new TimeoutError('overall', TIMEOUT.OVERALL, correlationId));
         },
         TIMEOUT.OVERALL,
-      ),
-    );
+      );
+    });
 
     async function executeStages(): Promise<void> {
       // Stage 1 — Ingestion (RSS primary + GNews secondary)
@@ -844,6 +845,8 @@ export async function POST(req: NextRequest) {
         error:      err instanceof Error ? err.message : String(err),
       });
       errorsCount++;
+    } finally {
+      if (overallTimerHandle !== undefined) clearTimeout(overallTimerHandle);
     }
 
     return { stages, errorsCount, articlesFetched, articlesInserted, articlesDeduped, signalsDetected, signalsInserted, signalsSkipped };

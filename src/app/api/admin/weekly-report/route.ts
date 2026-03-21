@@ -14,6 +14,10 @@ import {
   getWeeklyReports,
 } from '@/services/reports/weeklyReportGenerator';
 
+// Vercel function timeout — weekly report generation aggregates across multiple
+// tables and can be slow on large datasets.
+export const maxDuration = 60;
+
 function isAuthorized(req: NextRequest): boolean {
   const adminSecret = process.env.ADMIN_SECRET ?? '';
   const cronSecret = process.env.CRON_SECRET ?? '';

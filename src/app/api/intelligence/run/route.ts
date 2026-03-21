@@ -39,11 +39,20 @@ import { NextRequest, NextResponse } from 'next/server';
 import { validateEnvironment, checkLLMProvider } from '@/lib/env';
 import { createRequestId, logWithRequestId } from '@/lib/requestId';
 import { withPipelineLock, pipelineLockedResponse } from '@/lib/pipelineLock';
+import { withTimeout, TimeoutError } from '@/lib/withTimeout';
 import { runHarvester } from '@/harvester/runner';
 import { runTrendAnalysis } from '@/trends/runner';
 import { runInsightGeneration } from '@/insights/runner';
 import { dbQuery } from '@/db/client';
 import type { TriggerType } from '@/lib/pipeline/types';
+
+// Per-stage timeouts (ms) for intelligence pipeline stages.
+// Total budget is 120s (maxDuration); leave 10s for lock/response overhead.
+const INTEL_TIMEOUT = {
+  HARVESTER: parseInt(process.env.INTEL_HARVESTER_TIMEOUT_MS ?? '50000', 10),
+  TRENDS:    parseInt(process.env.INTEL_TRENDS_TIMEOUT_MS    ?? '30000', 10),
+  INSIGHTS:  parseInt(process.env.INTEL_INSIGHTS_TIMEOUT_MS  ?? '25000', 10),
+} as const;
 
 // Vercel function timeout (seconds). 120s for intelligence analysis on Pro plan.
 // Raised from 60 to 120 to accommodate retry/time budget and prevent 504 gateway timeouts.
@@ -237,15 +246,16 @@ export async function POST(req: NextRequest) {
     const t1 = Date.now();
     logWithRequestId(reqId, 'intelligence/run', 'stage=harvester status=started');
     try {
-      await runHarvester();
+      await withTimeout(runHarvester(), INTEL_TIMEOUT.HARVESTER, 'intelligence:harvester', { requestId: reqId });
       const d = Date.now() - t1;
       stages.push({ stage: 'harvester', status: 'ok', durationMs: d });
       logWithRequestId(reqId, 'intelligence/run', `stage=harvester status=ok ms=${d}`);
     } catch (err) {
       const d = Date.now() - t1;
+      const timedOut = err instanceof TimeoutError;
       const msg = err instanceof Error ? err.message : String(err);
-      stages.push({ stage: 'harvester', status: 'error', durationMs: d, error: msg });
-      logWithRequestId(reqId, 'intelligence/run', `stage=harvester status=error ms=${d} error=${msg}`);
+      stages.push({ stage: 'harvester', status: 'error', durationMs: d, error: msg, timedOut });
+      logWithRequestId(reqId, 'intelligence/run', `stage=harvester status=error timedOut=${timedOut} ms=${d} error=${msg}`);
       anyError = true;
     }
 
@@ -253,15 +263,16 @@ export async function POST(req: NextRequest) {
     const t2 = Date.now();
     logWithRequestId(reqId, 'intelligence/run', 'stage=trends status=started');
     try {
-      await runTrendAnalysis();
+      await withTimeout(runTrendAnalysis(), INTEL_TIMEOUT.TRENDS, 'intelligence:trends', { requestId: reqId });
       const d = Date.now() - t2;
       stages.push({ stage: 'trends', status: 'ok', durationMs: d });
       logWithRequestId(reqId, 'intelligence/run', `stage=trends status=ok ms=${d}`);
     } catch (err) {
       const d = Date.now() - t2;
+      const timedOut = err instanceof TimeoutError;
       const msg = err instanceof Error ? err.message : String(err);
-      stages.push({ stage: 'trends', status: 'error', durationMs: d, error: msg });
-      logWithRequestId(reqId, 'intelligence/run', `stage=trends status=error ms=${d} error=${msg}`);
+      stages.push({ stage: 'trends', status: 'error', durationMs: d, error: msg, timedOut });
+      logWithRequestId(reqId, 'intelligence/run', `stage=trends status=error timedOut=${timedOut} ms=${d} error=${msg}`);
       anyError = true;
     }
 
@@ -269,15 +280,16 @@ export async function POST(req: NextRequest) {
     const t3 = Date.now();
     logWithRequestId(reqId, 'intelligence/run', 'stage=insights status=started');
     try {
-      await runInsightGeneration();
+      await withTimeout(runInsightGeneration(), INTEL_TIMEOUT.INSIGHTS, 'intelligence:insights', { requestId: reqId });
       const d = Date.now() - t3;
       stages.push({ stage: 'insights', status: 'ok', durationMs: d });
       logWithRequestId(reqId, 'intelligence/run', `stage=insights status=ok ms=${d}`);
     } catch (err) {
       const d = Date.now() - t3;
+      const timedOut = err instanceof TimeoutError;
       const msg = err instanceof Error ? err.message : String(err);
-      stages.push({ stage: 'insights', status: 'error', durationMs: d, error: msg });
-      logWithRequestId(reqId, 'intelligence/run', `stage=insights status=error ms=${d} error=${msg}`);
+      stages.push({ stage: 'insights', status: 'error', durationMs: d, error: msg, timedOut });
+      logWithRequestId(reqId, 'intelligence/run', `stage=insights status=error timedOut=${timedOut} ms=${d} error=${msg}`);
       anyError = true;
     }
 

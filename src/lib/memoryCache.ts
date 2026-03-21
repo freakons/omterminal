@@ -34,6 +34,14 @@ export const MEM_TTL = {
 
 // ── Internal store ────────────────────────────────────────────────────────────
 
+/**
+ * Maximum number of entries in the cache. When exceeded, the oldest entries
+ * are evicted (LRU-style via Map insertion order). 500 is generous for the
+ * current key space (~10–20 active keys) while preventing unbounded growth
+ * in long-lived serverless instances.
+ */
+const MAX_CACHE_SIZE = 500;
+
 type CacheEntry<T> = {
   value: T;
   /** Unix ms when the entry was written. */
@@ -43,6 +51,21 @@ type CacheEntry<T> = {
 };
 
 const store = new Map<string, CacheEntry<unknown>>();
+
+/**
+ * Evict the oldest entries when the store exceeds MAX_CACHE_SIZE.
+ * Uses Map insertion order (oldest first) as a lightweight LRU proxy.
+ */
+function evictIfNeeded(): void {
+  if (store.size <= MAX_CACHE_SIZE) return;
+  const excess = store.size - MAX_CACHE_SIZE;
+  const iter = store.keys();
+  for (let i = 0; i < excess; i++) {
+    const { value: key, done } = iter.next();
+    if (done) break;
+    store.delete(key);
+  }
+}
 
 // ── Core API ──────────────────────────────────────────────────────────────────
 
@@ -78,6 +101,7 @@ export function getCache<T>(key: string, ttlMs: number): T | null {
  */
 export function setCache<T>(key: string, value: T, ttlMs?: number): void {
   store.set(key, { value, timestamp: Date.now(), ttlMs: ttlMs ?? Infinity });
+  evictIfNeeded();
 }
 
 /**

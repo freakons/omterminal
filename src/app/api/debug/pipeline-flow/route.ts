@@ -1,4 +1,6 @@
 export const runtime = 'nodejs';
+// Heavy diagnostic queries — allow 30s to complete.
+export const maxDuration = 30;
 
 /**
  * Omterminal — Pipeline Flow Diagnostic Endpoint
