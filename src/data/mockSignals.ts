@@ -31,6 +31,12 @@ export interface Signal {
   /** Optional related signal IDs */
   relatedIds?: string[];
   /**
+   * Additional entity IDs co-mentioned or implicated in this signal beyond
+   * the primary entityId.  Used by the relationship intelligence engine to
+   * build entity↔entity edges from signal co-occurrence.
+   */
+  mentionedEntityIds?: string[];
+  /**
    * Precomputed intelligence context (status='ready').
    * Present only when a context row has been generated; undefined otherwise.
    */
@@ -77,6 +83,7 @@ export const MOCK_SIGNALS: Signal[] = [
     relatedIds: ['sig-007'],
     significanceScore: 78,
     sourceSupportCount: 4,
+    mentionedEntityIds: ['anthropic', 'google_deepmind'],
   },
   {
     id: 'sig-002',
@@ -90,6 +97,7 @@ export const MOCK_SIGNALS: Signal[] = [
     confidence: 96,
     significanceScore: 92,
     sourceSupportCount: 6,
+    mentionedEntityIds: ['google_deepmind'],
   },
   {
     id: 'sig-003',
@@ -103,6 +111,7 @@ export const MOCK_SIGNALS: Signal[] = [
     confidence: 91,
     significanceScore: 85,
     sourceSupportCount: 5,
+    mentionedEntityIds: ['eu_ai_office', 'openai', 'anthropic', 'mistral_ai'],
   },
   {
     id: 'sig-004',
@@ -117,6 +126,7 @@ export const MOCK_SIGNALS: Signal[] = [
     relatedIds: ['sig-009'],
     significanceScore: 88,
     sourceSupportCount: 7,
+    mentionedEntityIds: ['openai', 'anthropic'],
   },
   {
     id: 'sig-005',
@@ -143,6 +153,7 @@ export const MOCK_SIGNALS: Signal[] = [
     confidence: 95,
     significanceScore: 83,
     sourceSupportCount: 4,
+    mentionedEntityIds: ['openai'],
   },
   {
     id: 'sig-007',
@@ -157,6 +168,7 @@ export const MOCK_SIGNALS: Signal[] = [
     relatedIds: ['sig-001'],
     significanceScore: 80,
     sourceSupportCount: 5,
+    mentionedEntityIds: ['anthropic'],
   },
   {
     id: 'sig-008',
@@ -197,6 +209,7 @@ export const MOCK_SIGNALS: Signal[] = [
     confidence: 97,
     significanceScore: 82,
     sourceSupportCount: 5,
+    mentionedEntityIds: ['softbank', 'openai', 'google_deepmind'],
   },
   {
     id: 'sig-011',
@@ -223,6 +236,77 @@ export const MOCK_SIGNALS: Signal[] = [
     confidence: 85,
     significanceScore: 65,
     sourceSupportCount: 3,
+    mentionedEntityIds: ['openai', 'anthropic', 'google_deepmind', 'meta_ai'],
+  },
+  {
+    id: 'sig-013',
+    title: 'a16z AI fund doubles down as frontier model competition intensifies',
+    category: 'funding',
+    entityId: 'a16z',
+    entityName: 'a16z',
+    summary:
+      'Andreessen Horowitz commits $1.5B additional capital to AI portfolio including OpenAI, Anthropic competitors, xAI and Mistral AI. Partners cite frontier model race as generational investment opportunity.',
+    date: '2026-02-22',
+    confidence: 88,
+    significanceScore: 74,
+    sourceSupportCount: 4,
+    mentionedEntityIds: ['openai', 'anthropic', 'xai', 'mistral_ai'],
+  },
+  {
+    id: 'sig-014',
+    title: 'Microsoft Azure expands GPU infrastructure for OpenAI partnership',
+    category: 'product',
+    entityId: 'microsoft',
+    entityName: 'Microsoft',
+    summary:
+      'Microsoft announces $3B expansion of Azure AI infrastructure to support OpenAI model training. New NVIDIA GB200 clusters to be provisioned exclusively for frontier model development.',
+    date: '2026-02-10',
+    confidence: 91,
+    significanceScore: 78,
+    sourceSupportCount: 4,
+    mentionedEntityIds: ['openai', 'nvidia'],
+  },
+  {
+    id: 'sig-015',
+    title: 'EU AI Office expands general-purpose AI model oversight framework',
+    category: 'regulation',
+    entityId: 'eu_ai_office',
+    entityName: 'EU AI Office',
+    summary:
+      'European AI Office issues binding guidance requiring all GPAI model providers above compute thresholds to file safety evaluations. Affects Meta AI, Mistral AI, Google DeepMind, OpenAI, and Anthropic deployments in the EU.',
+    date: '2026-03-10',
+    confidence: 94,
+    significanceScore: 87,
+    sourceSupportCount: 5,
+    mentionedEntityIds: ['meta_ai', 'mistral_ai', 'google_deepmind', 'openai', 'anthropic'],
+  },
+  {
+    id: 'sig-016',
+    title: 'Google Cloud commits multi-year TPU capacity to Anthropic agreement',
+    category: 'funding',
+    entityId: 'google_deepmind',
+    entityName: 'Google DeepMind',
+    summary:
+      "Google Cloud extends its strategic compute agreement with Anthropic, committing $500M in TPU capacity over three years. Deepens Alphabet's position as Anthropic's primary compute and strategic partner.",
+    date: '2026-02-03',
+    confidence: 89,
+    significanceScore: 80,
+    sourceSupportCount: 3,
+    mentionedEntityIds: ['anthropic'],
+  },
+  {
+    id: 'sig-017',
+    title: 'SoftBank Vision Fund 3 builds concentrated AI infrastructure position',
+    category: 'funding',
+    entityId: 'softbank',
+    entityName: 'SoftBank',
+    summary:
+      'SoftBank Vision Fund 3 discloses positions across AI consumer and infrastructure plays including Perplexity AI, OpenAI secondary shares, and Cohere enterprise. Total AI allocation exceeds $4B.',
+    date: '2026-01-20',
+    confidence: 86,
+    significanceScore: 71,
+    sourceSupportCount: 3,
+    mentionedEntityIds: ['perplexity', 'openai', 'cohere'],
   },
 ];
 

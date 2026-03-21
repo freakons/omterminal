@@ -185,6 +185,53 @@ export const MOCK_EVENTS: AiEvent[] = [
       'Bipartisan bill proposes mandatory third-party audits for frontier AI systems; OpenAI engaged.',
     date: '2026-01-08',
   },
+  {
+    id: 'evt-016',
+    type: 'funding',
+    entityId: 'a16z',
+    entityName: 'a16z',
+    title: 'a16z AI Fund — $1.5B follow-on commitment',
+    description:
+      'Andreessen Horowitz commits additional $1.5B to AI portfolio; positions span frontier model labs and applied AI infrastructure.',
+    date: '2026-02-22',
+    amount: '$1.5B',
+    signalIds: ['sig-013'],
+  },
+  {
+    id: 'evt-017',
+    type: 'regulation',
+    entityId: 'eu_ai_office',
+    entityName: 'EU AI Office',
+    title: 'EU AI Office GPAI model oversight framework published',
+    description:
+      'Binding guidance requiring all general-purpose AI model providers above compute thresholds to submit safety evaluations and incident reports.',
+    date: '2026-03-10',
+    signalIds: ['sig-015'],
+  },
+  {
+    id: 'evt-018',
+    type: 'funding',
+    entityId: 'softbank',
+    entityName: 'SoftBank',
+    title: 'SoftBank Vision Fund 3 AI portfolio disclosure',
+    description:
+      'SoftBank discloses $4B+ concentration across AI consumer and infrastructure plays including Perplexity AI, OpenAI secondary, and Cohere.',
+    date: '2026-01-20',
+    amount: '$4B+',
+    signalIds: ['sig-017'],
+  },
+  {
+    id: 'evt-019',
+    type: 'partnership',
+    entityId: 'google_deepmind',
+    entityName: 'Google DeepMind',
+    title: 'Google Cloud × Anthropic multi-year compute agreement extended',
+    description:
+      "Google Cloud extends strategic TPU capacity commitment to Anthropic; $500M over three years deepens Alphabet's position as Anthropic's primary infrastructure partner.",
+    date: '2026-02-03',
+    amount: '$500M',
+    signalIds: ['sig-016'],
+  },
 ];
 
 export function getEventById(id: string): AiEvent | undefined {

@@ -37,17 +37,35 @@ export async function GET(req: NextRequest) {
     // Attempt to load from DB
     const [dbEntities, dbEvents, dbSignals] = await Promise.all([
       getEntities(limit),
-      getEvents(200),
-      getSignals(200),
+      getEvents(500),
+      getSignals(500),
     ]);
 
     const hasDbData = dbEntities.length > 0;
 
     // Use DB data or fall back to mocks
-    const entities = hasDbData ? dbEntities : (IS_PRODUCTION ? [] : MOCK_ENTITIES.slice(0, limit));
+    let entities = hasDbData ? dbEntities : (IS_PRODUCTION ? [] : MOCK_ENTITIES.slice(0, limit));
     const events   = hasDbData ? dbEvents   : (IS_PRODUCTION ? [] : MOCK_EVENTS);
     const signals  = hasDbData ? dbSignals  : (IS_PRODUCTION ? [] : MOCK_SIGNALS);
     const source   = hasDbData ? 'db' : (IS_PRODUCTION ? 'empty' : 'mock');
+
+    // Prioritize entities by signal activity so the most connected nodes are
+    // always included when the entity list is trimmed to the limit.
+    // For DB entities, derive counts from the signals array (signalCount = 0 in rowToEntity).
+    // For mock entities, signalCount is pre-populated.
+    if (entities.length > 1) {
+      const signalCountById = new Map<string, number>();
+      for (const sig of signals) {
+        if (sig.entityId) {
+          signalCountById.set(sig.entityId, (signalCountById.get(sig.entityId) ?? 0) + 1);
+        }
+      }
+      entities = [...entities].sort((a, b) => {
+        const countA = signalCountById.get(a.id) ?? a.signalCount ?? 0;
+        const countB = signalCountById.get(b.id) ?? b.signalCount ?? 0;
+        return countB - countA;
+      });
+    }
 
     if (entities.length === 0) {
       return NextResponse.json({

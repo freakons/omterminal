@@ -15,6 +15,7 @@
 import type { Signal } from '@/data/mockSignals';
 import type { AiEvent } from '@/data/mockEvents';
 import type { EntityProfile } from '@/data/mockEntities';
+import type { EdgeType } from '@/data/mockGraph';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -46,6 +47,11 @@ export interface EntityRelationship {
   tier: RelationshipTier;
   /** IDs of the shared signals connecting these entities. */
   sharedSignalIds: string[];
+  /**
+   * Inferred semantic relationship type based on the dominant category of
+   * shared signals.  Undefined when the type cannot be safely inferred.
+   */
+  edgeType?: EdgeType;
 }
 
 /**
@@ -110,6 +116,45 @@ function recencyDecay(daysSince: number): number {
   return Math.pow(0.5, daysSince / RECENCY_HALF_LIFE_DAYS);
 }
 
+/**
+ * Infer an EdgeType from the dominant signal category among shared signals.
+ *
+ * Maps signal categories to semantic relationship types:
+ *   funding     → 'funding'    (investment / financial relationship)
+ *   regulation  → 'regulation' (regulatory oversight)
+ *   models      → 'competition' (frontier model race)
+ *   research    → 'competition' (research/benchmark competition)
+ *   agents      → 'competition' (agent platform competition)
+ *   product     → 'competition' (product competition)
+ *
+ * Returns undefined when no shared signals have a category.
+ */
+function inferEdgeType(
+  sharedSignalIds: string[],
+  signalById: Map<string, Signal>,
+): EdgeType | undefined {
+  if (sharedSignalIds.length === 0) return undefined;
+
+  const counts = new Map<string, number>();
+  for (const sid of sharedSignalIds) {
+    const cat = signalById.get(sid)?.category;
+    if (cat) counts.set(cat, (counts.get(cat) ?? 0) + 1);
+  }
+
+  const dominant = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+  if (!dominant) return undefined;
+
+  switch (dominant) {
+    case 'funding':    return 'funding';
+    case 'regulation': return 'regulation';
+    case 'models':
+    case 'research':
+    case 'agents':
+    case 'product':    return 'competition';
+    default:           return undefined;
+  }
+}
+
 function strengthToTier(strength: number): RelationshipTier {
   if (strength >= TIER_THRESHOLDS.strong)   return 'strong';
   if (strength >= TIER_THRESHOLDS.moderate) return 'moderate';
@@ -151,10 +196,11 @@ function buildIndex(signals: Signal[], events: AiEvent[]): SignalEntityIndex {
   const entityToSignals  = new Map<string, Set<string>>();
   const signalById       = new Map<string, Signal>();
 
-  // Index signals by their primary entity
+  // Index signals by their primary entity and any co-mentioned entities
   for (const sig of signals) {
     signalById.set(sig.id, sig);
 
+    // Primary entity
     const entities = signalToEntities.get(sig.id) ?? new Set();
     entities.add(sig.entityId);
     signalToEntities.set(sig.id, entities);
@@ -162,6 +208,19 @@ function buildIndex(signals: Signal[], events: AiEvent[]): SignalEntityIndex {
     const sigs = entityToSignals.get(sig.entityId) ?? new Set();
     sigs.add(sig.id);
     entityToSignals.set(sig.entityId, sigs);
+
+    // Co-mentioned entities — these create cross-entity signal co-occurrence
+    if (sig.mentionedEntityIds) {
+      for (const eid of sig.mentionedEntityIds) {
+        if (!eid || eid === sig.entityId) continue;
+        entities.add(eid);
+        signalToEntities.set(sig.id, entities);
+
+        const mentionedSigs = entityToSignals.get(eid) ?? new Set();
+        mentionedSigs.add(sig.id);
+        entityToSignals.set(eid, mentionedSigs);
+      }
+    }
   }
 
   // Index events — link event's entity to the event's signalIds
@@ -328,6 +387,7 @@ export function computeAllRelationships(input: RelationshipInput): EntityRelatio
       if (strength === 0) continue;
 
       const [sourceId, targetId] = pairIds(entityA, entityB);
+      const edgeType = inferEdgeType(shared, index.signalById);
 
       relationships.push({
         sourceEntityId: sourceId,
@@ -339,6 +399,7 @@ export function computeAllRelationships(input: RelationshipInput): EntityRelatio
         strength,
         tier: strengthToTier(strength),
         sharedSignalIds: shared,
+        edgeType,
       });
     }
   }

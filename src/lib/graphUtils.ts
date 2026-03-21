@@ -190,6 +190,51 @@ export interface IntelligentGraphResult {
   relationships: EntityRelationship[];
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Text-based co-occurrence extraction
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * For DB signals that lack `mentionedEntityIds`, scan signal text to find
+ * other known entity names.  This creates cross-entity edges from real signal
+ * content without requiring a DB schema change.
+ *
+ * Precision-focused: only matches on full EntityProfile.name to avoid false
+ * positives.  The primary entityId is always excluded from results.
+ */
+function extractTextMentionedEntityIds(
+  signal: { entityId: string; title: string; summary?: string | null },
+  entities: EntityProfile[],
+): string[] {
+  const text = `${signal.title} ${signal.summary ?? ''}`.toLowerCase();
+  const found: string[] = [];
+  for (const e of entities) {
+    if (e.id === signal.entityId) continue;
+    if (e.name.length < 3) continue; // skip very short names to avoid false positives
+    if (text.includes(e.name.toLowerCase())) {
+      found.push(e.id);
+    }
+  }
+  return found;
+}
+
+/**
+ * Enrich signals that lack `mentionedEntityIds` by scanning their text for
+ * entity names.  Returns a new array — the original signals are not mutated.
+ */
+function enrichSignalsWithTextCooccurrence(
+  signals: Signal[],
+  entities: EntityProfile[],
+): Signal[] {
+  return signals.map(sig => {
+    // If already enriched, skip
+    if (sig.mentionedEntityIds && sig.mentionedEntityIds.length > 0) return sig;
+    const mentioned = extractTextMentionedEntityIds(sig, entities);
+    if (mentioned.length === 0) return sig;
+    return { ...sig, mentionedEntityIds: mentioned };
+  });
+}
+
 /**
  * Build a graph where entity↔entity edges are weighted by signal-driven
  * relationship intelligence rather than static sector groupings.
@@ -197,17 +242,25 @@ export interface IntelligentGraphResult {
  * Includes all standard entity→event, event→signal, and signal→entity links
  * from buildGraphData, plus weighted entity↔entity edges computed from shared
  * signal activity, recency, and significance.
+ *
+ * For signals without explicit `mentionedEntityIds`, text-based co-occurrence
+ * detection is run automatically to extract cross-entity relationships from
+ * real DB signal content.
  */
 export function buildIntelligentGraph(input: IntelligentGraphInput): IntelligentGraphResult {
   const { entities, events, signals, referenceDate, minStrength = 1 } = input;
 
-  // Start with the standard graph
-  const base = buildGraphData({ entities, events, signals });
+  // Enrich signals with text-based entity co-occurrence for DB signals that
+  // lack explicit mentionedEntityIds (no-op when already enriched)
+  const enrichedSignals = enrichSignalsWithTextCooccurrence(signals, entities);
 
-  // Compute signal-driven relationships
+  // Start with the standard graph
+  const base = buildGraphData({ entities, events, signals: enrichedSignals });
+
+  // Compute signal-driven relationships using enriched signals
   const relationships = computeAllRelationships({
     entities,
-    signals,
+    signals: enrichedSignals,
     events,
     referenceDate,
   });
@@ -237,6 +290,7 @@ export function buildIntelligentGraph(input: IntelligentGraphInput): Intelligent
       tier: rel.tier === 'none' ? undefined : rel.tier,
       sharedSignals: rel.sharedSignalCount,
       lastInteraction: rel.lastInteraction ?? undefined,
+      edgeType: rel.edgeType,
     });
   }
 
