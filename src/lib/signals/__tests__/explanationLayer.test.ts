@@ -242,19 +242,24 @@ describe('explainSignal', () => {
     assert.ok(explanation.affectedEntities.includes('Anthropic'));
     assert.deepEqual(explanation.supportingSignals, ['sig-test-002']);
     assert.ok(explanation.corroborationSummary.includes('6'));
-    assert.ok(explanation.whyThisMatters.includes('critical'));
+    // Intelligence-grade: must mention the entity and provide strategic insight
     assert.ok(explanation.whyThisMatters.includes('Anthropic'));
+    assert.ok(explanation.whyThisMatters.length > 50, 'Should produce a substantive insight');
     assert.ok(explanation.explanationFactors.length >= 3);
   });
 
-  it('explains a low-confidence early signal', () => {
+  it('explains a low-confidence early signal with minimal treatment', () => {
     const explanation = explainSignal(EARLY_SIGNAL);
 
     assert.equal(explanation.importanceLabel, 'Early Signal');
     assert.equal(explanation.confidenceLabel, 'Low Confidence');
     assert.ok(explanation.corroborationSummary.toLowerCase().includes('single source'));
-    assert.ok(explanation.whyThisMatters.includes('early-stage'));
+    // Weak signals get honest, minimal explanations — not inflated insight
     assert.ok(explanation.whyThisMatters.includes('xAI'));
+    assert.ok(
+      explanation.whyThisMatters.includes('single-source') || explanation.whyThisMatters.includes('Early'),
+      'Should flag limited evidence quality',
+    );
   });
 
   it('uses pre-generated context whyItMatters when available', () => {
