@@ -19,6 +19,10 @@ const STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_articles_category ON articles (category)`,
   `CREATE INDEX IF NOT EXISTS idx_articles_source ON articles (source)`,
 
+  // ── title_fingerprint: near-duplicate detection ──────────────────────────
+  `ALTER TABLE articles ADD COLUMN IF NOT EXISTS title_fingerprint TEXT`,
+  `CREATE INDEX IF NOT EXISTS idx_articles_title_fingerprint ON articles (title_fingerprint)`,
+
   // ── Intelligence events (primary ingestion table used by gnewsFetcher) ────
   `CREATE TABLE IF NOT EXISTS intelligence_events (
     id           SERIAL PRIMARY KEY,
@@ -483,6 +487,91 @@ const STATEMENTS = [
     CONSTRAINT uq_weekly_reports_week UNIQUE (week_start)
   )`,
   `CREATE INDEX IF NOT EXISTS idx_weekly_reports_week_start ON weekly_reports (week_start DESC)`,
+
+  // ── Migration 014: Signal Intelligence Layer ────────────────────────────
+  `ALTER TABLE signals ADD COLUMN IF NOT EXISTS why_this_matters TEXT`,
+  `ALTER TABLE signals ADD COLUMN IF NOT EXISTS strategic_impact TEXT`,
+  `ALTER TABLE signals ADD COLUMN IF NOT EXISTS who_should_care TEXT`,
+  `ALTER TABLE signals ADD COLUMN IF NOT EXISTS prediction TEXT`,
+
+  // ── Migration 015: Signal Intelligence Hardening ────────────────────────
+  `ALTER TABLE signals ADD COLUMN IF NOT EXISTS insight_generated BOOLEAN DEFAULT FALSE`,
+  `ALTER TABLE signals ADD COLUMN IF NOT EXISTS insight_generated_at TIMESTAMPTZ`,
+  `ALTER TABLE signals ADD COLUMN IF NOT EXISTS insight_generation_error TEXT`,
+  // Backfill: mark existing signals that already have intelligence as generated.
+  `UPDATE signals
+   SET insight_generated = TRUE,
+       insight_generated_at = updated_at
+   WHERE why_this_matters IS NOT NULL
+     AND insight_generated IS NOT TRUE`,
+
+  // ── Migration 016: Source Health Monitoring ─────────────────────────────
+  `CREATE TABLE IF NOT EXISTS source_health (
+    id               TEXT PRIMARY KEY,
+    source_id        TEXT NOT NULL,
+    last_success_at  TIMESTAMPTZ,
+    last_failure_at  TIMESTAMPTZ,
+    failure_count    INTEGER DEFAULT 0,
+    last_error       TEXT,
+    last_checked_at  TIMESTAMPTZ,
+    articles_fetched INTEGER DEFAULT 0
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_source_health_source_id ON source_health (source_id)`,
+
+  // ── Migration 017: Signal Clusters ─────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS signal_clusters (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    entity           TEXT,
+    topic            TEXT,
+    confidence_score INTEGER,
+    signal_count     INTEGER,
+    created_at       TIMESTAMPTZ DEFAULT now()
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_signal_clusters_entity ON signal_clusters (entity)`,
+
+  // ── Migration 018: User Alert Preferences ──────────────────────────────
+  `CREATE TABLE IF NOT EXISTS user_alert_preferences (
+    user_id              TEXT        PRIMARY KEY,
+    digest_enabled       BOOLEAN     NOT NULL DEFAULT TRUE,
+    high_impact_only     BOOLEAN     NOT NULL DEFAULT TRUE,
+    include_trend_alerts BOOLEAN     NOT NULL DEFAULT FALSE,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+
+  // ── Migration 021: Source Weighting ────────────────────────────────────
+  `ALTER TABLE articles ADD COLUMN IF NOT EXISTS source_tier   SMALLINT`,
+  `ALTER TABLE articles ADD COLUMN IF NOT EXISTS source_weight NUMERIC(3, 1)`,
+  `CREATE INDEX IF NOT EXISTS idx_articles_source_tier ON articles (source_tier)`,
+
+  // ── Migration 022: Content Fingerprint ─────────────────────────────────
+  `ALTER TABLE articles ADD COLUMN IF NOT EXISTS content_fingerprint TEXT`,
+  `CREATE INDEX IF NOT EXISTS idx_articles_content_fingerprint ON articles (content_fingerprint)`,
+
+  // ── Migration 023: Source Category ─────────────────────────────────────
+  `ALTER TABLE articles ADD COLUMN IF NOT EXISTS source_category TEXT`,
+  `CREATE INDEX IF NOT EXISTS idx_articles_source_category ON articles (source_category)`,
+
+  // ── Migration 024: Story Clusters ──────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS story_clusters (
+    id                   TEXT PRIMARY KEY,
+    category             TEXT,
+    canonical_article_id TEXT,
+    representative_title TEXT        NOT NULL,
+    article_count        INTEGER     NOT NULL DEFAULT 1,
+    source_diversity     INTEGER     NOT NULL DEFAULT 1,
+    avg_source_weight    NUMERIC(4, 3),
+    first_seen_at        TIMESTAMPTZ NOT NULL,
+    last_seen_at         TIMESTAMPTZ NOT NULL,
+    created_at           TIMESTAMPTZ DEFAULT now(),
+    updated_at           TIMESTAMPTZ DEFAULT now()
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_story_clusters_category      ON story_clusters (category)`,
+  `CREATE INDEX IF NOT EXISTS idx_story_clusters_created_at    ON story_clusters (created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_story_clusters_article_count ON story_clusters (article_count DESC)`,
+  `ALTER TABLE articles ADD COLUMN IF NOT EXISTS story_cluster_id TEXT`,
+  `CREATE INDEX IF NOT EXISTS idx_articles_story_cluster_id
+     ON articles (story_cluster_id) WHERE story_cluster_id IS NOT NULL`,
 ];
 
 /**
@@ -550,6 +639,33 @@ const TABLES_CREATED = [
   'product_events',
   // migration 020
   'weekly_reports',
+  // migration 014
+  'signals.why_this_matters (column)',
+  'signals.strategic_impact (column)',
+  'signals.who_should_care (column)',
+  'signals.prediction (column)',
+  // migration 015
+  'signals.insight_generated (column)',
+  'signals.insight_generated_at (column)',
+  'signals.insight_generation_error (column)',
+  // migration 016
+  'source_health',
+  // migration 017
+  'signal_clusters',
+  // migration 018
+  'user_alert_preferences',
+  // migration 021
+  'articles.source_tier (column)',
+  'articles.source_weight (column)',
+  // migration 022
+  'articles.content_fingerprint (column)',
+  // migration 023
+  'articles.source_category (column)',
+  // migration 024
+  'story_clusters',
+  'articles.story_cluster_id (column)',
+  // title_fingerprint (schema.sql)
+  'articles.title_fingerprint (column)',
 ];
 
 export async function POST(req: NextRequest) {
