@@ -19,6 +19,7 @@ import type { EntityProfile } from '@/data/mockEntities';
 import type { AiEvent } from '@/data/mockEvents';
 import type { Signal } from '@/data/mockSignals';
 import { computeAllRelationships, type EntityRelationship } from '@/lib/relationshipIntelligence';
+import { injectStructuralEdges } from '@/lib/graphComposition';
 import { slugify } from '@/utils/sanitize';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -199,9 +200,37 @@ export interface IntelligentGraphResult {
  * other known entity names.  This creates cross-entity edges from real signal
  * content without requiring a DB schema change.
  *
- * Precision-focused: only matches on full EntityProfile.name to avoid false
- * positives.  The primary entityId is always excluded from results.
+ * Matches on full EntityProfile.name AND common short-form aliases to improve
+ * real co-occurrence detection from signal text.
+ * The primary entityId is always excluded from results.
  */
+
+/** Known common short-form aliases for entity name matching in signal text. */
+const ENTITY_ALIASES: Record<string, string[]> = {
+  'openai':         ['openai', 'chatgpt', 'gpt-4', 'gpt-5', 'gpt4', 'gpt5'],
+  'anthropic':      ['anthropic', 'claude'],
+  'google_deepmind':['google', 'deepmind', 'gemini', 'alphabet'],
+  'meta_ai':        ['meta', 'llama', 'meta ai'],
+  'mistral_ai':     ['mistral'],
+  'xai':            ['xai', 'grok', 'x.ai'],
+  'deepseek':       ['deepseek'],
+  'microsoft':      ['microsoft', 'azure', 'bing', 'copilot'],
+  'aws':            ['amazon', 'aws', 'bedrock', 'trainium'],
+  'nvidia':         ['nvidia', 'blackwell', 'cuda', 'h100', 'h200'],
+  'a16z':           ['a16z', 'andreessen', 'andreessen horowitz'],
+  'softbank':       ['softbank', 'vision fund', 'masayoshi'],
+  'sequoia':        ['sequoia'],
+  'spark_capital':  ['spark capital'],
+  'eu_ai_office':   ['eu ai', 'european', 'ai act', 'ai office'],
+  'ftc':            ['ftc', 'federal trade'],
+  'scale_ai':       ['scale ai', 'scale.ai'],
+  'hugging_face':   ['hugging face', 'huggingface'],
+  'cohere':         ['cohere'],
+  'perplexity':     ['perplexity'],
+  'character_ai':   ['character.ai', 'character ai'],
+  'apple':          ['apple', 'apple intelligence', 'siri'],
+};
+
 function extractTextMentionedEntityIds(
   signal: { entityId: string; title: string; summary?: string | null },
   entities: EntityProfile[],
@@ -211,8 +240,20 @@ function extractTextMentionedEntityIds(
   for (const e of entities) {
     if (e.id === signal.entityId) continue;
     if (e.name.length < 3) continue; // skip very short names to avoid false positives
+    // Full name match (original behaviour)
     if (text.includes(e.name.toLowerCase())) {
       found.push(e.id);
+      continue;
+    }
+    // Alias match — improves co-occurrence detection without false positives
+    const aliases = ENTITY_ALIASES[e.id];
+    if (aliases) {
+      for (const alias of aliases) {
+        if (alias.length >= 4 && text.includes(alias)) {
+          found.push(e.id);
+          break;
+        }
+      }
     }
   }
   return found;
@@ -294,5 +335,12 @@ export function buildIntelligentGraph(input: IntelligentGraphInput): Intelligent
     });
   }
 
-  return { graph: base, relationships };
+  // ── Structural edge injection ────────────────────────────────────────────
+  // Seed known real-world structural relationships (funding, partnerships,
+  // regulation, competition) as weak baseline edges wherever signal-driven
+  // edges don't already exist. This ensures the graph remains connected and
+  // ecologically meaningful even when live signals are sparse.
+  const withStructural = injectStructuralEdges(base);
+
+  return { graph: withStructural, relationships };
 }

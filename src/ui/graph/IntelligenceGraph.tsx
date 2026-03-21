@@ -665,14 +665,21 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
             } catch { /* best effort */ }
           }, 700);
         } else {
-          // Sparse graph: center on top entity as before
-          const topEntity = [...graphData.nodes]
-            .filter(n => n.type === 'entity' && n.importance != null)
-            .sort((a, b) => (b.importance ?? 0) - (a.importance ?? 0))[0] as RuntimeNode | undefined;
-          if (topEntity) {
-            g.centerAt(topEntity.x ?? 0, topEntity.y ?? 0, 900);
-            g.zoom(1.15, 900);
-          }
+          // Sparse-to-medium graph: always fit all nodes into view first so
+          // no nodes are stranded off-canvas, then ease in slightly.
+          // This prevents the "2–3 nodes floating in empty space" appearance.
+          g.zoomToFit(700, 60);
+          setTimeout(() => {
+            try {
+              const topEntity = [...graphData.nodes]
+                .filter(n => n.type === 'entity' && n.importance != null)
+                .sort((a, b) => (b.importance ?? 0) - (a.importance ?? 0))[0] as RuntimeNode | undefined;
+              if (topEntity && topEntity.x != null) {
+                g.centerAt(topEntity.x, topEntity.y ?? 0, 600);
+                g.zoom(0.88, 600);
+              }
+            } catch { /* best effort */ }
+          }, 800);
         }
       } catch { /* best effort */ }
       setHasAutoFocused(true);
