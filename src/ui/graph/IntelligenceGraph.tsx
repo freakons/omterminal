@@ -114,11 +114,11 @@ interface ZoneConfig {
  *           BOTTOM (infra / compute)
  */
 const ZONE_CONFIGS: Record<SemanticZone, ZoneConfig> = {
-  center: { x: 0,    y: 0,    label: 'Core AI',        color: 'rgba(96,165,250,0.042)',  strength: 0.05  },
-  left:   { x: -285, y: 10,   label: 'Investors',      color: 'rgba(167,139,250,0.040)', strength: 0.088 },
-  right:  { x: 285,  y: 10,   label: 'Models',         color: 'rgba(52,211,153,0.040)',  strength: 0.088 },
-  top:    { x: 0,    y: -225, label: 'Regulation',     color: 'rgba(251,146,60,0.040)',  strength: 0.088 },
-  bottom: { x: 0,    y: 225,  label: 'Infrastructure', color: 'rgba(148,163,184,0.038)', strength: 0.078 },
+  center: { x: 0,    y: 0,    label: 'Core AI',        color: 'rgba(96,165,250,0.042)',  strength: 0.10  },
+  left:   { x: -340, y: 15,   label: 'Investors',      color: 'rgba(167,139,250,0.040)', strength: 0.16  },
+  right:  { x: 340,  y: 15,   label: 'Models',         color: 'rgba(52,211,153,0.040)',  strength: 0.16  },
+  top:    { x: 0,    y: -280, label: 'Regulation',     color: 'rgba(251,146,60,0.040)',  strength: 0.16  },
+  bottom: { x: 0,    y: 280,  label: 'Infrastructure', color: 'rgba(148,163,184,0.038)', strength: 0.14  },
 };
 
 /** Assign each node to a semantic zone based on subtype and known label patterns. */
@@ -148,35 +148,114 @@ function getNodeZone(node: GraphNode): SemanticZone {
 }
 
 /**
- * Creates a D3-compatible zone gravity force.
+ * Deterministic hash for a node ID — returns a stable number 0..1.
+ * Used to create per-node anchor jitter so nodes don't pile on the exact
+ * zone center but instead spread organically within the zone region.
+ */
+function idHash(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) {
+    h = ((h << 5) - h + id.charCodeAt(i)) | 0;
+  }
+  return (Math.abs(h) % 10000) / 10000;
+}
+
+/**
+ * Returns a per-node soft anchor position within its zone.
  *
- * Gently pulls each entity node toward its assigned zone center using the
- * standard D3 custom-force pattern: `.initialize(nodes)` gives the force
- * access to the simulation's node array (with live x/y/vx/vy), and the
- * force function itself modifies velocities proportionally to alpha.
+ * Each node gets a unique, deterministic offset from the zone center based
+ * on its ID hash. This creates organic spatial variation within zones —
+ * nodes feel intentionally placed rather than stacked on a single point.
  *
- * Strength is intentionally very low (0.04–0.08 × alpha) so link clustering
- * and charge repulsion remain dominant — nodes still group by relationships,
- * but gain a soft positional bias that separates semantic categories.
+ * The jitter radius is proportional to the zone ellipse size so nodes stay
+ * within the visual zone boundary.
+ */
+function getNodeAnchor(node: GraphNode): { x: number; y: number } {
+  const zone = getNodeZone(node);
+  const cfg  = ZONE_CONFIGS[zone];
+  const h1   = idHash(node.id);
+  const h2   = idHash(node.id + '_y');
+
+  // Jitter radius — center zone gets more spread, peripheral zones tighter
+  const jitterR = zone === 'center' ? 70 : 48;
+
+  // Polar-ish distribution from zone center
+  const angle  = h1 * Math.PI * 2;
+  const radius = Math.sqrt(h2) * jitterR; // sqrt for uniform area distribution
+
+  return {
+    x: cfg.x + Math.cos(angle) * radius,
+    y: cfg.y + Math.sin(angle) * radius,
+  };
+}
+
+/**
+ * Seeds initial node positions based on zone assignment.
+ *
+ * Called once before the simulation starts so nodes begin near their
+ * semantic region instead of at random positions. This dramatically
+ * reduces first-load settling time and makes the graph feel composed
+ * from the first frame.
+ */
+function seedInitialPositions(nodes: GraphNode[]) {
+  for (const node of nodes as RuntimeNode[]) {
+    if (node.x != null && node.y != null) continue; // already positioned
+    const anchor = getNodeAnchor(node);
+    // Add extra scatter so D3 still has room to refine
+    const scatter = 25;
+    const h1 = idHash(node.id + '_sx');
+    const h2 = idHash(node.id + '_sy');
+    node.x = anchor.x + (h1 - 0.5) * scatter * 2;
+    node.y = anchor.y + (h2 - 0.5) * scatter * 2;
+  }
+}
+
+/**
+ * Creates a D3-compatible soft anchoring force.
+ *
+ * Each node is gently pulled toward its unique anchor point (zone center +
+ * per-node jitter). This creates a guided intelligence layout where:
+ *
+ *   - Zones clearly separate semantic categories
+ *   - Nodes within zones spread organically (not stacked)
+ *   - D3 link/charge forces still refine local clustering
+ *   - The result is structured but alive, not rigid
+ *
+ * Strength is moderate (0.10–0.16 × alpha) — strong enough to maintain
+ * zone separation but soft enough that link clustering and charge repulsion
+ * create natural sub-groups within each zone.
  */
 function createZoneGravityForce() {
   let simNodes: RuntimeNode[] = [];
+  const anchorCache = new Map<string, { x: number; y: number }>();
 
   function force(alpha: number) {
     for (const node of simNodes) {
       if (node.x == null || node.y == null) continue;
+
+      // Cache anchor per node ID for performance
+      let anchor = anchorCache.get(node.id);
+      if (!anchor) {
+        anchor = getNodeAnchor(node);
+        anchorCache.set(node.id, anchor);
+      }
+
       const zone = getNodeZone(node);
       const cfg  = ZONE_CONFIGS[zone];
       const str  = cfg.strength * alpha;
-      node.vx = (node.vx ?? 0) + (cfg.x - node.x) * str;
-      node.vy = (node.vy ?? 0) + (cfg.y - node.y) * str;
+
+      node.vx = (node.vx ?? 0) + (anchor.x - node.x) * str;
+      node.vy = (node.vy ?? 0) + (anchor.y - node.y) * str;
     }
   }
 
   // D3 calls initialize(nodes) when the force is registered on the simulation,
   // giving us a live reference to the mutated node objects (x/y/vx/vy present).
   (force as typeof force & { initialize: (n: RuntimeNode[]) => void }).initialize =
-    (n: RuntimeNode[]) => { simNodes = n; };
+    (n: RuntimeNode[]) => {
+      simNodes = n;
+      anchorCache.clear();
+    };
 
   return force;
 }
@@ -553,6 +632,9 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
     fetchGraphData()
       .then(({ data, isDemo: demo, source }) => {
         const sanitized = sanitizeGraphData(data);
+        // Seed initial positions so nodes start near their zones — dramatically
+        // reduces first-load settling time and creates a composed first impression.
+        seedInitialPositions(sanitized.nodes);
         console.debug('[IntelligenceGraph] data loaded', {
           source,
           isDemo: demo,
@@ -567,7 +649,9 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
       })
       .catch((err) => {
         console.warn('[IntelligenceGraph] fetch failed, using static fallback', err);
-        setGraphData(sanitizeGraphData(staticSanityGraph));
+        const fallback = sanitizeGraphData(staticSanityGraph);
+        seedInitialPositions(fallback.nodes);
+        setGraphData(fallback);
       })
       .finally(() => {
         setIsLoading(false);
@@ -589,44 +673,85 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
     try { g.centerAt(node.x, node.y, 600); } catch { /* best effort */ }
   }, []);
 
-  // Tune D3 forces for a dense, well-clustered layout.
-  // Less repulsion + shorter link distance = tighter clusters with less empty space.
+  // Tune D3 forces for a guided intelligence layout.
+  // Zone anchoring provides structure; link/charge forces handle local clustering.
   const tuneForces = useCallback(() => {
     const g = graphRef.current;
     if (!g) return;
     try {
       const nodeCount = graphData.nodes.length;
 
-      // Scale repulsion with graph size: stronger repulsion for decompression
-      // while keeping clusters well-defined and avoiding empty-space sprawl
+      // ── Charge (repulsion) ──
+      // Moderate repulsion — enough to prevent overlap but not so strong
+      // that it fights the zone anchoring. Slightly weaker than before
+      // because zone separation now handles macro spacing.
       const chargeStrength = nodeCount > 40
-        ? -120  // dense: stronger push-apart for breathing room
+        ? -90   // dense: zone anchoring handles spacing, less repulsion needed
         : nodeCount > 15
-          ? -145 // medium: moderate-strong clustering with space
-          : -170; // sparse: spread enough to be individually readable
+          ? -110  // medium: moderate repulsion for readability
+          : -130; // sparse: stronger push for individual node legibility
 
       const charge = g.d3Force('charge');
       if (charge) {
         charge.strength(chargeStrength);
-        charge.distanceMax(240); // slightly wider effect radius
+        charge.distanceMax(200); // tighter effect radius — don't push across zones
       }
 
+      // ── Link (attraction) ──
+      // Stronger link force to create tight organic clusters within zones.
+      // This is the primary force for local relationship grouping.
       const link = g.d3Force('link');
       if (link) {
-        // Longer distance = more breathable clusters without losing structure
-        link.distance(nodeCount > 40 ? 62 : 70);
-        link.strength(nodeCount > 40 ? 0.50 : 0.42);
+        link.distance(nodeCount > 40 ? 52 : 58);  // shorter links = tighter clusters
+        link.strength(nodeCount > 40 ? 0.55 : 0.48);
       }
 
-      // Gentle center force — keeps the graph from drifting to corners
+      // ── Center force ──
+      // Nearly zero — zone anchoring handles all spatial positioning now.
+      // Just enough to prevent catastrophic drift if zone force glitches.
       const center = g.d3Force('center');
       if (center) {
-        center.strength(0.05); // reduced: zone gravity handles spatial anchoring now
+        center.strength(0.012);
       }
 
-      // Zone gravity — custom force that softly pulls each node toward its
-      // semantic zone center (investors→left, regulators→top, infra→bottom, etc.).
-      // Registered fresh each time forces are tuned so node list stays current.
+      // ── Collision force ──
+      // Custom lightweight collision that prevents node overlap within clusters.
+      // Implemented as a D3 custom force rather than importing d3-force separately.
+      if (!g.d3Force('collide')) {
+        let collideNodes: RuntimeNode[] = [];
+        function collideForce() {
+          for (let i = 0; i < collideNodes.length; i++) {
+            const a = collideNodes[i];
+            if (a.x == null || a.y == null) continue;
+            const ra = nodeRadius(a as GraphNode) + 2;
+            for (let j = i + 1; j < collideNodes.length; j++) {
+              const b = collideNodes[j];
+              if (b.x == null || b.y == null) continue;
+              const rb = nodeRadius(b as GraphNode) + 2;
+              const dx = (b.x ?? 0) - (a.x ?? 0);
+              const dy = (b.y ?? 0) - (a.y ?? 0);
+              const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+              const minDist = ra + rb;
+              if (dist < minDist) {
+                const push = (minDist - dist) * 0.35 / dist;
+                const px = dx * push;
+                const py = dy * push;
+                a.vx = (a.vx ?? 0) - px;
+                a.vy = (a.vy ?? 0) - py;
+                b.vx = (b.vx ?? 0) + px;
+                b.vy = (b.vy ?? 0) + py;
+              }
+            }
+          }
+        }
+        (collideForce as typeof collideForce & { initialize: (n: RuntimeNode[]) => void }).initialize =
+          (n: RuntimeNode[]) => { collideNodes = n; };
+        g.d3Force('collide', collideForce);
+      }
+
+      // ── Soft zone anchoring ──
+      // Custom force that pulls each node toward its unique anchor point
+      // within its semantic zone. This is the primary structural force.
       g.d3Force('zone-gravity', createZoneGravityForce());
 
       g.d3ReheatSimulation();
@@ -684,7 +809,7 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
         }
       } catch { /* best effort */ }
       setHasAutoFocused(true);
-    }, 2400); // Wait for D3 force layout to settle
+    }, 1200); // Faster settle — initial positions are seeded near zones
     return () => clearTimeout(t);
   }, [graphData.nodes, isLoading, hasAutoFocused, initialFocusId]);
 
@@ -1071,13 +1196,13 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
   const paintBackground = useCallback((ctx: CanvasRenderingContext2D, globalScale: number) => {
     try {
       // 1. Radial gradient — subtle depth cue emanating from canvas center
-      const gr = ctx.createRadialGradient(0, 0, 0, 0, 0, 300);
+      const gr = ctx.createRadialGradient(0, 0, 0, 0, 0, 360);
       gr.addColorStop(0,   'rgba(96,165,250,0.014)');
       gr.addColorStop(0.5, 'rgba(10,10,30,0.006)');
       gr.addColorStop(1,   'rgba(0,0,0,0)');
       ctx.fillStyle = gr;
       ctx.beginPath();
-      ctx.arc(0, 0, 300, 0, Math.PI * 2);
+      ctx.arc(0, 0, 360, 0, Math.PI * 2);
       ctx.fill();
 
       // 1b. Dominant cluster glow — subtle radial depth behind the core cluster
@@ -1109,11 +1234,11 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
 
       // Zone ellipse dimensions per zone (in graph units)
       const ZONE_ELLIPSES: Record<SemanticZone, { rx: number; ry: number }> = {
-        center: { rx: 145, ry: 125 },
-        left:   { rx: 118, ry: 102 },
-        right:  { rx: 118, ry: 102 },
-        top:    { rx: 132, ry:  82 },
-        bottom: { rx: 132, ry:  82 },
+        center: { rx: 155, ry: 135 },
+        left:   { rx: 125, ry: 108 },
+        right:  { rx: 125, ry: 108 },
+        top:    { rx: 140, ry:  88 },
+        bottom: { rx: 140, ry:  88 },
       };
 
       // 2 & 3. Zone fills and boundary rings
@@ -1164,13 +1289,13 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
       ctx.setLineDash([4 / globalScale, 10 / globalScale]);
 
       ctx.beginPath();
-      ctx.moveTo(-430, 0);
-      ctx.lineTo(430, 0);
+      ctx.moveTo(-500, 0);
+      ctx.lineTo(500, 0);
       ctx.stroke();
 
       ctx.beginPath();
-      ctx.moveTo(0, -370);
-      ctx.lineTo(0, 370);
+      ctx.moveTo(0, -430);
+      ctx.lineTo(0, 430);
       ctx.stroke();
 
       ctx.setLineDash([]);
@@ -2608,10 +2733,10 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
           linkColor={getLinkColor}
           linkWidth={getLinkWidth}
           linkLineDash={getLinkDash}
-          cooldownTicks={360}
-          d3AlphaDecay={0.016}
-          d3VelocityDecay={0.40}
-          warmupTicks={40}
+          cooldownTicks={300}
+          d3AlphaDecay={0.022}
+          d3VelocityDecay={0.52}
+          warmupTicks={120}
         />
       )}
     </div>
