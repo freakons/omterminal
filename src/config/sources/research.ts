@@ -425,4 +425,122 @@ export const researchSources: SourceDefinition[] = [
     reliability: 8,
     enabled: true,
   },
+
+  // ── Additional research labs — wave 2 (6) ──────────────────────────────
+  // Added 2026-03: Source expansion week
+
+  {
+    id: 'princeton_nlp',
+    name: 'Princeton NLP Blog',
+    type: 'rss',
+    category: 'research',
+    url: 'https://princeton-nlp.github.io/feed.xml',
+    reliability: 9,
+    enabled: true,
+  },
+  {
+    id: 'toronto_ml',
+    name: 'University of Toronto ML Group',
+    type: 'rss',
+    category: 'research',
+    url: 'https://mlg.eng.cam.ac.uk/blog/feed.xml',
+    reliability: 8,
+    enabled: true,
+  },
+  {
+    id: 'eth_ai_center',
+    name: 'ETH Zurich AI Center',
+    type: 'rss',
+    category: 'research',
+    url: 'https://ai.ethz.ch/news/feed.xml',
+    reliability: 9,
+    enabled: true,
+  },
+  {
+    id: 'max_planck_is',
+    name: 'Max Planck Institute for Intelligent Systems',
+    type: 'rss',
+    category: 'research',
+    url: 'https://is.mpg.de/news/feed',
+    reliability: 9,
+    enabled: true,
+  },
+  {
+    id: 'inria_ai',
+    name: 'INRIA AI Research News',
+    type: 'rss',
+    category: 'research',
+    url: 'https://www.inria.fr/en/rss.xml',
+    reliability: 8,
+    enabled: true,
+  },
+  {
+    id: 'kaist_ai',
+    name: 'KAIST AI Institute',
+    type: 'rss',
+    category: 'research',
+    url: 'https://ai.kaist.ac.kr/feed/',
+    reliability: 8,
+    enabled: true,
+  },
+
+  // ── Additional arXiv categories (3) ──────────────────────────────────────
+
+  {
+    id: 'arxiv_se',
+    name: 'arXiv Software Engineering',
+    type: 'arxiv',
+    category: 'research',
+    url: 'https://arxiv.org/rss/cs.SE',
+    reliability: 9,
+    enabled: true,
+  },
+  {
+    id: 'arxiv_dc',
+    name: 'arXiv Distributed Computing',
+    type: 'arxiv',
+    category: 'research',
+    url: 'https://arxiv.org/rss/cs.DC',
+    reliability: 9,
+    enabled: true,
+  },
+  {
+    id: 'arxiv_hc',
+    name: 'arXiv Human-Computer Interaction',
+    type: 'arxiv',
+    category: 'research',
+    url: 'https://arxiv.org/rss/cs.HC',
+    reliability: 9,
+    enabled: true,
+  },
+
+  // ── Additional journals (3) ──────────────────────────────────────────────
+
+  {
+    id: 'nature_ai',
+    name: 'Nature — Artificial Intelligence',
+    type: 'rss',
+    category: 'research',
+    url: 'https://www.nature.com/search.rss?q=artificial+intelligence&order=date_desc',
+    reliability: 9,
+    enabled: true,
+  },
+  {
+    id: 'science_robotics',
+    name: 'Science Robotics',
+    type: 'rss',
+    category: 'research',
+    url: 'https://www.science.org/action/showFeed?type=etoc&feed=rss&jc=scirobotics',
+    reliability: 9,
+    enabled: true,
+  },
+  {
+    id: 'transactions_on_ml',
+    name: 'Transactions on Machine Learning Research',
+    type: 'rss',
+    category: 'research',
+    url: 'https://jmlr.org/tmlr/feed.xml',
+    reliability: 9,
+    enabled: true,
+  },
 ];

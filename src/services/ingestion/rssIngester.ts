@@ -24,7 +24,7 @@ import { saveEvent } from '../storage/eventStore';
 import { classifyArticle } from '../intelligence/classifier';
 import { INTELLIGENCE_SOURCES } from '../../config/intelligenceSources';
 import { getEnabledSources, getHighPrioritySources, getSourceById } from '../../config/sources/index';
-import { trackSourceSuccess, trackSourceFailure } from './sourceHealthTracker';
+import { trackSourceSuccess, trackSourceFailure, type SourceRunOutcome } from './sourceHealthTracker';
 import type { Event } from '@/types/intelligence';
 import {
   canonicalizeUrl,
@@ -180,8 +180,13 @@ export async function ingestRss(): Promise<RssIngestResult> {
       `[rssIngester] source="${fetchResult.sourceId}" articles=${fetchResult.articles.length} rawItems=${fetchResult.rawItemCount}`
     );
 
-    // Track success: article count from this fetch (fire-and-forget)
-    void trackSourceSuccess(fetchResult.sourceId, fetchResult.articles.length);
+    // Per-source outcome tracking for quality metrics
+    const sourceOutcome: SourceRunOutcome = {
+      articlesFetched: fetchResult.articles.length,
+      articlesInserted: 0,
+      duplicatesDropped: 0,
+      eventsGenerated: 0,
+    };
 
     // ── Article + event persistence ──────────────────────────────────────────
     for (const article of fetchResult.articles) {
@@ -235,8 +240,10 @@ export async function ingestRss(): Promise<RssIngestResult> {
 
         if (articleInserted) {
           result.articlesNew++;
+          sourceOutcome.articlesInserted++;
         } else {
           result.articlesDeduped++;
+          sourceOutcome.duplicatesDropped++;
         }
       } catch (err) {
         console.error(
@@ -280,6 +287,7 @@ export async function ingestRss(): Promise<RssIngestResult> {
         const eventInserted = await saveEvent(event);
         if (eventInserted) {
           result.eventsNew++;
+          sourceOutcome.eventsGenerated++;
         } else {
           result.eventsDeduped++;
         }
@@ -290,6 +298,9 @@ export async function ingestRss(): Promise<RssIngestResult> {
         );
       }
     }
+
+    // Track per-source quality metrics (fire-and-forget)
+    void trackSourceSuccess(fetchResult.sourceId, fetchResult.articles.length, sourceOutcome);
   }
 
   // ── Summary log ─────────────────────────────────────────────────────────────
