@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { fetchFundingRounds } from '@/lib/dataService';
 import { getSiteStats } from '@/db/queries';
 import { parseFundingAmountUsdM, formatFundingTotal, sumFundingRounds } from '@/lib/parseFundingAmount';
@@ -65,7 +66,7 @@ export default async function FundingPage() {
 
           <div className="news-grid">
             {rounds.map((round) => (
-              <div key={round.id} className="nc" style={{ cursor: 'default' }}>
+              <Link key={round.id} href={`/funding/${round.id}`} className="nc nc-link" style={{ display: 'block', textDecoration: 'none' }}>
                 <div className="nc-top">
                   <span className="badge funding">{round.round}</span>
                   <span style={{ fontFamily: 'var(--fm)', fontSize: '9.5px', color: 'var(--text3)' }}>
@@ -88,8 +89,9 @@ export default async function FundingPage() {
                   <span style={{ color: 'var(--text2)' }}>
                     {round.investors.slice(0, 3).join(' · ')}
                   </span>
+                  <span style={{ fontFamily: 'var(--fm)', fontSize: '9px', color: 'var(--text3)' }}>View round →</span>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         </>
