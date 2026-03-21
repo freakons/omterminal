@@ -69,11 +69,11 @@ interface EdgeStyle {
 }
 
 const EDGE_STYLES: Record<EdgeType, EdgeStyle> = {
-  'funding':       { color: '#4ade80', dash: undefined,  label: 'Funding' },
-  'competition':   { color: '#f87171', dash: [5, 3],     label: 'Competition' },
-  'partnership':   { color: '#60a5fa', dash: undefined,  label: 'Partnership' },
-  'model-release': { color: '#a78bfa', dash: undefined,  label: 'Model Release' },
-  'regulation':    { color: '#fb923c', dash: [7, 4],     label: 'Regulation' },
+  'funding':       { color: '#4ade80', dash: undefined,   label: 'Funding' },
+  'competition':   { color: '#f87171', dash: [6, 4],      label: 'Competition' },
+  'partnership':   { color: '#60a5fa', dash: undefined,    label: 'Partnership' },
+  'model-release': { color: '#a78bfa', dash: undefined,    label: 'Model Release' },
+  'regulation':    { color: '#fb923c', dash: [3, 3],       label: 'Regulation' },
 };
 
 /** Returns the resolved edge style or undefined if edgeType is absent */
@@ -278,12 +278,13 @@ async function fetchGraphData(): Promise<{ data: GraphData; isDemo: boolean; sou
  *  keeping the strongest cross-cluster connections clearly readable.
  */
 function baseLinkAlpha(link: RuntimeLink): number {
-  if (link.tier === 'strong')   return 0.70;
-  if (link.tier === 'moderate') return 0.46;
-  if (link.strength != null)    return Math.max(0.10, link.strength / 100 * 0.58);
+  if (link.tier === 'strong')   return 0.75;
+  if (link.tier === 'moderate') return 0.50;
+  if (link.tier === 'weak')     return 0.25;
+  if (link.strength != null)    return Math.max(0.12, link.strength / 100 * 0.62);
   // Semantic edge types: moderate alpha — visible but not overwhelming cross-zone
-  if (link.edgeType)            return 0.34;
-  return 0.07; // structural plumbing (entity→event, event→signal) — very subtle
+  if (link.edgeType)            return 0.38;
+  return 0.06; // structural plumbing (entity→event, event→signal) — very subtle
 }
 
 /**
@@ -1008,6 +1009,51 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
     return new Set(top.map(n => n.id));
   }, [sortedEntityNodes]);
 
+  // ── Dominant cluster detection ────────────────────────────────────────────
+  // Identifies the core cluster: entities with highest importance + edge density.
+  // Uses a heuristic: score = importance + (connectionCount * 0.5).
+  // The cluster is the top-scoring entity + its direct entity neighbors.
+  const dominantCluster = useMemo<{ center: string[]; members: Set<string>; centroid: { x: number; y: number } | null }>(() => {
+    const entities = graphData.nodes.filter(n => n.type === 'entity');
+    if (entities.length < 3) return { center: [], members: new Set(), centroid: null };
+
+    // Count entity-to-entity connections per node
+    const entityIds = new Set(entities.map(n => n.id));
+    const connCount = new Map<string, number>();
+    const entityNeighbors = new Map<string, Set<string>>();
+    for (const link of graphData.links) {
+      const src = nodeId(link.source as string | RuntimeNode);
+      const tgt = nodeId(link.target as string | RuntimeNode);
+      if (entityIds.has(src) && entityIds.has(tgt)) {
+        connCount.set(src, (connCount.get(src) ?? 0) + 1);
+        connCount.set(tgt, (connCount.get(tgt) ?? 0) + 1);
+        if (!entityNeighbors.has(src)) entityNeighbors.set(src, new Set());
+        if (!entityNeighbors.has(tgt)) entityNeighbors.set(tgt, new Set());
+        entityNeighbors.get(src)!.add(tgt);
+        entityNeighbors.get(tgt)!.add(src);
+      }
+    }
+
+    // Score each entity: importance + connection density
+    const scored = entities.map(n => ({
+      id: n.id,
+      score: (n.importance ?? 0) + (connCount.get(n.id) ?? 0) * 0.5,
+    })).sort((a, b) => b.score - a.score);
+
+    // Top 2 entities are cluster centers
+    const centerIds = scored.slice(0, 2).map(s => s.id);
+    // Cluster members = centers + their direct entity neighbors
+    const members = new Set<string>(centerIds);
+    for (const cid of centerIds) {
+      const neighbors = entityNeighbors.get(cid);
+      if (neighbors) {
+        for (const nid of neighbors) members.add(nid);
+      }
+    }
+
+    return { center: centerIds, members, centroid: null };
+  }, [graphData.nodes, graphData.links]);
+
   /**
    * Background canvas renderer — draws semantic zone hints and spatial grounding
    * before nodes/links are painted each frame.
@@ -1033,6 +1079,33 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
       ctx.beginPath();
       ctx.arc(0, 0, 300, 0, Math.PI * 2);
       ctx.fill();
+
+      // 1b. Dominant cluster glow — subtle radial depth behind the core cluster
+      // Computes centroid from live node positions and draws a very faint ambient glow.
+      if (dominantCluster.members.size > 0 && !focusedNodeId) {
+        const runtimeNodes = displayGraphData.nodes as RuntimeNode[];
+        let cx = 0, cy = 0, count = 0;
+        for (const rn of runtimeNodes) {
+          if (dominantCluster.members.has(rn.id) && rn.x != null && rn.y != null) {
+            cx += rn.x;
+            cy += rn.y;
+            count++;
+          }
+        }
+        if (count > 2) {
+          cx /= count;
+          cy /= count;
+          const clusterRadius = Math.max(80, Math.min(180, count * 18));
+          const cg = ctx.createRadialGradient(cx, cy, 0, cx, cy, clusterRadius);
+          cg.addColorStop(0,   'rgba(96,165,250,0.028)');
+          cg.addColorStop(0.5, 'rgba(96,165,250,0.012)');
+          cg.addColorStop(1,   'rgba(0,0,0,0)');
+          ctx.fillStyle = cg;
+          ctx.beginPath();
+          ctx.arc(cx, cy, clusterRadius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
 
       // Zone ellipse dimensions per zone (in graph units)
       const ZONE_ELLIPSES: Record<SemanticZone, { rx: number; ry: number }> = {
@@ -1103,7 +1176,7 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
       ctx.setLineDash([]);
       ctx.restore();
     } catch { /* best effort — never crash the frame loop */ }
-  }, []);
+  }, [dominantCluster, focusedNodeId, displayGraphData.nodes]);
 
   /** Custom canvas renderer — draws glowing nodes with labels and semantic shapes */
   const paintNode = useCallback(
@@ -1121,6 +1194,9 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
         const isSecondDegree = focusedNodeId ? focusSecondDegree.has(node.id) : false;
         // Top-importance nodes get a spotlight treatment on idle state
         const isTopNode  = !focusedNodeId && !hoveredId && topNodeIds.has(node.id);
+        // Dominant cluster center — gravitational anchors of the ecosystem
+        const isClusterCenter = dominantCluster.center.includes(node.id);
+        const isClusterMember = dominantCluster.members.has(node.id);
 
         // ── Three-level opacity system ────────────────────────────────────
         // Hover: binary — fades everything not immediately connected
@@ -1138,9 +1214,9 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
         else if (!hoveredId && !focusedNodeId && node.type !== 'entity') {
           const imp = node.importance ?? 0;
           if (node.type === 'signal') {
-            nodeAlpha = imp >= 5 ? 0.72 : imp >= 2 ? 0.50 : 0.32;
+            nodeAlpha = imp >= 5 ? 0.62 : imp >= 2 ? 0.38 : 0.22;
           } else { // event
-            nodeAlpha = imp >= 5 ? 0.78 : imp >= 2 ? 0.58 : 0.42;
+            nodeAlpha = imp >= 5 ? 0.68 : imp >= 2 ? 0.45 : 0.30;
           }
         }
 
@@ -1156,20 +1232,29 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
         ctx.save();
         ctx.globalAlpha = nodeAlpha;
 
-        // ── Top-node spotlight rings (idle state only) ────────────────────
-        // Signals "start here" to new users without overwhelming the canvas.
-        if (isTopNode && node.type === 'entity') {
+        // ── Top-node / cluster-center spotlight rings (idle state only) ──
+        // Cluster centers feel like gravitational anchors; top nodes signal "start here".
+        if ((isTopNode || (isClusterCenter && !focusedNodeId && !hoveredId)) && node.type === 'entity') {
+          const isGravCenter = isClusterCenter && isTopNode;
           ctx.shadowBlur = 0;
           ctx.beginPath();
           ctx.arc(x, y, r + 9, 0, 2 * Math.PI);
-          ctx.strokeStyle = `${color}38`;
-          ctx.lineWidth   = 2;
+          ctx.strokeStyle = `${color}${isGravCenter ? '50' : '38'}`;
+          ctx.lineWidth   = isGravCenter ? 2.5 : 2;
           ctx.stroke();
           ctx.beginPath();
           ctx.arc(x, y, r + 16, 0, 2 * Math.PI);
-          ctx.strokeStyle = `${color}16`;
-          ctx.lineWidth   = 1.5;
+          ctx.strokeStyle = `${color}${isGravCenter ? '22' : '16'}`;
+          ctx.lineWidth   = isGravCenter ? 2 : 1.5;
           ctx.stroke();
+          // Third ring for gravitational centers — deepest depth cue
+          if (isGravCenter) {
+            ctx.beginPath();
+            ctx.arc(x, y, r + 24, 0, 2 * Math.PI);
+            ctx.strokeStyle = `${color}0c`;
+            ctx.lineWidth   = 1.2;
+            ctx.stroke();
+          }
         }
 
         // ── Subtle breathing pulse for high-importance nodes (idle only) ──
@@ -1216,9 +1301,10 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
           ctx.stroke();
         }
 
-        // Glow — intensity reflects state and importance
+        // Glow — intensity reflects state, importance, and cluster centrality
         const importanceGlow = node.importance != null ? Math.min(8, node.importance * 1.2) : 0;
-        ctx.shadowBlur  = isFocused ? 42 : isHovered ? 34 : 14 + importanceGlow;
+        const clusterBoost = isClusterCenter && !focusedNodeId ? 6 : isClusterMember && !focusedNodeId ? 2 : 0;
+        ctx.shadowBlur  = isFocused ? 42 : isHovered ? 34 : 14 + importanceGlow + clusterBoost;
         ctx.shadowColor = color;
 
         // ── Shape by node type ────────────────────────────────────────────
@@ -1288,6 +1374,11 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
         // event/signal labels only rendered when zoomed in (globalScale > 1.3)
         // or when the node is directly focused/hovered to avoid text clutter
         // in dense graphs at default zoom.
+        // Label visibility: entities always, but low-importance entities get dimmer labels.
+        // Event/signal labels only at zoom or when interacted with.
+        const imp = node.importance ?? 0;
+        const isHighImp = imp >= 5;
+        const isMedImp  = imp >= 3;
         const showLabel = !isDimmed && (
           node.type === 'entity' ||
           isHovered ||
@@ -1296,20 +1387,29 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
         );
         if (showLabel) {
           const fontSize = Math.max(9, 10.5 / globalScale);
-          ctx.font         = isFocused || isHovered
+          const isProminent = isFocused || isHovered || isClusterCenter;
+          ctx.font         = isProminent
             ? `600 ${fontSize}px DM Sans, sans-serif`
-            : `500 ${fontSize}px DM Sans, sans-serif`;
+            : isHighImp
+              ? `600 ${fontSize}px DM Sans, sans-serif`
+              : `500 ${fontSize}px DM Sans, sans-serif`;
           ctx.textAlign    = 'center';
           ctx.textBaseline = 'top';
 
           // Text shadow for legibility against graph background
           ctx.shadowBlur  = 4;
           ctx.shadowColor = 'rgba(0,0,0,0.9)';
-          ctx.fillStyle   = isFocused || isHovered
+
+          // Label opacity scales with importance — gravitational centers are most legible
+          ctx.fillStyle   = isProminent
             ? '#ffffff'
             : isInFocusZone && focusedNodeId
               ? 'rgba(240,240,250,0.95)'
-              : 'rgba(240,240,250,0.62)';
+              : isHighImp
+                ? 'rgba(240,240,250,0.78)'
+                : isMedImp
+                  ? 'rgba(240,240,250,0.58)'
+                  : 'rgba(240,240,250,0.40)';
           ctx.fillText(node.label, x, y + r + 3);
         }
 
@@ -1318,7 +1418,7 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
         console.warn('[IntelligenceGraph] paintNode error:', err);
       }
     },
-    [hoveredId, neighbors, focusedNodeId, focusNeighbors, focusSecondDegree, pinnedNodeId, searchMatchIds, topNodeIds],
+    [hoveredId, neighbors, focusedNodeId, focusNeighbors, focusSecondDegree, pinnedNodeId, searchMatchIds, topNodeIds, dominantCluster],
   );
 
   const getLinkColor = useCallback(
@@ -1328,11 +1428,20 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
         const src = nodeId(link.source as string | RuntimeNode);
         const tgt = nodeId(link.target as string | RuntimeNode);
 
-        // Hover state — brighten connected edges, near-hide others
+        // Hover state — brighten connected edges with edge color, near-hide others
         if (hoveredId) {
-          return src === hoveredId || tgt === hoveredId
-            ? 'rgba(255,255,255,0.7)'
-            : 'rgba(255,255,255,0.02)';
+          if (src === hoveredId || tgt === hoveredId) {
+            const es = getEdgeStyle(link);
+            if (es) {
+              const hex = es.color.replace('#', '');
+              const rr = parseInt(hex.substring(0, 2), 16);
+              const gg = parseInt(hex.substring(2, 4), 16);
+              const bb = parseInt(hex.substring(4, 6), 16);
+              return `rgba(${rr},${gg},${bb},0.85)`;
+            }
+            return 'rgba(255,255,255,0.75)';
+          }
+          return 'rgba(255,255,255,0.012)';
         }
 
         // Focus state — brighten edges within focus zone, dim everything else
@@ -1386,12 +1495,20 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
           if (!inZone) return 0.2;
         }
 
-        if (link.strength != null) return Math.max(0.7, link.strength / 100 * 2.4);
-        if (link.tier === 'strong')   return 2.2;
-        if (link.tier === 'moderate') return 1.5;
-        if (link.edgeType) return 1.3;
+        // Edge-type-aware width: funding is thickest, competition slightly bolder
+        const etWidth = link.edgeType === 'funding' ? 1.6
+                      : link.edgeType === 'competition' ? 1.4
+                      : link.edgeType === 'regulation' ? 1.1
+                      : link.edgeType === 'partnership' ? 1.2
+                      : 1.0;
 
-        return 0.7;
+        if (link.strength != null) return Math.max(0.7, link.strength / 100 * 2.6) * etWidth;
+        if (link.tier === 'strong')   return 2.4 * etWidth;
+        if (link.tier === 'moderate') return 1.6 * etWidth;
+        if (link.tier === 'weak')     return 1.0 * etWidth;
+        if (link.edgeType) return 1.3 * etWidth;
+
+        return 0.5;
       } catch {
         return 0.5;
       }
@@ -1846,12 +1963,11 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
     return sortedEntityNodes.filter(n => n.label.toLowerCase().includes(q));
   }, [sortedEntityNodes, searchQuery]);
 
-  // ── Cluster insight — deterministic label describing the dominant activity ──
+  // ── Intelligence Insight — deterministic 1–2 sentence analysis of graph state ──
   //
-  // Analyzes entity links to detect a meaningful cluster theme.
-  // Labels are fully deterministic (no AI calls) — based on edge type counts
-  // and node subtype distributions in the current graph.
-  const clusterInsight = useMemo<string | null>(() => {
+  // Analyzes dominant cluster, edge type distribution, and node subtypes to generate
+  // a concise analytical insight. No LLM required — pure deterministic logic.
+  const graphInsight = useMemo<{ headline: string; detail: string } | null>(() => {
     if (graphData.nodes.length < 3) return null;
 
     const entities = graphData.nodes.filter(n => n.type === 'entity');
@@ -1876,22 +1992,104 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
     const regulation  = edgeCounts['regulation']    ?? 0;
     const funding     = edgeCounts['funding']        ?? 0;
     const competition = edgeCounts['competition']    ?? 0;
+    const partnership = edgeCounts['partnership']    ?? 0;
     const modelRel    = edgeCounts['model-release']  ?? 0;
 
     const companies   = subtypeCounts['company']    ?? 0;
     const investors   = subtypeCounts['investor']   ?? 0;
     const regulators  = subtypeCounts['regulator']  ?? 0;
 
-    // Priority-ordered cluster detection
-    if (competition >= 2 && companies >= 3)        return 'AI lab competitive cluster';
-    if (modelRel >= 2 && companies >= 2)           return 'Model release wave';
-    if (regulation >= 2 && regulators >= 1)        return 'Regulation activity group';
-    if (funding >= 2 && investors >= 1)            return 'AI funding cluster';
-    if (modelRel >= 1 && competition >= 1)         return 'Frontier AI activity cluster';
-    if (companies >= 4)                            return 'AI infrastructure cluster';
+    // Get dominant cluster center names for insight text
+    const centerNames = dominantCluster.center
+      .map(id => graphData.nodes.find(n => n.id === id)?.label)
+      .filter(Boolean) as string[];
+    const centerStr = centerNames.length > 1
+      ? centerNames.slice(0, -1).join(', ') + ' and ' + centerNames[centerNames.length - 1]
+      : centerNames[0] ?? 'Core entities';
+
+    // Find top investor names
+    const topInvestors = entities
+      .filter(n => n.subtype === 'investor')
+      .sort((a, b) => (b.importance ?? 0) - (a.importance ?? 0))
+      .slice(0, 2)
+      .map(n => n.label);
+    const investorStr = topInvestors.length > 0 ? topInvestors.join(' and ') : null;
+
+    // Find regulator names
+    const regulatorNames = entities
+      .filter(n => n.subtype === 'regulator')
+      .slice(0, 2)
+      .map(n => n.label);
+
+    // Dominant edge type
+    const edgeEntries = Object.entries(edgeCounts) as [EdgeType, number][];
+    edgeEntries.sort((a, b) => b[1] - a[1]);
+    const dominantEdgeType = edgeEntries[0]?.[0];
+    const secondEdgeType = edgeEntries[1]?.[0];
+
+    // Generate insight — priority-ordered pattern matching
+    if (competition >= 3 && companies >= 3) {
+      return {
+        headline: `${centerStr} form a high-intensity competition cluster driven by model releases and market positioning.`,
+        detail: `${competition} competitive edges across ${companies} companies.`,
+      };
+    }
+    if (competition >= 2 && funding >= 2 && investors >= 1) {
+      return {
+        headline: `${centerStr} anchor a competitive frontier with active capital flows${investorStr ? ` from ${investorStr}` : ''}.`,
+        detail: `Competition and funding are the dominant relationship types in this ecosystem.`,
+      };
+    }
+    if (regulation >= 2 && regulatorNames.length > 0) {
+      return {
+        headline: `Regulatory pressure is forming around major AI labs, with ${regulatorNames.join(' and ')} connecting across multiple entities.`,
+        detail: `${regulation} regulatory edges link oversight bodies to ${companies} companies.`,
+      };
+    }
+    if (funding >= 3 && investors >= 1) {
+      return {
+        headline: `Investor activity is concentrated around frontier labs${investorStr ? `, with ${investorStr} linking capital flows into core AI development` : ''}.`,
+        detail: `${funding} funding relationships across ${investors} investor${investors !== 1 ? 's' : ''}.`,
+      };
+    }
+    if (partnership >= 3) {
+      return {
+        headline: `The ecosystem is highly interconnected through partnerships, with ${centerStr} at the center of collaboration networks.`,
+        detail: `${partnership} partnership edges signal strong cross-entity integration.`,
+      };
+    }
+    if (modelRel >= 2 && competition >= 1) {
+      return {
+        headline: `A model release wave is underway, intensifying competition between ${centerStr}.`,
+        detail: `Model releases and competitive dynamics are driving ecosystem activity.`,
+      };
+    }
+    if (competition >= 2 && companies >= 2) {
+      return {
+        headline: `${centerStr} are the gravitational centers of an active competitive landscape.`,
+        detail: `${entities.length} entities, ${graphData.links.filter(l => l.edgeType).length} semantic relationships.`,
+      };
+    }
+    // Fallback — generic but still analytical
+    if (dominantEdgeType && secondEdgeType) {
+      const EDGE_NAMES: Record<EdgeType, string> = {
+        'funding': 'funding', 'competition': 'competition', 'partnership': 'partnerships',
+        'model-release': 'model releases', 'regulation': 'regulation',
+      };
+      return {
+        headline: `${centerStr} anchor this ecosystem, connected primarily through ${EDGE_NAMES[dominantEdgeType]} and ${EDGE_NAMES[secondEdgeType]}.`,
+        detail: `${entities.length} entities across ${Object.keys(subtypeCounts).length} categories.`,
+      };
+    }
+    if (entities.length >= 4) {
+      return {
+        headline: `${centerStr} form the core of a ${entities.length}-entity AI ecosystem map.`,
+        detail: `${graphData.links.filter(l => l.edgeType).length} typed relationships connecting the graph.`,
+      };
+    }
 
     return null;
-  }, [graphData]);
+  }, [graphData, dominantCluster]);
 
   // ── Entry guidance — shown only when no node is focused ──────────────────
   const entryGuidance = !focusedNodeId && !isLoading && !compact && (
@@ -2003,26 +2201,49 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
     </div>
   );
 
-  // ── Cluster insight badge — bottom-left, visible when no focus ───────────
-  const clusterInsightBadge = clusterInsight && !focusedNodeId && !compact && (
+  // ── Intelligence Insight Overlay — top-left glass card, visible at idle ──
+  const insightOverlay = graphInsight && !focusedNodeId && !compact && !isLoading && (
     <div style={{
       position: 'absolute',
-      bottom: 14,
+      bottom: 46,
       left: 14,
-      zIndex: 10,
-      background: 'rgba(6,6,20,0.75)',
-      border: '1px solid rgba(255,255,255,0.08)',
-      borderRadius: 6,
-      padding: '4px 11px',
-      fontFamily: 'DM Mono, monospace',
-      fontSize: '0.65rem',
-      color: 'rgba(238,238,248,0.38)',
-      letterSpacing: '0.04em',
-      backdropFilter: 'blur(8px)',
+      zIndex: 9,
+      maxWidth: 340,
+      background: 'rgba(6,6,18,0.78)',
+      border: '1px solid rgba(255,255,255,0.07)',
+      borderRadius: 8,
+      padding: '10px 14px',
+      backdropFilter: 'blur(12px)',
       pointerEvents: 'none',
-      whiteSpace: 'nowrap',
+      boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
     }}>
-      {clusterInsight}
+      <div style={{
+        fontFamily: 'DM Mono, monospace',
+        fontSize: '0.56rem',
+        color: 'rgba(238,238,248,0.28)',
+        letterSpacing: '0.1em',
+        textTransform: 'uppercase',
+        marginBottom: 6,
+      }}>
+        Ecosystem Intelligence
+      </div>
+      <div style={{
+        fontSize: '0.74rem',
+        color: 'rgba(238,238,248,0.72)',
+        lineHeight: 1.55,
+        letterSpacing: '0.01em',
+      }}>
+        {graphInsight.headline}
+      </div>
+      <div style={{
+        fontFamily: 'DM Mono, monospace',
+        fontSize: '0.62rem',
+        color: 'rgba(238,238,248,0.28)',
+        marginTop: 5,
+        letterSpacing: '0.02em',
+      }}>
+        {graphInsight.detail}
+      </div>
     </div>
   );
 
@@ -2272,8 +2493,8 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
       {/* Zone orientation key — spatial reference for semantic zones */}
       {zoneKey}
 
-      {/* Cluster insight badge — describes dominant activity group */}
-      {clusterInsightBadge}
+      {/* Intelligence Insight Overlay — analytical summary of graph state */}
+      {insightOverlay}
 
       {/* Entry guidance — onboarding hint when no node is focused */}
       {entryGuidance}
