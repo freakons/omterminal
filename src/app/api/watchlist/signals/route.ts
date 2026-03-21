@@ -1,6 +1,7 @@
 export const runtime = 'nodejs';
 import { NextRequest, NextResponse } from 'next/server';
 import { getSignalsForEntities } from '@/db/queries';
+import { composeFeed } from '@/lib/signals/feedComposer';
 
 const CACHE_HEADERS = { 'Cache-Control': 's-maxage=10, stale-while-revalidate=60' };
 
@@ -28,7 +29,10 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const signals = await getSignalsForEntities(entityNames, limit);
+    const rawSignals = await getSignalsForEntities(entityNames, limit);
+    // Apply rank-score composition so watchlist signals surface the most
+    // significant, well-corroborated signals first — not just newest.
+    const signals = composeFeed(rawSignals, { minSignificance: 0 });
     const source = signals.length > 0 ? 'db' : 'empty';
     return NextResponse.json(
       { ok: true, signals, count: signals.length, source },

@@ -4,6 +4,7 @@ import { SignalsBrowser } from './SignalsBrowser';
 import { buildDatasetSchema } from '@/lib/seo/jsonld';
 import { IntelligenceSnapshot } from '@/components/signals/IntelligenceSnapshot';
 import { countRecentSignals } from '@/lib/signals/signalAge';
+import { composeFeed } from '@/lib/signals/feedComposer';
 
 export const metadata: Metadata = {
   title: 'AI Signals — Latest Models, Funding & Regulation',
@@ -34,8 +35,11 @@ export const metadata: Metadata = {
 export const dynamic = 'force-dynamic';
 
 export default async function SignalsPage() {
-  // Pre-fetch signals server-side; pass as initial prop to the client component.
-  const initialSignals = await getSignals(200).catch(() => []);
+  // Pre-fetch signals server-side, apply rank-score composition, then pass as
+  // initial prop.  The client component will re-fetch from /api/signals (which
+  // also applies composeFeed) on subsequent refreshes.
+  const rawSignals = await getSignals(200).catch(() => []);
+  const initialSignals = composeFeed(rawSignals, { minSignificance: 30 });
 
   const recentCount = countRecentSignals(initialSignals, 24);
 

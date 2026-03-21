@@ -17,17 +17,17 @@
  *   • No external I/O — pure function safe to call anywhere.
  *
  * Formula:
- *   rankScore = significance × W_sig
- *             + freshness    × W_fresh
- *             + clusterStrength × W_cluster
- *             + novelty      × W_novelty
- *             + entityBoost  × W_entity
+ *   rankScore = significance    × 0.55   (dominant — quality must lead)
+ *             + freshness       × 0.20   (recency matters, decays over 72h half-life)
+ *             + clusterStrength × 0.20   (corroboration — 1 source vs 5+ sources: ~10 pts gap)
+ *             + entityBoost     × 0.05   (tracked-entity priority lift)
+ *           [ + novelty         × 0.00 ] (reserved; currently 0 — default 80 is non-differentiating)
  *
  * Where:
  *   significance     — persisted 0–100 from signalSignificance.ts (write-time composite)
- *   freshness        — exponential decay based on age: 100 × e^(-λ × ageHours)
+ *   freshness        — exponential decay: 100 × e^(-λ × ageHours), half-life = 72h
  *   clusterStrength  — log2-scaled corroboration score based on sourceSupportCount (0–100)
- *   novelty          — uniqueness vs. recent signals (0–100, default 80)
+ *   novelty          — weight 0 (reserved for future per-signal novelty scoring)
  *   entityBoost      — 100 if the signal mentions a tracked/priority entity, else 0
  */
 
@@ -80,6 +80,15 @@ export interface RankScoreBreakdown {
   novelty: number;
   /** Whether significance was derived from a fallback. */
   significanceFallback: boolean;
+  // ── Weighted contributions (sum ≈ rankScore) ──────────────────────────────
+  /** Significance after weight applied (points toward final score). */
+  significanceContribution: number;
+  /** Freshness after weight applied. */
+  freshnessContribution: number;
+  /** Corroboration/cluster after weight applied. */
+  clusterContribution: number;
+  /** Entity boost after weight applied. */
+  entityContribution: number;
 }
 
 export interface RankScoreResult {
@@ -94,18 +103,28 @@ export interface RankScoreResult {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const RANK_WEIGHTS = {
-  /** Significance carries most of the ranking weight. */
-  significance: 0.50,
+  /**
+   * Significance is the dominant factor — the write-time composite score
+   * already captures confidence, source diversity, velocity, entity prominence,
+   * and type weight.  Raised to 0.55 so quality signal clearly outranks noise.
+   */
+  significance: 0.55,
   /** Freshness rewards recency without overwhelming quality. */
   freshness: 0.20,
   /**
    * Cluster strength rewards multi-source corroboration.
-   * Signals backed by 3+ distinct sources rank measurably higher than
-   * single-source signals of identical significance.
+   * Raised to 0.20 so weak single-source signals fall clearly and
+   * well-corroborated signals surface noticeably higher.
+   * Gap between 1 source (33 pts) and 5+ sources (86+ pts) → ~10.6 rank pts.
    */
-  clusterStrength: 0.15,
-  /** Novelty rewards unique signals and penalizes repetitive ones. */
-  novelty: 0.10,
+  clusterStrength: 0.20,
+  /**
+   * Novelty is NOT applied in standard feed composition — all signals receive
+   * the same default of 80, making the weight non-differentiating.  Set to 0
+   * to avoid flat noise; kept in the formula for future per-signal novelty
+   * scoring without a breaking interface change.
+   */
+  novelty: 0.00,
   /** Entity boost gives a small lift to tracked-entity signals. */
   entityBoost: 0.05,
 } as const;
@@ -116,13 +135,19 @@ export const RANK_WEIGHTS = {
 
 /**
  * Half-life in hours: a signal loses half its freshness value after this many
- * hours.  48 hours = 2 days means a 2-day-old signal still has 50% freshness,
- * a 4-day-old has 25%, etc.
+ * hours.  Extended to 72 hours (3 days) so a high-significance signal from
+ * 4 days ago retains ~40% freshness instead of falling to 25%.  This prevents
+ * stale-but-important signals from disappearing too fast while still letting
+ * very old low-quality signals decay into the noise floor.
  *
- * This balances rewarding timeliness without completely burying important
- * older signals (which still rank via their significance component).
+ * Freshness scale at 72h half-life:
+ *   0h   → 100   (just created)
+ *   24h  → 79
+ *   72h  → 50    (3 days old)
+ *   6d   → 25
+ *   12d  → 6
  */
-export const FRESHNESS_HALF_LIFE_HOURS = 48;
+export const FRESHNESS_HALF_LIFE_HOURS = 72;
 
 /** Decay constant λ = ln(2) / halfLife. */
 const DECAY_LAMBDA = Math.LN2 / FRESHNESS_HALF_LIFE_HOURS;
@@ -218,12 +243,17 @@ export function computeRankScore(input: RankScoreInput): RankScoreResult {
   const novelty = input.noveltyScore != null ? Math.min(Math.max(input.noveltyScore, 0), 100) : 80;
 
   // ── Weighted composite ───────────────────────────────────────────────────
+  const significanceContribution = Math.round(significance    * RANK_WEIGHTS.significance * 10) / 10;
+  const freshnessContribution    = Math.round(freshness       * RANK_WEIGHTS.freshness    * 10) / 10;
+  const clusterContribution      = Math.round(clusterStrength * RANK_WEIGHTS.clusterStrength * 10) / 10;
+  const entityContribution       = Math.round(entityBoost     * RANK_WEIGHTS.entityBoost  * 10) / 10;
+  // novelty weight is 0.00 — contributes 0 regardless of value
+
   const raw =
-    significance    * RANK_WEIGHTS.significance +
-    freshness       * RANK_WEIGHTS.freshness +
-    clusterStrength * RANK_WEIGHTS.clusterStrength +
-    novelty         * RANK_WEIGHTS.novelty +
-    entityBoost     * RANK_WEIGHTS.entityBoost;
+    significanceContribution +
+    freshnessContribution    +
+    clusterContribution      +
+    entityContribution;
 
   const rankScore = Math.round(Math.min(Math.max(raw, 0), 100));
 
@@ -236,6 +266,10 @@ export function computeRankScore(input: RankScoreInput): RankScoreResult {
       entityBoost,
       novelty,
       significanceFallback,
+      significanceContribution,
+      freshnessContribution,
+      clusterContribution,
+      entityContribution,
     },
   };
 }

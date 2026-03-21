@@ -335,7 +335,10 @@ export async function getSignals(
         LEFT JOIN signal_contexts sc
           ON sc.signal_id = s.id AND sc.status = 'ready'
         WHERE s.status IS NULL OR s.status NOT IN ('rejected')
-        ORDER BY s.created_at DESC
+        ORDER BY
+          s.significance_score DESC NULLS LAST,
+          s.confidence_score DESC NULLS LAST,
+          s.created_at DESC
         LIMIT ${safeLimit}
       `;
       return rows.map(rowToSignal);
@@ -363,7 +366,10 @@ export async function getSignals(
         prediction
       FROM signals
       WHERE status IS NULL OR status NOT IN ('rejected')
-      ORDER BY created_at DESC
+      ORDER BY
+        significance_score DESC NULLS LAST,
+        confidence_score DESC NULLS LAST,
+        created_at DESC
       LIMIT ${safeLimit}
     `;
     return rows.map(rowToSignal);
@@ -845,7 +851,9 @@ export async function getSignalsForEntity(
         JOIN entities e ON e.id = se.entity_id
         WHERE LOWER(e.name) = LOWER(${entityName})
           AND (s.status IS NULL OR s.status NOT IN ('rejected'))
-        ORDER BY s.created_at DESC
+        ORDER BY
+          s.significance_score DESC NULLS LAST,
+          s.created_at DESC
         LIMIT ${safeLimit}
       `;
       return rows.map(rowToSignal);
@@ -862,7 +870,9 @@ export async function getSignalsForEntity(
       FROM signals
       WHERE LOWER(entity_name) = LOWER(${entityName})
         AND (status IS NULL OR status NOT IN ('rejected'))
-      ORDER BY created_at DESC
+      ORDER BY
+        significance_score DESC NULLS LAST,
+        created_at DESC
       LIMIT ${safeLimit}
     `;
     return rows.map(rowToSignal);
