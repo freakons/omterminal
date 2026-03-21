@@ -1562,6 +1562,9 @@ body {
   box-shadow: 0 -2px 20px rgba(0,0,0,0.25);
 }
 .fb-brand { font-family: var(--fd); font-size: 12px; font-style: italic; background: linear-gradient(90deg, var(--indigo-l), var(--cyan-l)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.footer-links { display: flex; gap: 14px; }
+.footer-links a { color: var(--text3); text-decoration: none; transition: color 0.15s; font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; }
+.footer-links a:hover { color: var(--text2); }
 
 /* ══════════════════════════════════════
    RESPONSIVE

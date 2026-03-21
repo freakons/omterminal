@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import type { Metadata } from 'next';
 import { IntelligenceGraph } from '@/ui/graph/IntelligenceGraph';
 import { GraphErrorBoundary } from '@/ui/graph/GraphErrorBoundary';
@@ -256,6 +257,50 @@ export default function GraphPage() {
               {desc}
             </span>
           </div>
+        ))}
+      </div>
+
+      {/* ── Continue exploring ─────────────────────────────────────────────── */}
+      <div style={{
+        display: 'flex',
+        gap: 10,
+        marginTop: 20,
+        flexWrap: 'wrap',
+        alignItems: 'center',
+      }}>
+        <span style={{
+          fontFamily: 'DM Mono, monospace',
+          fontSize: '0.58rem',
+          color: 'rgba(238,238,248,0.25)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.1em',
+        }}>
+          Continue exploring
+        </span>
+        {[
+          { label: 'Intelligence Feed', href: '/intelligence' },
+          { label: 'Signals', href: '/signals' },
+          { label: 'Funding', href: '/funding' },
+          { label: 'Regulation', href: '/regulation' },
+          { label: 'Models', href: '/models' },
+        ].map(({ label, href }) => (
+          <Link
+            key={href}
+            href={href}
+            style={{
+              fontFamily: 'DM Mono, monospace',
+              fontSize: '0.68rem',
+              color: 'var(--text2)',
+              textDecoration: 'none',
+              padding: '4px 12px',
+              borderRadius: 6,
+              border: '1px solid rgba(255,255,255,0.07)',
+              background: 'rgba(255,255,255,0.02)',
+              transition: 'border-color 0.15s',
+            }}
+          >
+            {label} →
+          </Link>
         ))}
       </div>
     </>

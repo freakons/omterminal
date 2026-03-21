@@ -20,7 +20,7 @@ function SignalRow({ signal }: { signal: Signal }) {
   const cat = signal.category ?? 'signal';
   const sourceCount = signal.sourceSupportCount;
   return (
-    <Link href={`/intelligence/signal/${signal.id}`} className="eco-row">
+    <Link href={`/signals/${signal.id}`} className="eco-row">
       <span className="eco-cat" data-cat={cat}>{cat}</span>
       <span className="eco-title">{signal.title}</span>
       <SignalImpactBadge
@@ -114,7 +114,7 @@ function MomentumLeaderRow({ entity }: { entity: EntityMomentum }) {
 function StrategicSignalRow({ signal }: { signal: SignalStrategic }) {
   const cat = signal.signal_type ?? 'signal';
   return (
-    <Link href={`/intelligence/signal/${signal.signal_id}`} className="eco-row">
+    <Link href={`/signals/${signal.signal_id}`} className="eco-row">
       <span className="eco-cat" data-cat={cat}>{cat}</span>
       <span className="eco-title">{signal.signal_title}</span>
       {signal.source_support_count != null && signal.source_support_count > 1 && (

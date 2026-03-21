@@ -88,6 +88,9 @@ export default async function FundingPage() {
                 <div className="nc-foot">
                   <span style={{ color: 'var(--text2)' }}>
                     {round.investors.slice(0, 3).join(' · ')}
+                    {round.investors.length > 3 && (
+                      <span style={{ color: 'var(--text3)' }}> +{round.investors.length - 3} more</span>
+                    )}
                   </span>
                   <span style={{ fontFamily: 'var(--fm)', fontSize: '9px', color: 'var(--text3)' }}>View round →</span>
                 </div>

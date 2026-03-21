@@ -96,12 +96,16 @@ export function RelatedSignalsSection({ signals }: RelatedSignalsSectionProps) {
                 </span>
               )}
               {rel.entityName && (
-                <span style={{
-                  fontFamily: 'var(--fm)', fontSize: 9, color: 'var(--indigo-l)',
-                  marginLeft: 'auto',
-                }}>
+                <Link
+                  href={`/entity/${encodeURIComponent(rel.entityName.toLowerCase().replace(/\s+/g, '-'))}`}
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    fontFamily: 'var(--fm)', fontSize: 9, color: 'var(--indigo-l)',
+                    marginLeft: 'auto', textDecoration: 'none',
+                  }}
+                >
                   {rel.entityName}
-                </span>
+                </Link>
               )}
             </div>
           </Link>

@@ -13,6 +13,7 @@
  *      cross-entity connection.
  */
 
+import Link from 'next/link';
 import type { Signal, SignalCategory } from '@/data/mockSignals';
 import { CopyInsightButton } from '@/components/ui/CopyInsightButton';
 
@@ -167,11 +168,23 @@ export function TopInsight({ signals }: TopInsightProps) {
 
         {/* Sentence */}
         <p style={{ margin: 0, fontSize: 13, lineHeight: 1.6, color: 'var(--text)' }}>
-          <strong style={{ color: accent, fontWeight: 600 }}>
-            {top.entityName}
-          </strong>
+          {top.entityName ? (
+            <Link
+              href={`/entity/${encodeURIComponent(top.entityName.toLowerCase().replace(/\s+/g, '-'))}`}
+              style={{ color: accent, fontWeight: 600, textDecoration: 'none' }}
+            >
+              {top.entityName}
+            </Link>
+          ) : (
+            <strong style={{ color: accent, fontWeight: 600 }}>Signal</strong>
+          )}
           {' — '}
-          <span style={{ color: 'var(--text2)' }}>{sentence}</span>
+          <Link
+            href={`/signals/${top.id}`}
+            style={{ color: 'var(--text2)', textDecoration: 'none' }}
+          >
+            {sentence}
+          </Link>
         </p>
       </div>
     </section>

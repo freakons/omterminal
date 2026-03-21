@@ -1,7 +1,9 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { getSignals } from '@/db/queries';
 import { MOCK_SIGNALS } from '@/data/mockSignals';
 import { clusterSignals } from '@/lib/signals/clusterSignals';
+import { composeFeed } from '@/lib/signals/feedComposer';
 import { computeTrendEvolution } from '@/lib/trends/trendEvolution';
 import { TrendEvolutionChart } from '@/components/intelligence/TrendEvolutionChart';
 import { Badge } from '@/components/ui/Badge';
@@ -9,6 +11,13 @@ import { Badge } from '@/components/ui/Badge';
 import type { Metadata } from 'next';
 
 export const revalidate = 300;
+
+/** Fetch signals from DB, fall back to mock in dev only. */
+async function getTrendSignals() {
+  const dbSignals = await getSignals(200).catch(() => []);
+  if (dbSignals.length > 0) return composeFeed(dbSignals, { minSignificance: 20 });
+  return process.env.NODE_ENV === 'production' ? [] : MOCK_SIGNALS;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Styles
@@ -46,7 +55,8 @@ interface TrendPageProps {
 
 export async function generateMetadata({ params }: TrendPageProps): Promise<Metadata> {
   const { id } = await params;
-  const clusters = clusterSignals(MOCK_SIGNALS);
+  const signals = await getTrendSignals();
+  const clusters = clusterSignals(signals);
   const cluster = clusters.find((c) => c.id === id);
   return {
     title: cluster ? `${cluster.title} — Omterminal` : 'Trend — Omterminal',
@@ -55,7 +65,8 @@ export async function generateMetadata({ params }: TrendPageProps): Promise<Meta
 
 export default async function TrendPage({ params }: TrendPageProps) {
   const { id } = await params;
-  const clusters = clusterSignals(MOCK_SIGNALS);
+  const signals = await getTrendSignals();
+  const clusters = clusterSignals(signals);
   const cluster = clusters.find((c) => c.id === id);
 
   if (!cluster) return notFound();
@@ -255,9 +266,15 @@ export default async function TrendPage({ params }: TrendPageProps) {
                   </p>
                   <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
                     <Badge category={signal.category} />
-                    <span style={{ fontSize: 11, color: 'var(--text3)' }}>
-                      {signal.entityName}
-                    </span>
+                    {signal.entityName && (
+                      <Link
+                        href={`/entity/${encodeURIComponent(signal.entityName.toLowerCase().replace(/\s+/g, '_'))}`}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ fontSize: 11, color: 'var(--indigo-l)', textDecoration: 'none' }}
+                      >
+                        {signal.entityName}
+                      </Link>
+                    )}
                   </div>
                 </Link>
               </div>
