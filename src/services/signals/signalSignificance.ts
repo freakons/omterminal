@@ -129,6 +129,13 @@ export interface SignificanceInput {
    * version — full backward compatibility.
    */
   clusterContext?: ClusterContext;
+
+  /**
+   * Average age of supporting events in hours from the current time.
+   * When provided, enables recency scoring — fresh signals score higher.
+   * Absence uses a neutral midpoint (backward-compatible).
+   */
+  avgEventAgeHours?: number;
 }
 
 /**
@@ -167,7 +174,25 @@ export interface SignificanceResult {
      * Encodes article volume + source diversity + source quality tier.
      */
     clusterIntelligence?: number;
+    /**
+     * Recency component (0–100 before weighting).
+     * Exponential decay: fresh events → high, stale events → low.
+     * Only present when avgEventAgeHours was supplied.
+     */
+    recency?: number;
+    /**
+     * Corroboration component (0–100 before weighting).
+     * Ratio of unique sources to total events; penalises single-source clusters.
+     */
+    corroboration?: number;
   };
+
+  /**
+   * Single-source penalty applied (0–1 multiplier).
+   * 1.0 = no penalty.  < 1.0 = signal was dampened because all events
+   * came from a single source.  Present for debug transparency.
+   */
+  singleSourceDampening?: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -203,25 +228,29 @@ const DEFAULT_TYPE_WEIGHT = 60;
 // ─────────────────────────────────────────────────────────────────────────────
 
 const BASE_WEIGHTS = {
-  confidence:         0.25,
-  sourceDiversity:    0.20,
-  sourceTrustQuality: 0.10,
-  velocity:           0.15,
+  confidence:         0.20,
+  sourceDiversity:    0.15,
+  sourceTrustQuality: 0.08,
+  velocity:           0.12,
   typeWeight:         0.10,
-  entitySpread:       0.10,
-  entityProminence:   0.10,
+  entitySpread:       0.07,
+  entityProminence:   0.08,
   clusterIntelligence: 0.00, // unused in base mode
+  recency:            0.10,  // fresh signals rank higher
+  corroboration:      0.10,  // penalise single-source clusters
 } as const;
 
 const CLUSTER_WEIGHTS = {
-  confidence:         0.20,  // –0.05: cluster carries some of the corroboration signal
-  sourceDiversity:    0.10,  // –0.10: cluster's uniqueSourceCount supersedes this
-  sourceTrustQuality: 0.05,  // –0.05: cluster's avgSourceWeight encodes quality better
-  velocity:           0.15,  // unchanged
-  typeWeight:         0.10,  // unchanged
-  entitySpread:       0.05,  // –0.05: cluster article count proxies breadth
-  entityProminence:   0.10,  // unchanged
-  clusterIntelligence: 0.25, // new: article volume × source diversity × source quality
+  confidence:         0.15,  // cluster carries corroboration signal
+  sourceDiversity:    0.08,  // cluster's uniqueSourceCount supersedes partially
+  sourceTrustQuality: 0.05,  // cluster's avgSourceWeight encodes quality better
+  velocity:           0.10,  // slightly reduced
+  typeWeight:         0.08,  // unchanged
+  entitySpread:       0.04,  // cluster article count proxies breadth
+  entityProminence:   0.08,  // unchanged
+  clusterIntelligence: 0.20, // article volume × source diversity × source quality
+  recency:            0.10,  // fresh signals rank higher
+  corroboration:      0.12,  // penalise single-source clusters (slightly higher with cluster)
 } as const;
 
 // Keep the existing exported symbol pointing at the base weights for callers
@@ -322,6 +351,61 @@ function scoreSourceTrustQuality(sourceIds?: string[]): number {
   if (!sourceIds || sourceIds.length === 0) return 50;
   return computeWeightedSourceTrust(sourceIds);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Recency scorer
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Recency: exponential decay with half-life of ~3 days (72 hours).
+ * Events from the last few hours → ~100.  3 days → ~50.  7 days → ~20.  14 days → ~5.
+ * Returns neutral 50 when avgEventAgeHours is not provided.
+ */
+function scoreRecency(avgEventAgeHours?: number): number {
+  if (avgEventAgeHours == null) return 50;
+  const halfLifeHours = 72;
+  const decay = Math.exp(-0.693 * Math.max(avgEventAgeHours, 0) / halfLifeHours);
+  return toScore(decay);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Corroboration scorer
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Corroboration strength: ratio of unique sources to total events.
+ *
+ * 1 source / 5 events → 20 (weak: echo chamber).
+ * 3 sources / 5 events → 60 (moderate).
+ * 5 sources / 5 events → 100 (strong: independently confirmed).
+ *
+ * Scaled so that 70% unique sources ≈ max score (100).
+ * Returns 50 when sourceCount or eventCount is unavailable.
+ */
+function scoreCorroboration(sourceCount: number, eventCount: number): number {
+  if (eventCount <= 0 || sourceCount <= 0) return 50;
+  const ratio = sourceCount / eventCount;
+  return toScore(Math.min(ratio * 1.43, 1.0)); // 0.70 ratio → 100
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Single-source dampening
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * SINGLE_SOURCE_DAMPENING_FACTOR
+ *
+ * When ALL events in a signal come from exactly one source publisher,
+ * the final significance score is multiplied by this factor.
+ *
+ * This is the strongest anti-noise measure: a single source publishing
+ * multiple articles about the same topic should NOT produce a high-
+ * significance signal.  The articles may be updates/corrections/rehashes
+ * rather than independent confirmation.
+ *
+ * 0.65 = 35% penalty for single-source signals.
+ */
+const SINGLE_SOURCE_DAMPENING_FACTOR = 0.65;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Cluster intelligence scorer
@@ -462,6 +546,7 @@ export function computeSignificance(input: SignificanceInput): SignificanceResul
     sourceIds,
     entityNames,
     clusterContext,
+    avgEventAgeHours,
   } = input;
 
   const hasCluster = clusterContext != null;
@@ -472,6 +557,9 @@ export function computeSignificance(input: SignificanceInput): SignificanceResul
     ? scoreClusterIntelligence(clusterContext)
     : undefined;
 
+  const recency = scoreRecency(avgEventAgeHours);
+  const corroboration = scoreCorroboration(sourceCount, eventCount);
+
   const components = {
     confidence:          scoreConfidence(confidenceScore),
     sourceDiversity:     scoreSourceDiversity(sourceCount),
@@ -481,6 +569,8 @@ export function computeSignificance(input: SignificanceInput): SignificanceResul
     entitySpread:        scoreEntitySpread(entityCount),
     entityProminence:    scoreEntityProminence(entityNames),
     ...(clusterIntelligence !== undefined ? { clusterIntelligence } : {}),
+    recency,
+    corroboration,
   };
 
   // --- weighted composite ---
@@ -492,14 +582,28 @@ export function computeSignificance(input: SignificanceInput): SignificanceResul
     components.typeWeight        * weights.typeWeight        +
     components.entitySpread      * weights.entitySpread      +
     components.entityProminence  * weights.entityProminence  +
-    (clusterIntelligence ?? 0)   * weights.clusterIntelligence;
+    (clusterIntelligence ?? 0)   * weights.clusterIntelligence +
+    recency                      * weights.recency           +
+    corroboration                * weights.corroboration;
 
-  const significanceScore = Math.round(clamp01(raw / 100) * 100);
+  let significanceScore = Math.round(clamp01(raw / 100) * 100);
+
+  // --- single-source dampening ---
+  // If ALL events come from exactly one source, apply a penalty.
+  // This is the strongest guard against single-source noise: one outlet
+  // publishing 3 articles about the same topic should not produce a
+  // high-significance signal.
+  let singleSourceDampening: number | undefined;
+  if (sourceCount <= 1 && eventCount > 1) {
+    singleSourceDampening = SINGLE_SOURCE_DAMPENING_FACTOR;
+    significanceScore = Math.round(significanceScore * SINGLE_SOURCE_DAMPENING_FACTOR);
+  }
 
   // --- debug logging ---
   console.log(
     `[signalSignificance] type=${signalType ?? 'null'}` +
     ` score=${significanceScore}` +
+    (singleSourceDampening != null ? ` DAMPENED(×${singleSourceDampening})` : '') +
     ` conf=${components.confidence}×${weights.confidence}` +
     ` srcDiv=${components.sourceDiversity}×${weights.sourceDiversity}` +
     ` srcTrust=${components.sourceTrustQuality}×${weights.sourceTrustQuality}` +
@@ -507,6 +611,8 @@ export function computeSignificance(input: SignificanceInput): SignificanceResul
     ` typeW=${components.typeWeight}×${weights.typeWeight}` +
     ` entSpread=${components.entitySpread}×${weights.entitySpread}` +
     ` entProm=${components.entityProminence}×${weights.entityProminence}` +
+    ` recency=${recency}×${weights.recency}` +
+    ` corroboration=${corroboration}×${weights.corroboration}` +
     (hasCluster
       ? ` clusterIntel=${clusterIntelligence}×${weights.clusterIntelligence}` +
         ` [articles=${clusterContext.articleCount}` +
@@ -521,5 +627,6 @@ export function computeSignificance(input: SignificanceInput): SignificanceResul
     significanceScore,
     sourceSupportCount: Math.max(0, Math.floor(sourceCount)),
     components,
+    ...(singleSourceDampening != null ? { singleSourceDampening } : {}),
   };
 }

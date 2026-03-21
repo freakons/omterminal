@@ -149,25 +149,136 @@ function findClusters(
 }
 
 /**
- * Confidence score for a cluster.
- * Scales linearly between minCount (→ 0.60) and 2×minCount (→ 0.92),
- * capped at 0.95.  Signals involving major AI entities and multiple
- * distinct sources receive a small boost.
+ * Confidence Scoring Model v2 — Weighted Intelligence
+ *
+ * Six weighted factors combine to produce a confidence score that is
+ * evidence-aware, recency-sensitive, and corroboration-driven.
+ *
+ *   Factor               Weight   What it measures
+ *   ─────────────────────────────────────────────────────────────────
+ *   Event Density         0.20    How far above detection threshold
+ *   Event Recency         0.15    Freshness of events (exponential decay)
+ *   Source Quality         0.15    Trust score of contributing sources
+ *   Corroboration          0.25    Independent source confirmation ratio
+ *   Entity Prominence      0.10    Major AI entity involvement
+ *   Evidence Diversity     0.15    Variety across event types, sources, entities
+ *
+ * Score range: 0.35 (weakest valid cluster) – 0.95 (cap)
+ *
+ * Key improvements over v1:
+ *   - Single-source clusters are heavily penalised (corroboration → ~0.27)
+ *   - Old events decay the score (recency half-life ~7 days)
+ *   - Source trust directly influences confidence (not just +0.02 boost)
+ *   - Wider score spread enables meaningful read-path filtering
  */
-function computeConfidence(clusterSize: number, minCount: number, cluster: Event[]): number {
-  const ratio = clusterSize / (minCount * 2);
-  let raw = 0.60 + ratio * 0.35;
 
-  // Entity prominence boost: +0.03 per major entity (max +0.09)
+/** Per-component breakdown for confidence scoring debug output. */
+export interface ConfidenceBreakdown {
+  eventDensity: number;
+  eventRecency: number;
+  sourceQuality: number;
+  corroboration: number;
+  entityProminence: number;
+  evidenceDiversity: number;
+  rawWeighted: number;
+  final: number;
+}
+
+const CONFIDENCE_WEIGHTS = {
+  eventDensity:      0.20,
+  eventRecency:      0.15,
+  sourceQuality:     0.15,
+  corroboration:     0.25,
+  entityProminence:  0.10,
+  evidenceDiversity: 0.15,
+} as const;
+
+function computeConfidence(
+  clusterSize: number,
+  minCount: number,
+  cluster: Event[],
+): number {
+  const breakdown = computeConfidenceWithBreakdown(clusterSize, minCount, cluster);
+  return breakdown.final;
+}
+
+function computeConfidenceWithBreakdown(
+  clusterSize: number,
+  minCount: number,
+  cluster: Event[],
+): ConfidenceBreakdown {
+  const w = CONFIDENCE_WEIGHTS;
+
+  // ── Event Density: how far above detection threshold ──────────────────
+  // Saturates at 3× minCount via diminishing returns (sqrt).
+  const densityRatio = clusterSize / minCount;
+  const eventDensity = Math.min(Math.sqrt(densityRatio) / Math.sqrt(3), 1.0);
+
+  // ── Event Recency: exponential decay from now ─────────────────────────
+  // Half-life ~7 days.  Events from last 24h ≈ 0.97, 7 days ≈ 0.50, 14 days ≈ 0.25.
+  const now = Date.now();
+  const ageDays = cluster.map(
+    (e) => (now - new Date(e.timestamp).getTime()) / (24 * 60 * 60 * 1000),
+  );
+  const avgAgeDays = ageDays.reduce((s, a) => s + a, 0) / ageDays.length;
+  const eventRecency = Math.exp(-0.693 * avgAgeDays / 7); // ln(2)/7 ≈ 0.099
+
+  // ── Source Quality: average trust of unique contributing sources ───────
+  const sourceNames = cluster
+    .map((e) => e.sourceArticle?.source)
+    .filter((s): s is string => !!s);
+  const uniqueSources = [...new Set(sourceNames)];
+  const avgTrust = uniqueSources.length > 0
+    ? uniqueSources
+        .map((s) => computeSourceTrust(s).trustScore)
+        .reduce((a, b) => a + b, 0) / uniqueSources.length
+    : 40; // unknown baseline
+  const sourceQuality = avgTrust / 100;
+
+  // ── Corroboration: independent source confirmation ────────────────────
+  // Ratio of unique sources to total events.  1 source for 5 events = 0.2 → weak.
+  // 5 sources for 5 events = 1.0 → strong.  Scaled so 67% unique ≈ max.
+  const corroborationRatio = uniqueSources.length / Math.max(clusterSize, 1);
+  const corroboration = Math.min(corroborationRatio * 1.5, 1.0);
+
+  // ── Entity Prominence: major AI entity involvement ────────────────────
   const entities = [...new Set(cluster.map((e) => e.company))];
   const majorCount = entities.filter(isMajorEntity).length;
-  raw += Math.min(majorCount * 0.03, 0.09);
+  const entityProminence = entities.length > 0
+    ? Math.min(majorCount / Math.min(entities.length, 3), 1.0)
+    : 0;
 
-  // Source diversity boost: +0.02 per distinct source beyond the first (max +0.06)
-  const sources = new Set(cluster.map((e) => e.sourceArticle?.source).filter(Boolean));
-  raw += Math.min(Math.max(sources.size - 1, 0) * 0.02, 0.06);
+  // ── Evidence Diversity: variety across types, sources, entities ────────
+  const eventTypes = new Set(cluster.map((e) => e.type));
+  const evidenceDiversity =
+    Math.min(eventTypes.size / 3, 1.0) * 0.33 +
+    Math.min(uniqueSources.length / 4, 1.0) * 0.34 +
+    Math.min(entities.length / 4, 1.0) * 0.33;
 
-  return Math.min(Math.round(raw * 100) / 100, 0.95);
+  // ── Weighted composite ────────────────────────────────────────────────
+  const rawWeighted =
+    eventDensity      * w.eventDensity +
+    eventRecency      * w.eventRecency +
+    sourceQuality     * w.sourceQuality +
+    corroboration     * w.corroboration +
+    entityProminence  * w.entityProminence +
+    evidenceDiversity * w.evidenceDiversity;
+
+  // Scale to 0.35–0.95 range.  Floor at 0.35 ensures no valid signal
+  // gets near-zero confidence.  Cap at 0.95 preserves headroom.
+  const scaled = 0.35 + rawWeighted * 0.60;
+  const final = Math.min(Math.round(scaled * 100) / 100, 0.95);
+
+  return {
+    eventDensity:      Math.round(eventDensity * 100) / 100,
+    eventRecency:      Math.round(eventRecency * 100) / 100,
+    sourceQuality:     Math.round(sourceQuality * 100) / 100,
+    corroboration:     Math.round(corroboration * 100) / 100,
+    entityProminence:  Math.round(entityProminence * 100) / 100,
+    evidenceDiversity: Math.round(evidenceDiversity * 100) / 100,
+    rawWeighted:       Math.round(rawWeighted * 100) / 100,
+    final,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -532,11 +643,25 @@ export function generateSignalsFromEvents(
 
     for (const cluster of clusters) {
       const eventIds = cluster.map((e) => e.id);
-      const confidence = computeConfidence(cluster.length, effectiveMinCount, cluster);
+      const confidenceBreakdown = computeConfidenceWithBreakdown(cluster.length, effectiveMinCount, cluster);
+      const confidence = confidenceBreakdown.final;
       const affectedEntities = [...new Set(cluster.map((e) => e.company))];
+
+      // Extract unique source names for source trust scoring in significance.
+      const sourceNames = cluster
+        .map((e) => e.sourceArticle?.source)
+        .filter((s): s is string => !!s);
+      const uniqueSourceNames = [...new Set(sourceNames)];
 
       // Derive cluster-level metadata from the event cluster and compute significance.
       const clusterContext = deriveClusterContext(cluster);
+
+      // Compute event recency for significance (avg age in hours from now).
+      const nowMs = Date.now();
+      const avgAgeHours = cluster.reduce(
+        (sum, e) => sum + (nowMs - new Date(e.timestamp).getTime()) / (1000 * 60 * 60), 0,
+      ) / cluster.length;
+
       const sig = computeSignificance({
         signalType:      rule.type,
         confidenceScore: confidence,
@@ -545,8 +670,23 @@ export function generateSignalsFromEvents(
         windowHours:     rule.windowMs / (1000 * 60 * 60),
         entityCount:     affectedEntities.length,
         entityNames:     affectedEntities,
+        sourceIds:       uniqueSourceNames,
         clusterContext,
+        avgEventAgeHours: avgAgeHours,
       });
+
+      // Debug: log confidence breakdown per signal
+      console.log(
+        `[signalEngine] confidence type=${rule.type}` +
+        ` density=${confidenceBreakdown.eventDensity}` +
+        ` recency=${confidenceBreakdown.eventRecency}` +
+        ` srcQuality=${confidenceBreakdown.sourceQuality}` +
+        ` corroboration=${confidenceBreakdown.corroboration}` +
+        ` entityProm=${confidenceBreakdown.entityProminence}` +
+        ` diversity=${confidenceBreakdown.evidenceDiversity}` +
+        ` raw=${confidenceBreakdown.rawWeighted}` +
+        ` final=${confidence}`,
+      );
 
       const whyThisMatters = buildWhyThisMatters(rule.type, cluster, sig.significanceScore);
 
