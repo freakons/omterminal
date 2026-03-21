@@ -114,11 +114,11 @@ interface ZoneConfig {
  *           BOTTOM (infra / compute)
  */
 const ZONE_CONFIGS: Record<SemanticZone, ZoneConfig> = {
-  center: { x: 0,    y: 0,    label: 'Core AI',        color: 'rgba(96,165,250,0.022)',  strength: 0.04 },
-  left:   { x: -255, y: 10,   label: 'Investors',      color: 'rgba(167,139,250,0.022)', strength: 0.07 },
-  right:  { x: 255,  y: 10,   label: 'Models',         color: 'rgba(52,211,153,0.022)',  strength: 0.07 },
-  top:    { x: 0,    y: -195, label: 'Regulation',     color: 'rgba(251,146,60,0.022)',  strength: 0.07 },
-  bottom: { x: 0,    y: 195,  label: 'Infrastructure', color: 'rgba(148,163,184,0.022)', strength: 0.06 },
+  center: { x: 0,    y: 0,    label: 'Core AI',        color: 'rgba(96,165,250,0.022)',  strength: 0.05  },
+  left:   { x: -285, y: 10,   label: 'Investors',      color: 'rgba(167,139,250,0.022)', strength: 0.088 },
+  right:  { x: 285,  y: 10,   label: 'Models',         color: 'rgba(52,211,153,0.022)',  strength: 0.088 },
+  top:    { x: 0,    y: -225, label: 'Regulation',     color: 'rgba(251,146,60,0.022)',  strength: 0.088 },
+  bottom: { x: 0,    y: 225,  label: 'Infrastructure', color: 'rgba(148,163,184,0.022)', strength: 0.078 },
 };
 
 /** Assign each node to a semantic zone based on subtype and known label patterns. */
@@ -1049,14 +1049,14 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
         ctx.fill();
 
         // Zone boundary ring — hairline, slightly more visible than fill
-        const ringColor = cfg.color.replace(/[\d.]+\)$/, '0.07)');
+        const ringColor = cfg.color.replace(/[\d.]+\)$/, '0.09)');
         ctx.strokeStyle = ringColor;
         ctx.lineWidth   = 0.5 / globalScale;
         ctx.setLineDash([]);
         ctx.stroke();
 
-        // 4. Zone label — appears only at sufficient zoom, very low opacity
-        const labelOpacity = Math.max(0, Math.min(0.10, (globalScale - 0.45) * 0.20));
+        // 4. Zone label — appears once zoom settles, raised cap for better readability
+        const labelOpacity = Math.max(0, Math.min(0.18, (globalScale - 0.35) * 0.30));
         if (labelOpacity > 0.003) {
           const fontSize = Math.round(9 / globalScale);
           ctx.font          = `${fontSize}px DM Mono, monospace`;
@@ -1076,8 +1076,8 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
         ctx.restore();
       }
 
-      // 5. Axis guide lines — very faint dashed crosshair for spatial grounding
-      const lineAlpha = 0.016;
+      // 5. Axis guide lines — faint dashed crosshair for spatial grounding
+      const lineAlpha = 0.022;
       ctx.save();
       ctx.strokeStyle = `rgba(255,255,255,${lineAlpha})`;
       ctx.lineWidth   = 0.4 / globalScale;
@@ -1123,9 +1123,19 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
         const isFocusSoftFade   = !!focusedNodeId && isSecondDegree;
 
         let nodeAlpha = 1;
-        if (isHoverDimmed)     nodeAlpha = 0.07;
-        else if (isFocusDimmed) nodeAlpha = 0.06;
+        if (isHoverDimmed)        nodeAlpha = 0.07;
+        else if (isFocusDimmed)   nodeAlpha = 0.06;
         else if (isFocusSoftFade) nodeAlpha = 0.32;
+        // At rest (no hover, no focus): dim non-entity nodes so entities read as
+        // the primary layer — signals/events recede into supporting context.
+        else if (!hoveredId && !focusedNodeId && node.type !== 'entity') {
+          const imp = node.importance ?? 0;
+          if (node.type === 'signal') {
+            nodeAlpha = imp >= 5 ? 0.72 : imp >= 2 ? 0.50 : 0.32;
+          } else { // event
+            nodeAlpha = imp >= 5 ? 0.78 : imp >= 2 ? 0.58 : 0.42;
+          }
+        }
 
         const isDimmed = isHoverDimmed || isFocusDimmed;
 
@@ -1940,6 +1950,52 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
     </div>
   );
 
+  // ── Zone orientation key — bottom-center, idle state only ────────────────
+  // A minimal spatial reference strip that communicates the 5 semantic zones
+  // without resembling a chart legend or tutorial overlay. Reads as system metadata.
+  const zoneKey = !focusedNodeId && !compact && !isLoading && (
+    <div style={{
+      position: 'absolute',
+      bottom: 14,
+      left: '50%',
+      transform: 'translateX(-50%)',
+      zIndex: 10,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 13,
+      pointerEvents: 'none',
+      fontFamily: 'DM Mono, monospace',
+      fontSize: '0.57rem',
+      letterSpacing: '0.055em',
+      color: 'rgba(238,238,248,0.22)',
+      whiteSpace: 'nowrap',
+    }}>
+      {([
+        { label: 'Investors',      color: '#a78bfa', symbol: '←' },
+        { label: 'Regulation',     color: '#fb923c', symbol: '↑' },
+        { label: 'Core AI',        color: '#60a5fa', symbol: '·' },
+        { label: 'Models',         color: '#34d399', symbol: '→' },
+        { label: 'Infra',          color: '#94a3b8', symbol: '↓' },
+      ] as const).map(({ label, color, symbol }) => (
+        <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ color, opacity: 0.55, fontSize: '0.64rem', lineHeight: 1 }}>{symbol}</span>
+          <span style={{
+            display: 'inline-block',
+            width: 4,
+            height: 4,
+            borderRadius: '50%',
+            background: color,
+            opacity: 0.40,
+            flexShrink: 0,
+          }} />
+          <span style={{ color: 'rgba(238,238,248,0.24)', letterSpacing: '0.05em' }}>
+            {label.toUpperCase()}
+          </span>
+        </span>
+      ))}
+    </div>
+  );
+
   // ── Cluster insight badge — bottom-left, visible when no focus ───────────
   const clusterInsightBadge = clusterInsight && !focusedNodeId && !compact && (
     <div style={{
@@ -2205,6 +2261,9 @@ export function IntelligenceGraph({ initialFocusId, compact }: IntelligenceGraph
 
       {/* Entity selector — quick-pick panel in full-graph mode */}
       {entitySelectorPanel}
+
+      {/* Zone orientation key — spatial reference for semantic zones */}
+      {zoneKey}
 
       {/* Cluster insight badge — describes dominant activity group */}
       {clusterInsightBadge}
