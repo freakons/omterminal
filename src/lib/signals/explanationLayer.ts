@@ -203,53 +203,141 @@ function buildSignalFactors(signal: Signal): ExplanationFactor[] {
   return factors;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Intelligence-grade "why this matters" — the core insight generator
+//
+// Design principles:
+//   • 1–3 sentences max — analyst brevity, not essay prose.
+//   • Answers three questions: why it matters, who is affected, what happens next.
+//   • No generic labels ("significant development") — every sentence must carry
+//     concrete, signal-specific information.
+//   • Cascading source priority:
+//       1. LLM-generated context.whyItMatters (highest quality, when available)
+//       2. Write-side whyThisMatters from signalEngine (type-specific, deterministic)
+//       3. Category-aware deterministic generation (this layer's fallback)
+//   • Weak signals (low significance or poor corroboration) get minimal
+//     explanations — we don't manufacture insight where evidence is thin.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Thresholds for explanation depth — signals below these get minimal treatment. */
+const INSIGHT_THRESHOLDS = {
+  /** Minimum significance to generate a full insight explanation. */
+  minSignificance: 40,
+  /** Minimum source support to generate a full insight explanation. */
+  minCorroboration: 2,
+} as const;
+
 /**
- * Generate a concise "why this matters" sentence from signal data.
- * Grounded in significance, corroboration, entity, and confidence.
+ * Generate a concise, analyst-grade "why this matters" explanation.
+ *
+ * Prioritises pre-existing intelligence (LLM context, engine-generated insight)
+ * and falls back to category-aware deterministic generation. Only produces rich
+ * explanations for signals that meet significance and corroboration thresholds.
  */
 function buildWhyThisMatters(signal: Signal): string {
-  // If context already has a whyItMatters, use it as the primary explanation.
+  // ── Priority 1: LLM-generated context (highest quality) ────────────────
   if (signal.context?.whyItMatters) {
     return signal.context.whyItMatters;
   }
 
-  const parts: string[] = [];
-  const importance = deriveImportanceLabel(signal.significanceScore);
-  const corroboration = deriveCorroborationLabel(signal.sourceSupportCount);
-
-  // Lead with importance framing
-  if (importance === 'Critical Development') {
-    parts.push(`This is a critical development in ${signal.category?.replace(/_/g, ' ') ?? 'the AI ecosystem'}`);
-  } else if (importance === 'High Importance') {
-    parts.push(`A significant ${signal.category?.replace(/_/g, ' ') ?? 'intelligence'} signal`);
-  } else if (importance === 'Early Signal') {
-    parts.push(`An early-stage signal worth monitoring`);
-  } else {
-    parts.push(`A ${signal.category?.replace(/_/g, ' ') ?? ''} development`.trim());
+  // ── Priority 2: Write-side engine insight (type-specific, deterministic) ─
+  if (signal.whyThisMatters && signal.whyThisMatters.length > 30) {
+    return signal.whyThisMatters;
   }
 
-  // Entity attribution
-  if (signal.entityName) {
-    parts[0] += ` involving ${signal.entityName}`;
+  // ── Weak signal gate: minimal explanation for low-quality signals ───────
+  const sig = signal.significanceScore ?? 0;
+  const sources = signal.sourceSupportCount ?? 0;
+  if (sig < INSIGHT_THRESHOLDS.minSignificance && sources < INSIGHT_THRESHOLDS.minCorroboration) {
+    return buildMinimalExplanation(signal);
   }
 
-  // Corroboration qualifier
-  if (corroboration === 'Widely Confirmed') {
-    parts.push(`confirmed by ${signal.sourceSupportCount} independent sources`);
-  } else if (corroboration === 'Multiple Sources Confirm') {
-    parts.push(`supported by ${signal.sourceSupportCount} sources`);
-  } else if (corroboration === 'Single Source') {
-    parts.push('from a single source — treat with appropriate caution');
-  }
+  // ── Priority 3: Category-aware deterministic generation ────────────────
+  return buildCategoryInsight(signal);
+}
 
-  // Confidence qualifier (only if notably high or low)
-  if (signal.confidence >= 95) {
-    parts.push('with very high confidence');
-  } else if (signal.confidence < 50) {
-    parts.push('with limited confidence');
+/**
+ * Minimal explanation for weak signals — honest about evidence quality,
+ * avoids manufacturing insight where data is thin.
+ */
+function buildMinimalExplanation(signal: Signal): string {
+  const entity = signal.entityName ?? 'this sector';
+  const category = signal.category?.replace(/_/g, ' ') ?? 'AI';
+  if ((signal.sourceSupportCount ?? 0) <= 1) {
+    return `Early ${category} signal around ${entity} — single-source, pending independent confirmation before actionable.`;
   }
+  return `Emerging ${category} activity around ${entity}. Evidence is accumulating but not yet strong enough to shift strategic assumptions.`;
+}
 
-  return parts.join(', ') + '.';
+/**
+ * Category-aware insight generator for signals that meet quality thresholds
+ * but lack pre-generated intelligence from the engine or LLM layers.
+ *
+ * Each category branch answers: why it matters, who is affected, what may happen next.
+ */
+function buildCategoryInsight(signal: Signal): string {
+  const entity = signal.entityName ?? 'key players';
+  const sig = signal.significanceScore ?? 50;
+  const sources = signal.sourceSupportCount ?? 0;
+  const category = signal.category ?? '';
+  const isHighSig = sig >= 70;
+  const isWellCorroborated = sources >= 4;
+
+  // Build affected-parties clause from context entities when available
+  const contextEntities = signal.context?.affectedEntities
+    ?.map(e => e.name)
+    .filter((n): n is string => !!n && n !== entity)
+    .slice(0, 2) ?? [];
+  const affectedClause = contextEntities.length > 0
+    ? ` ${contextEntities.join(' and ')} face direct knock-on effects.`
+    : '';
+
+  switch (category) {
+    case 'models': {
+      const urgency = isHighSig
+        ? `Teams building on current capabilities face a compressed evaluation window — integration decisions made now lock in for months.`
+        : `Downstream builders should benchmark against new baselines before committing to current integrations.`;
+      return `Model capability shifts around ${entity} alter the competitive baseline for every team in the stack.${affectedClause} ${urgency}`;
+    }
+
+    case 'funding': {
+      const scale = isWellCorroborated
+        ? `Confirmed across ${sources} sources, this funding pattern signals conviction-level capital deployment.`
+        : `If sustained, this capital trajectory could reshape competitive positioning within 6–12 months.`;
+      const impact = isHighSig
+        ? `${entity}'s resource advantage widens — competitors face rising talent and compute costs.`
+        : `Capital flows at this velocity shift hiring dynamics and partnership leverage across the sector.`;
+      return `${impact}${affectedClause} ${scale}`;
+    }
+
+    case 'regulation': {
+      const scope = isHighSig
+        ? `Rules targeting ${entity} typically become compliance templates across the industry — teams not named should still assess exposure.`
+        : `Regulatory clustering around ${entity} suggests governance is moving from discussion to enforcement.`;
+      return `${scope}${affectedClause} Product, legal, and go-to-market timelines may need revision.`;
+    }
+
+    case 'research': {
+      const timeline = isHighSig ? '3–6 months' : '6–12 months';
+      return `Research breakthroughs around ${entity} are a leading indicator of production capability shifts within ${timeline}.${affectedClause} R&D and product roadmaps in adjacent areas should be stress-tested against these advances.`;
+    }
+
+    case 'agents': {
+      return `Agent capability developments around ${entity} signal a shift in how AI systems interact with external tools and workflows.${affectedClause} ${isHighSig ? 'Enterprise automation strategies may need near-term reassessment.' : 'Worth monitoring for integration and competitive implications.'}`;
+    }
+
+    case 'product': {
+      return `Product moves by ${entity} reshape user expectations and competitive positioning.${affectedClause} ${isHighSig ? 'Market timing pressure is building — delayed responses risk ceding adoption ground.' : 'Adjacent players should assess whether their roadmaps account for this shift.'}`;
+    }
+
+    default: {
+      // Generic but still insight-driven — avoids empty labels
+      const strength = isWellCorroborated
+        ? `Corroborated by ${sources} independent sources, giving this pattern higher confidence than typical signals.`
+        : '';
+      return `Activity around ${entity} suggests a shift in AI ecosystem dynamics that may affect competitive positioning and strategic planning.${affectedClause} ${strength}`.trim();
+    }
+  }
 }
 
 /**
