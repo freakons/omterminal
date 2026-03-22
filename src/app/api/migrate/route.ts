@@ -97,6 +97,31 @@ const TABLES_CREATED = [
   'articles.story_cluster_id (column)',
   // title_fingerprint (schema.sql)
   'articles.title_fingerprint (column)',
+  // migration 025
+  'source_health.total_articles_fetched (column)',
+  'source_health.total_articles_inserted (column)',
+  'source_health.total_duplicates_dropped (column)',
+  'source_health.total_events_generated (column)',
+  'source_health.total_signals_contributed (column)',
+  'source_health.avg_significance_score (column)',
+  'source_health.last_article_inserted_at (column)',
+  'source_health.fetch_streak (column)',
+  'source_health.total_fetches (column)',
+  'source_health.total_successes (column)',
+  'source_health.total_failures (column)',
+  // migration 026
+  'source_health.source_score (column)',
+  'source_health.source_state (column)',
+  'source_health.score_updated_at (column)',
+  'source_health.consecutive_low_score_runs (column)',
+  'source_health.duplicate_rate (column)',
+  'source_health.signal_yield_rate (column)',
+  'source_health.article_insert_rate (column)',
+  'source_health.auto_disabled (column)',
+  'source_health.auto_disabled_at (column)',
+  'source_health.auto_disable_reason (column)',
+  'source_health.manual_override_state (column)',
+  'source_health.manual_override_note (column)',
 ];
 
 export async function POST(req: NextRequest) {

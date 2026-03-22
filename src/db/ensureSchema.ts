@@ -562,6 +562,41 @@ export const MIGRATION_STATEMENTS: string[] = [
   `ALTER TABLE articles ADD COLUMN IF NOT EXISTS story_cluster_id TEXT`,
   `CREATE INDEX IF NOT EXISTS idx_articles_story_cluster_id
      ON articles (story_cluster_id) WHERE story_cluster_id IS NOT NULL`,
+
+  // ── Migration 025: Source Quality Metrics ───────────────────────────────
+  `ALTER TABLE source_health ADD COLUMN IF NOT EXISTS total_articles_fetched INTEGER DEFAULT 0`,
+  `ALTER TABLE source_health ADD COLUMN IF NOT EXISTS total_articles_inserted INTEGER DEFAULT 0`,
+  `ALTER TABLE source_health ADD COLUMN IF NOT EXISTS total_duplicates_dropped INTEGER DEFAULT 0`,
+  `ALTER TABLE source_health ADD COLUMN IF NOT EXISTS total_events_generated INTEGER DEFAULT 0`,
+  `ALTER TABLE source_health ADD COLUMN IF NOT EXISTS total_signals_contributed INTEGER DEFAULT 0`,
+  `ALTER TABLE source_health ADD COLUMN IF NOT EXISTS avg_significance_score NUMERIC(5, 2) DEFAULT 0`,
+  `ALTER TABLE source_health ADD COLUMN IF NOT EXISTS last_article_inserted_at TIMESTAMPTZ`,
+  `ALTER TABLE source_health ADD COLUMN IF NOT EXISTS fetch_streak INTEGER DEFAULT 0`,
+  `ALTER TABLE source_health ADD COLUMN IF NOT EXISTS total_fetches INTEGER DEFAULT 0`,
+  `ALTER TABLE source_health ADD COLUMN IF NOT EXISTS total_successes INTEGER DEFAULT 0`,
+  `ALTER TABLE source_health ADD COLUMN IF NOT EXISTS total_failures INTEGER DEFAULT 0`,
+  `CREATE INDEX IF NOT EXISTS idx_source_health_quality
+     ON source_health (total_articles_inserted DESC, avg_significance_score DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_source_health_failures
+     ON source_health (failure_count DESC, total_failures DESC)`,
+
+  // ── Migration 026: Source Scoring & State Management ────────────────────
+  `ALTER TABLE source_health ADD COLUMN IF NOT EXISTS source_score INTEGER DEFAULT NULL`,
+  `ALTER TABLE source_health ADD COLUMN IF NOT EXISTS source_state TEXT DEFAULT 'stable'`,
+  `ALTER TABLE source_health ADD COLUMN IF NOT EXISTS score_updated_at TIMESTAMPTZ`,
+  `ALTER TABLE source_health ADD COLUMN IF NOT EXISTS consecutive_low_score_runs INTEGER DEFAULT 0`,
+  `ALTER TABLE source_health ADD COLUMN IF NOT EXISTS duplicate_rate NUMERIC(5, 4) DEFAULT 0`,
+  `ALTER TABLE source_health ADD COLUMN IF NOT EXISTS signal_yield_rate NUMERIC(5, 4) DEFAULT 0`,
+  `ALTER TABLE source_health ADD COLUMN IF NOT EXISTS article_insert_rate NUMERIC(5, 4) DEFAULT 0`,
+  `ALTER TABLE source_health ADD COLUMN IF NOT EXISTS auto_disabled BOOLEAN DEFAULT FALSE`,
+  `ALTER TABLE source_health ADD COLUMN IF NOT EXISTS auto_disabled_at TIMESTAMPTZ`,
+  `ALTER TABLE source_health ADD COLUMN IF NOT EXISTS auto_disable_reason TEXT`,
+  `ALTER TABLE source_health ADD COLUMN IF NOT EXISTS manual_override_state TEXT`,
+  `ALTER TABLE source_health ADD COLUMN IF NOT EXISTS manual_override_note TEXT`,
+  `CREATE INDEX IF NOT EXISTS idx_source_health_scoring
+     ON source_health (source_state, source_score DESC NULLS LAST)`,
+  `CREATE INDEX IF NOT EXISTS idx_source_health_auto_disabled
+     ON source_health (auto_disabled) WHERE auto_disabled = TRUE`,
 ];
 
 /**
