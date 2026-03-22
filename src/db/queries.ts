@@ -1248,6 +1248,7 @@ export interface EntityComparisonEntry {
   eventsTotal: number;
   avgConfidence: number;
   lastActivity: string | null;
+  firstSeen: string | null;
   recentSignals: Signal[];
   recentEvents: AiEvent[];
 }
@@ -1258,13 +1259,13 @@ export interface EntityComparisonEntry {
  * Resolves each entity by slug, then fetches metrics, recent signals,
  * and recent events concurrently.  Unknown slugs are silently skipped.
  *
- * @param entitySlugs  Array of entity URL slugs (2–4 items).
+ * @param entitySlugs  Array of entity URL slugs (2–5 items).
  */
 export async function getEntityComparison(
   entitySlugs: string[],
 ): Promise<EntityComparisonEntry[]> {
   const { slugify } = await import('@/utils/sanitize');
-  const safeSlugs = entitySlugs.slice(0, 4);
+  const safeSlugs = entitySlugs.slice(0, 5);
 
   // Resolve all entities by slug
   const entities = await Promise.all(
@@ -1297,6 +1298,7 @@ export async function getEntityComparison(
         eventsTotal: metrics.eventsTotal,
         avgConfidence: metrics.avgConfidence,
         lastActivity: metrics.lastActivity,
+        firstSeen: metrics.firstSeen ?? null,
         recentSignals: signals,
         recentEvents: events,
       };
