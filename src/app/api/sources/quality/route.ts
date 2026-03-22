@@ -54,6 +54,13 @@ interface QualityRow {
   total_successes: number;
   total_failures: number;
   last_article_inserted_at: string | null;
+  // Scoring fields (migration 026)
+  source_score: number | null;
+  source_state: string | null;
+  score_updated_at: string | null;
+  consecutive_low_score_runs: number;
+  auto_disabled: boolean;
+  manual_override_state: string | null;
 }
 
 interface SourceQualityReport {
@@ -79,6 +86,13 @@ interface SourceQualityReport {
   lastArticleInsertedAt: string | null;
   // Derived quality score (0-100)
   qualityScore: number;
+  // Source scoring system (migration 026)
+  sourceScore: number | null;
+  sourceState: string | null;
+  scoreUpdatedAt: string | null;
+  consecutiveLowScoreRuns: number;
+  autoDisabled: boolean;
+  manualOverride: string | null;
 }
 
 // ── Quality score computation ────────────────────────────────────────────────
@@ -149,7 +163,13 @@ export async function GET(req: NextRequest) {
       COALESCE(total_fetches, 0) as total_fetches,
       COALESCE(total_successes, 0) as total_successes,
       COALESCE(total_failures, 0) as total_failures,
-      last_article_inserted_at
+      last_article_inserted_at,
+      source_score,
+      source_state,
+      score_updated_at,
+      COALESCE(consecutive_low_score_runs, 0) as consecutive_low_score_runs,
+      COALESCE(auto_disabled, false) as auto_disabled,
+      manual_override_state
     FROM source_health
   `;
 
@@ -179,6 +199,12 @@ export async function GET(req: NextRequest) {
       lastSuccessAt: row.last_success_at,
       lastArticleInsertedAt: row.last_article_inserted_at,
       qualityScore: computeQualityScore(row),
+      sourceScore: row.source_score,
+      sourceState: row.source_state,
+      scoreUpdatedAt: row.score_updated_at,
+      consecutiveLowScoreRuns: row.consecutive_low_score_runs,
+      autoDisabled: row.auto_disabled,
+      manualOverride: row.manual_override_state,
     };
   });
 

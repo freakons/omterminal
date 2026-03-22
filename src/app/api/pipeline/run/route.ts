@@ -56,6 +56,7 @@ import { generateAlerts }                          from '@/lib/alerts/generateAl
 import { withPipelineLock, pipelineLockedResponse } from '@/lib/pipelineLock';
 import { generatePageSnapshots }               from '@/lib/pipeline/snapshot';
 import { refreshCaches }                        from '@/lib/pipeline/cacheRefresh';
+import { runSourceScoring }                     from '@/services/scoring/sourceScoring';
 import { dbQuery }                              from '@/db/client';
 import { ensureSchema }                        from '@/db/ensureSchema';
 import { TimeoutError }                         from '@/lib/withTimeout';
@@ -833,7 +834,23 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // Stage 4 — Cache refresh
+      // Stage 4 — Source scoring (lightweight, runs after all ingestion data is written)
+      const scoring = await runStage('scoring', () => runSourceScoring(), TIMEOUT.CACHE, correlationId);
+      if (scoring.error) {
+        stages.push({ stage: 'scoring', status: 'error', durationMs: scoring.durationMs, error: scoring.error, timedOut: scoring.timedOut });
+        errorsCount++;
+      } else {
+        const sc = scoring.result!;
+        stages.push({
+          stage: 'scoring', status: 'ok', durationMs: scoring.durationMs,
+          sourcesScored: sc.sourcesScored,
+          stateChanges: sc.stateChanges.length,
+          autoDisabled: sc.autoDisabled.length,
+          avgScore: sc.summary.avgScore,
+        });
+      }
+
+      // Stage 5 — Cache refresh
       const cache = await runStage('cache', () => refreshCaches(), TIMEOUT.CACHE, correlationId);
       if (cache.error) {
         stages.push({ stage: 'cache', status: 'error', durationMs: cache.durationMs, error: cache.error, timedOut: cache.timedOut });
