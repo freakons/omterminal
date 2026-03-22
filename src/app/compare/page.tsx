@@ -47,21 +47,21 @@ function timeAgo(iso: string): string {
 }
 
 /** Compute a simple momentum label from signal counts. */
-function momentumLabel(s24h: number, s7d: number): { label: string; color: string } {
-  if (s24h >= 5) return { label: 'Surging', color: 'var(--emerald-l)' };
-  if (s24h >= 2) return { label: 'Active', color: 'var(--cyan-l)' };
-  if (s7d >= 5) return { label: 'Steady', color: 'var(--indigo-l)' };
-  if (s7d >= 1) return { label: 'Low', color: 'var(--text3)' };
-  return { label: 'Quiet', color: 'var(--text3)' };
+function momentumLabel(s24h: number, s7d: number): { label: string; color: string; score: number; cue: string } {
+  if (s24h >= 5) return { label: 'Surging', color: 'var(--emerald-l)', score: 5, cue: '↑ Rising' };
+  if (s24h >= 2) return { label: 'Active',  color: 'var(--cyan-l)',    score: 4, cue: '↑ Rising' };
+  if (s7d >= 5)  return { label: 'Steady',  color: 'var(--indigo-l)', score: 3, cue: '→ Stable' };
+  if (s7d >= 1)  return { label: 'Low',     color: 'var(--text3)',     score: 2, cue: '↓ Cooling' };
+  return               { label: 'Quiet',   color: 'var(--text3)',     score: 1, cue: '↓ Cooling' };
 }
 
 /** Derive a signal strength tier from avg confidence. */
-function signalStrength(avgConf: number): { label: string; color: string } {
-  if (avgConf >= 85) return { label: 'Very High', color: 'var(--emerald-l)' };
-  if (avgConf >= 70) return { label: 'High', color: 'var(--cyan-l)' };
-  if (avgConf >= 50) return { label: 'Moderate', color: 'var(--amber-l)' };
-  if (avgConf > 0) return { label: 'Low', color: 'var(--text3)' };
-  return { label: '—', color: 'var(--text3)' };
+function signalStrength(avgConf: number): { label: string; color: string; score: number } {
+  if (avgConf >= 85) return { label: 'Very High', color: 'var(--emerald-l)', score: 4 };
+  if (avgConf >= 70) return { label: 'High',      color: 'var(--cyan-l)',    score: 3 };
+  if (avgConf >= 50) return { label: 'Moderate',  color: 'var(--amber-l)',   score: 2 };
+  if (avgConf > 0)   return { label: 'Low',       color: 'var(--text3)',     score: 1 };
+  return                    { label: '—',         color: 'var(--text3)',     score: 0 };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -115,14 +115,64 @@ function Breadcrumbs() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Visual meter sub-components
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Small circular info hint with CSS tooltip on hover */
+function InfoHint({ tip }: { tip: string }) {
+  return <span className="info-hint" data-tip={tip}>i</span>;
+}
+
+/** 5 vertical bars — filled up to `score` in the entity color */
+function MomentumBars({ score, color }: { score: number; color: string }) {
+  const heights = [4, 6, 8, 10, 12];
+  return (
+    <div className="momentum-bars">
+      {heights.map((h, i) => (
+        <div
+          key={i}
+          className="momentum-bar"
+          style={{ height: h, background: i < score ? color : undefined }}
+        />
+      ))}
+    </div>
+  );
+}
+
+/** 4 small squares — filled up to `score` in the entity color */
+function StrengthDots({ score, color }: { score: number; color: string }) {
+  return (
+    <div className="strength-dots">
+      {[0, 1, 2, 3].map((i) => (
+        <div
+          key={i}
+          className="strength-dot"
+          style={{ background: i < score ? color : undefined }}
+        />
+      ))}
+    </div>
+  );
+}
+
+/** Thin horizontal fill bar for 0–100 values */
+function ConfidenceMeter({ value, color }: { value: number; color: string }) {
+  return (
+    <div style={{ width: '100%', height: 3, borderRadius: 2, background: 'var(--border2)', overflow: 'hidden', marginTop: 5 }}>
+      <div style={{ width: `${Math.min(value, 100)}%`, height: '100%', borderRadius: 2, background: color }} />
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MetricRow — table row inside the metrics section
 // ─────────────────────────────────────────────────────────────────────────────
 
-function MetricRow({ label, values, color, highlight }: {
+function MetricRow({ label, values, color, highlight, tooltip }: {
   label: string;
   values: (string | number)[];
   color?: string;
   highlight?: 'max' | 'min';
+  tooltip?: string;
 }) {
   const numericValues = values.map((v) => (typeof v === 'number' ? v : parseFloat(String(v)) || 0));
   const targetVal = highlight === 'max'
@@ -139,8 +189,8 @@ function MetricRow({ label, values, color, highlight }: {
       borderBottom: '1px solid var(--border)',
       alignItems: 'center',
     }}>
-      <span style={{ fontFamily: 'var(--fm)', fontSize: 10, color: 'var(--text3)', letterSpacing: '0.06em' }}>
-        {label}
+      <span style={{ fontFamily: 'var(--fm)', fontSize: 10, color: 'var(--text3)', letterSpacing: '0.06em', display: 'flex', alignItems: 'center' }}>
+        {label}{tooltip && <InfoHint tip={tooltip} />}
       </span>
       {values.map((v, i) => {
         const isTarget = targetVal !== null && numericValues[i] === targetVal && numericValues.filter((n) => n === targetVal).length === 1;
@@ -199,39 +249,74 @@ function OverviewCard({ entry }: { entry: EntityComparisonEntry }) {
       </div>
 
       {/* Quick stats row */}
-      <div style={{
-        display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10,
-        padding: '12px 0 0', borderTop: '1px solid var(--border)',
-      }}>
-        <div>
-          <div style={{ fontFamily: 'var(--fm)', fontSize: 9, color: 'var(--text3)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>
-            Momentum
+      <div style={{ padding: '12px 0 0', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          {/* Momentum */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 5 }}>
+              <span style={{ fontFamily: 'var(--fm)', fontSize: 9, color: 'var(--text3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                Momentum
+              </span>
+              <InfoHint tip="Signal velocity over the past 24–48h. Higher means more recent activity." />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <MomentumBars score={mom.score} color={mom.color} />
+              <span style={{ fontFamily: 'var(--fm)', fontSize: 12, color: mom.color, fontWeight: 600 }}>
+                {mom.label}
+              </span>
+            </div>
+            <div style={{ fontFamily: 'var(--fm)', fontSize: 9, color: mom.score >= 4 ? 'var(--emerald-l)' : mom.score === 3 ? 'var(--indigo-l)' : 'var(--text3)', marginTop: 3, opacity: 0.8 }}>
+              {mom.cue}
+            </div>
           </div>
-          <span style={{ fontFamily: 'var(--fm)', fontSize: 12, color: mom.color, fontWeight: 600 }}>
-            {mom.label}
-          </span>
-        </div>
-        <div>
-          <div style={{ fontFamily: 'var(--fm)', fontSize: 9, color: 'var(--text3)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>
-            Signal strength
-          </div>
-          <span style={{ fontFamily: 'var(--fm)', fontSize: 12, color: str.color, fontWeight: 600 }}>
-            {str.label}
-          </span>
-        </div>
-      </div>
 
-      {/* Last activity */}
-      {entry.lastActivity && (
-        <div style={{ marginTop: 10 }}>
-          <span style={{ fontFamily: 'var(--fm)', fontSize: 9, color: 'var(--text3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-            Last active{' '}
-          </span>
-          <span style={{ fontFamily: 'var(--fm)', fontSize: 11, color: 'var(--text2)' }}>
-            {timeAgo(entry.lastActivity)}
-          </span>
+          {/* Signal Strength */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 5 }}>
+              <span style={{ fontFamily: 'var(--fm)', fontSize: 9, color: 'var(--text3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                Signal Strength
+              </span>
+              <InfoHint tip="Reliability of signals. Based on average confidence across all tracked signals." />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <StrengthDots score={str.score} color={str.color} />
+              <span style={{ fontFamily: 'var(--fm)', fontSize: 12, color: str.color, fontWeight: 600 }}>
+                {str.label}
+              </span>
+            </div>
+          </div>
         </div>
-      )}
+
+        {/* Avg Confidence meter */}
+        {entry.avgConfidence > 0 && (
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <span style={{ fontFamily: 'var(--fm)', fontSize: 9, color: 'var(--text3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                  Avg Confidence
+                </span>
+                <InfoHint tip="Average confidence score across all signals. Higher means more verified data." />
+              </div>
+              <span style={{ fontFamily: 'var(--fm)', fontSize: 10, color: 'var(--emerald-l)' }}>
+                {entry.avgConfidence.toFixed(0)}%
+              </span>
+            </div>
+            <ConfidenceMeter value={entry.avgConfidence} color="var(--emerald-l)" />
+          </div>
+        )}
+
+        {/* Last activity */}
+        {entry.lastActivity && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontFamily: 'var(--fm)', fontSize: 9, color: 'var(--text3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+              Last active
+            </span>
+            <span style={{ fontFamily: 'var(--fm)', fontSize: 11, color: 'var(--text2)' }}>
+              {timeAgo(entry.lastActivity)}
+            </span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -345,11 +430,28 @@ function StrategicProfileCard({ entry }: { entry: EntityComparisonEntry }) {
     catCounts.set(sig.category, (catCounts.get(sig.category) ?? 0) + 1);
   }
   const cats = Array.from(catCounts.entries()).sort((a, b) => b[1] - a[1]);
+  const maxCount = cats.length > 0 ? cats[0][1] : 1;
+
+  // Profile breadth cue
+  const breadthCue = cats.length >= 4
+    ? { label: 'Broad focus', color: 'var(--cyan-l)' }
+    : cats.length >= 2
+      ? { label: 'Focused', color: 'var(--indigo-l)' }
+      : cats.length === 1
+        ? { label: 'Concentrated', color: 'var(--amber-l)' }
+        : null;
 
   return (
     <div style={GLASS_CARD}>
-      <div style={{ fontFamily: 'var(--fd)', fontSize: 15, fontStyle: 'italic', color: 'var(--text)', marginBottom: 10 }}>
-        {entry.name}
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }}>
+        <div style={{ fontFamily: 'var(--fd)', fontSize: 15, fontStyle: 'italic', color: 'var(--text)' }}>
+          {entry.name}
+        </div>
+        {breadthCue && (
+          <span style={{ fontFamily: 'var(--fm)', fontSize: 9, color: breadthCue.color, letterSpacing: '0.06em' }}>
+            {breadthCue.label}
+          </span>
+        )}
       </div>
       {cats.length === 0 ? (
         <p style={EMPTY_TEXT}>No signal categories yet</p>
@@ -365,13 +467,13 @@ function StrategicProfileCard({ entry }: { entry: EntityComparisonEntry }) {
               }}>
                 {cat}
               </span>
-              {/* Simple bar */}
+              {/* Relative bar — max category = 100% */}
               <div style={{
                 flex: 1, height: 4, borderRadius: 2,
                 background: 'var(--glass2)', overflow: 'hidden',
               }}>
                 <div style={{
-                  width: `${Math.min(count * 33, 100)}%`, height: '100%',
+                  width: `${Math.round((count / maxCount) * 100)}%`, height: '100%',
                   borderRadius: 2,
                   background: CATEGORY_COLORS[cat] ?? 'var(--indigo-l)',
                 }} />
@@ -717,8 +819,9 @@ export default async function ComparePage(
 
       {/* ── Section 2: Overview Cards ─────────────────────────────────────── */}
       <div style={{ marginBottom: 24 }}>
-        <div style={{ ...SECTION_HEADER, marginBottom: 14, paddingLeft: 2 }}>
+        <div style={{ ...SECTION_HEADER, marginBottom: 14, paddingLeft: 2, display: 'flex', alignItems: 'center' }}>
           Overview
+          <InfoHint tip="High-level snapshot: momentum, signal strength, and confidence for each entity." />
         </div>
         <div
           className="compare-grid"
@@ -732,7 +835,10 @@ export default async function ComparePage(
 
       {/* ── Section 3: Intelligence Metrics Table ─────────────────────────── */}
       <div style={{ ...GLASS_CARD, marginBottom: 24 }}>
-        <div style={SECTION_HEADER}>Intelligence Metrics</div>
+        <div style={{ ...SECTION_HEADER, display: 'flex', alignItems: 'center' }}>
+          Intelligence Metrics
+          <InfoHint tip="Raw counts and rates — signals captured, events, confidence, and recency. Bold values are the leader in that row." />
+        </div>
 
         {/* Column headers */}
         <div style={{
@@ -758,26 +864,29 @@ export default async function ComparePage(
           ))}
         </div>
 
-        <MetricRow label="Signals · 24h" values={entries.map((e) => e.signals24h)} color="var(--cyan-l)" highlight="max" />
-        <MetricRow label="Signals · 7d" values={entries.map((e) => e.signals7d)} color="var(--indigo-l)" highlight="max" />
-        <MetricRow label="Signals · 30d" values={entries.map((e) => e.signals30d)} color="var(--indigo-l)" highlight="max" />
-        <MetricRow label="Total Signals" values={entries.map((e) => e.signalsTotal)} color="var(--emerald-l)" highlight="max" />
-        <MetricRow label="Total Events" values={entries.map((e) => e.eventsTotal)} color="var(--amber-l)" highlight="max" />
-        <MetricRow label="Avg Confidence" values={entries.map((e) => e.avgConfidence > 0 ? `${e.avgConfidence.toFixed(0)}%` : '—')} color="var(--emerald-l)" />
+        <MetricRow label="Signals · 24h" values={entries.map((e) => e.signals24h)} color="var(--cyan-l)" highlight="max" tooltip="New signals captured in the last 24 hours." />
+        <MetricRow label="Signals · 7d" values={entries.map((e) => e.signals7d)} color="var(--indigo-l)" highlight="max" tooltip="Signals captured over the past 7 days." />
+        <MetricRow label="Signals · 30d" values={entries.map((e) => e.signals30d)} color="var(--indigo-l)" highlight="max" tooltip="Signals captured over the past 30 days." />
+        <MetricRow label="Total Signals" values={entries.map((e) => e.signalsTotal)} color="var(--emerald-l)" highlight="max" tooltip="All signals ever tracked for this entity." />
+        <MetricRow label="Total Events" values={entries.map((e) => e.eventsTotal)} color="var(--amber-l)" highlight="max" tooltip="Key events tracked: funding rounds, launches, partnerships, and more." />
+        <MetricRow label="Avg Confidence" values={entries.map((e) => e.avgConfidence > 0 ? `${e.avgConfidence.toFixed(0)}%` : '—')} color="var(--emerald-l)" tooltip="Average confidence score across all signals. Higher means more verified data." />
         <MetricRow
           label="Momentum"
           values={entries.map((e) => momentumLabel(e.signals24h, e.signals7d).label)}
+          tooltip="Signal velocity over the past 24–48h. Surging = very active, Quiet = little recent signal."
         />
         <MetricRow
           label="Last Activity"
           values={entries.map((e) => e.lastActivity ? timeAgo(e.lastActivity) : '—')}
+          tooltip="Time since the most recent signal or event was captured."
         />
       </div>
 
       {/* ── Section 4: Recent Intelligence (side-by-side) ─────────────────── */}
       <div style={{ marginBottom: 24 }}>
-        <div style={{ ...SECTION_HEADER, marginBottom: 14, paddingLeft: 2 }}>
+        <div style={{ ...SECTION_HEADER, marginBottom: 14, paddingLeft: 2, display: 'flex', alignItems: 'center' }}>
           Recent Intelligence
+          <InfoHint tip="The latest signals and events for each entity — side by side for quick scanning." />
         </div>
         <div
           className="compare-grid"
@@ -791,8 +900,9 @@ export default async function ComparePage(
 
       {/* ── Section 5: Strategic Profile ──────────────────────────────────── */}
       <div style={{ marginBottom: 24 }}>
-        <div style={{ ...SECTION_HEADER, marginBottom: 14, paddingLeft: 2 }}>
+        <div style={{ ...SECTION_HEADER, marginBottom: 14, paddingLeft: 2, display: 'flex', alignItems: 'center' }}>
           Strategic Profile
+          <InfoHint tip="Signal distribution across categories — shows where each entity's activity is concentrated." />
         </div>
         <div
           className="compare-grid"
