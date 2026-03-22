@@ -30,6 +30,10 @@ export const MEM_TTL = {
   INTELLIGENCE_SIGNALS: 10_000,
   /** Opportunities / market-pulse: 10 s — heavier compute, stable per pipeline cycle */
   OPPORTUNITIES: 10_000,
+  /** Platform alerts (anonymous, first-page): 15 s — matches Redis TTL */
+  ALERTS: 15_000,
+  /** Graph relationships (unfiltered): 25 s — expensive multi-table compute */
+  GRAPH_RELATIONSHIPS: 25_000,
 } as const;
 
 // ── Internal store ────────────────────────────────────────────────────────────

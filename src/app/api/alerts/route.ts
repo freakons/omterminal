@@ -16,6 +16,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAlerts, getUnreadAlertCount, markAlertRead, markAllAlertsRead } from '@/db/queries';
 import { getUserIdFromRequest } from '@/lib/userId';
+import { getCache, setCache, MEM_TTL } from '@/lib/memoryCache';
+import { getCache as redisGet, setCache as redisSet } from '@/lib/cache/redis';
+
+// Cache platform alerts for anonymous first-page requests (no user, no cursor, no since).
+const ALERTS_TTL_S = 15;
+const CACHE_HEADERS = { 'Cache-Control': 's-maxage=15, stale-while-revalidate=60' };
 
 export async function GET(request: NextRequest) {
   try {
@@ -25,18 +31,35 @@ export async function GET(request: NextRequest) {
     const cursor = Math.max(0, parseInt(searchParams.get('cursor') ?? '0', 10) || 0);
     const userId = getUserIdFromRequest(request) ?? undefined;
 
+    // Only cache anonymous, first-page, no-since requests (platform alerts only).
+    const isCacheable = cursor === 0 && !since && !userId;
+    const cacheKey = `alerts:platform:limit:${limit}`;
+
+    if (isCacheable) {
+      const redisCached = await redisGet(cacheKey);
+      if (redisCached) {
+        return NextResponse.json(redisCached, { headers: CACHE_HEADERS });
+      }
+      const memCached = getCache(cacheKey, MEM_TTL.ALERTS);
+      if (memCached) {
+        return NextResponse.json(memCached, { headers: CACHE_HEADERS });
+      }
+    }
+
     const [rawAlerts, unreadCount] = await Promise.all([
       getAlerts(limit + 1, since, userId, cursor),
       getUnreadAlertCount(userId),
     ]);
     const hasMore = rawAlerts.length > limit;
     const alerts = hasMore ? rawAlerts.slice(0, limit) : rawAlerts;
-    return NextResponse.json({
-      alerts,
-      unreadCount,
-      hasMore,
-      nextCursor: hasMore ? cursor + limit : null,
-    });
+    const payload = { alerts, unreadCount, hasMore, nextCursor: hasMore ? cursor + limit : null };
+
+    if (isCacheable) {
+      await redisSet(cacheKey, payload, ALERTS_TTL_S);
+      setCache(cacheKey, payload, MEM_TTL.ALERTS);
+    }
+
+    return NextResponse.json(payload, isCacheable ? { headers: CACHE_HEADERS } : undefined);
   } catch {
     return NextResponse.json({ alerts: [], unreadCount: 0, hasMore: false, nextCursor: null });
   }
