@@ -23,8 +23,14 @@ import { MOCK_SIGNALS } from '@/data/mockSignals';
 import { buildIntelligentGraph } from '@/lib/graphUtils';
 import { getEntityConnections } from '@/lib/relationshipIntelligence';
 import { supplementWithAnchors, MIN_ENTITY_COUNT } from '@/lib/graphComposition';
+import { getCache, setCache, MEM_TTL } from '@/lib/memoryCache';
+import { getCache as redisGet, setCache as redisSet } from '@/lib/cache/redis';
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+
+// Cache unfiltered graph requests (no entity param) — heavy multi-table compute.
+const GRAPH_TTL_S = 25;
+const CACHE_HEADERS = { 'Cache-Control': 's-maxage=25, stale-while-revalidate=60' };
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -33,6 +39,21 @@ export async function GET(req: NextRequest) {
     parseInt(searchParams.get('min') ?? '1', 10) || 1,
   ));
   const limit = Math.min(Math.max(1, parseInt(searchParams.get('limit') ?? '50', 10)), 200);
+
+  // Cache only unfiltered (global) graph — entity-filtered profiles are request-specific.
+  const isCacheable = !entityFilter;
+  const cacheKey = `graph:relationships:min:${minStrength}:limit:${limit}`;
+
+  if (isCacheable) {
+    const redisCached = await redisGet(cacheKey);
+    if (redisCached) {
+      return NextResponse.json(redisCached, { headers: { ...CACHE_HEADERS, 'x-data-origin': 'cache' } });
+    }
+    const memCached = getCache(cacheKey, MEM_TTL.GRAPH_RELATIONSHIPS);
+    if (memCached) {
+      return NextResponse.json(memCached, { headers: { ...CACHE_HEADERS, 'x-data-origin': 'cache' } });
+    }
+  }
 
   try {
     // Attempt to load from DB
@@ -114,13 +135,16 @@ export async function GET(req: NextRequest) {
       }, { headers: { 'x-data-origin': source } });
     }
 
-    return NextResponse.json({
-      ok: true,
-      source,
-      graph,
-      relationships,
-      count: relationships.length,
-    }, { headers: { 'x-data-origin': source } });
+    const payload = { ok: true, source, graph, relationships, count: relationships.length };
+
+    if (isCacheable) {
+      await redisSet(cacheKey, payload, GRAPH_TTL_S);
+      setCache(cacheKey, payload, MEM_TTL.GRAPH_RELATIONSHIPS);
+    }
+
+    return NextResponse.json(payload, {
+      headers: { ...( isCacheable ? CACHE_HEADERS : {}), 'x-data-origin': source },
+    });
 
   } catch (err) {
     console.error('[api/graph/relationships] error:', err);
