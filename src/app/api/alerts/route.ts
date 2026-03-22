@@ -22,15 +22,23 @@ export async function GET(request: NextRequest) {
     const { searchParams } = request.nextUrl;
     const since = searchParams.get('since') ?? undefined;
     const limit = Math.min(parseInt(searchParams.get('limit') ?? '20', 10) || 20, 100);
+    const cursor = Math.max(0, parseInt(searchParams.get('cursor') ?? '0', 10) || 0);
     const userId = getUserIdFromRequest(request) ?? undefined;
 
-    const [alerts, unreadCount] = await Promise.all([
-      getAlerts(limit, since, userId),
+    const [rawAlerts, unreadCount] = await Promise.all([
+      getAlerts(limit + 1, since, userId, cursor),
       getUnreadAlertCount(userId),
     ]);
-    return NextResponse.json({ alerts, unreadCount });
+    const hasMore = rawAlerts.length > limit;
+    const alerts = hasMore ? rawAlerts.slice(0, limit) : rawAlerts;
+    return NextResponse.json({
+      alerts,
+      unreadCount,
+      hasMore,
+      nextCursor: hasMore ? cursor + limit : null,
+    });
   } catch {
-    return NextResponse.json({ alerts: [], unreadCount: 0 });
+    return NextResponse.json({ alerts: [], unreadCount: 0, hasMore: false, nextCursor: null });
   }
 }
 

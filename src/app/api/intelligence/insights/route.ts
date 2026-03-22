@@ -1,5 +1,5 @@
 export const runtime = 'nodejs';
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { dbQuery } from '@/db/client';
 import { Insight } from '@/insights/types';
 
@@ -16,18 +16,26 @@ interface InsightRow {
 // their own table with their own confidence metric.  They intentionally use
 // confidence-based ordering rather than signal significance_score because
 // insights represent synthesized analysis, not raw intelligence events.
-export async function GET() {
+export async function GET(request: NextRequest) {
   console.log('[api] API request: insights');
+
+  const { searchParams } = request.nextUrl;
+  const limit = Math.min(parseInt(searchParams.get('limit') ?? '20', 10) || 20, 100);
+  const cursor = Math.max(0, parseInt(searchParams.get('cursor') ?? '0', 10) || 0);
 
   try {
     const rows = await dbQuery<InsightRow>`
       SELECT title, summary, category, topics, confidence, created_at
       FROM insights
       ORDER BY confidence DESC
-      LIMIT 20
+      LIMIT ${limit + 1}
+      OFFSET ${cursor}
     `;
 
-    const insights: Insight[] = rows.map((row) => ({
+    const hasMore = rows.length > limit;
+    const pageRows = hasMore ? rows.slice(0, limit) : rows;
+
+    const insights: Insight[] = pageRows.map((row) => ({
       title:      row.title,
       summary:    row.summary,
       category:   row.category,
@@ -36,14 +44,22 @@ export async function GET() {
       created_at: row.created_at ?? undefined,
     }));
 
+    const source = insights.length > 0 ? 'db' : 'empty';
     return NextResponse.json(
-      { ok: true, insights, count: insights.length, source: insights.length > 0 ? 'db' : 'empty' },
-      { headers: { 'x-data-origin': insights.length > 0 ? 'db' : 'empty' } },
+      {
+        ok: true,
+        insights,
+        count: insights.length,
+        source,
+        hasMore,
+        nextCursor: hasMore ? cursor + limit : null,
+      },
+      { headers: { 'x-data-origin': source } },
     );
   } catch (err) {
     console.error('[api/intelligence/insights] DB error:', err);
     return NextResponse.json(
-      { ok: false, error: 'Failed to fetch insights', insights: [] },
+      { ok: false, error: 'Failed to fetch insights', insights: [], hasMore: false, nextCursor: null },
       { status: 503, headers: { 'x-data-origin': 'error' } },
     );
   }
