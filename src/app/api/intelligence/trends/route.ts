@@ -1,5 +1,5 @@
 export const runtime = 'nodejs';
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { dbQuery } from '@/db/client';
 import { TrendResult } from '@/trends/types';
 
@@ -26,24 +26,32 @@ interface TrendRow {
 // importance_score composite (intelligence quality + source trust + velocity +
 // entity breadth) is purpose-built for trend detection and should remain the
 // primary sort here.
-export async function GET() {
+export async function GET(request: NextRequest) {
   console.log('[api] API request: trends');
+
+  const { searchParams } = request.nextUrl;
+  const limit = Math.min(parseInt(searchParams.get('limit') ?? '20', 10) || 20, 100);
+  const cursor = Math.max(0, parseInt(searchParams.get('cursor') ?? '0', 10) || 0);
 
   try {
     const rows = await dbQuery<TrendRow>`
       SELECT topic, category, signal_count, entities, summary, confidence, score, importance_score, velocity_score
       FROM trends
       ORDER BY importance_score DESC NULLS LAST, confidence DESC
-      LIMIT 20
+      LIMIT ${limit + 1}
+      OFFSET ${cursor}
     `;
+
+    const hasMore = rows.length > limit;
+    const pageRows = hasMore ? rows.slice(0, limit) : rows;
 
     // If trends table is empty, fall back to aggregated view from signal_velocity_scores.
     // This ensures velocity data is always available even before trend analysis runs.
-    if (rows.length === 0) {
+    if (pageRows.length === 0) {
       console.log('[api/trends] trends table empty — returning velocity from signal_velocity_scores');
     }
 
-    const trends: TrendResult[] = rows.map((row) => ({
+    const trends: TrendResult[] = pageRows.map((row) => ({
       topic:            row.topic,
       category:         row.category,
       signal_count:     row.signal_count,
@@ -59,13 +67,20 @@ export async function GET() {
 
     const source = trends.length > 0 ? 'db' : 'empty';
     return NextResponse.json(
-      { ok: true, trends, count: trends.length, source },
+      {
+        ok: true,
+        trends,
+        count: trends.length,
+        source,
+        hasMore,
+        nextCursor: hasMore ? cursor + limit : null,
+      },
       { headers: { ...CACHE_HEADERS, 'x-data-origin': source } },
     );
   } catch (err) {
     console.error('[api/trends] DB error:', err);
     return NextResponse.json(
-      { ok: false, error: 'Failed to fetch trends', trends: [] },
+      { ok: false, error: 'Failed to fetch trends', trends: [], hasMore: false, nextCursor: null },
       { status: 503, headers: { 'x-data-origin': 'error' } },
     );
   }

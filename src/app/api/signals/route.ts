@@ -73,20 +73,23 @@ export async function GET(req: NextRequest) {
     (expected !== '' && (cronSecret === expected || querySecret === expected));
 
   if (!isAuthRequest) {
-    const limit = Math.min(parseInt(searchParams.get('limit') ?? '50', 10), 200);
+    const limit = Math.min(parseInt(searchParams.get('limit') ?? '25', 10), 200);
+    const cursor = Math.max(0, parseInt(searchParams.get('cursor') ?? '0', 10) || 0);
     // Parse signal quality mode from query param; default to standard for public surfaces.
     const mode  = parseSignalMode(searchParams.get('mode'));
     // Include mode in cache key so raw/standard/premium never serve each other's cached data.
     const cacheBase = mode === DEFAULT_SIGNAL_MODE ? '' : `:mode:${mode}`;
-    const redisCacheKey = limit === 50
+    const redisCacheKey = limit === 25 && cursor === 0
       ? `signals:latest${cacheBase}`
-      : `signals:list:limit:${limit}${cacheBase}`;
+      : `signals:list:limit:${limit}:cursor:${cursor}${cacheBase}`;
     const debug = searchParams.get('debug') === 'true';
+    // Only use caches for the first page (cursor=0) to avoid serving stale paginated data
+    const isFirstPage = cursor === 0;
 
     try {
       // 1. Edge cache (KV-backed, cross-region)
-      // Only use edge cache for the default mode to keep it simple.
-      if (mode === DEFAULT_SIGNAL_MODE) {
+      // Only use edge cache for the default mode and first page.
+      if (mode === DEFAULT_SIGNAL_MODE && isFirstPage) {
         const edgeCached = await getEdgeSignals();
         if (edgeCached) {
           logWithRequestId(reqId, 'signals', `cache_hit source=edge mode=${mode} ms=${Date.now() - t0}`);
@@ -95,22 +98,27 @@ export async function GET(req: NextRequest) {
       }
 
       // 2. Redis cache (Upstash, cross-region, persistent)
-      const redisCached = await redisGet(redisCacheKey);
-      if (redisCached) {
-        logWithRequestId(reqId, 'signals', `cache_hit source=redis mode=${mode} ms=${Date.now() - t0}`);
-        return NextResponse.json(redisCached, { headers: { ...CACHE_HEADERS, 'x-source': 'cache' } });
+      if (isFirstPage) {
+        const redisCached = await redisGet(redisCacheKey);
+        if (redisCached) {
+          logWithRequestId(reqId, 'signals', `cache_hit source=redis mode=${mode} ms=${Date.now() - t0}`);
+          return NextResponse.json(redisCached, { headers: { ...CACHE_HEADERS, 'x-source': 'cache' } });
+        }
       }
 
       // 3. In-process memory cache (per-instance, 5 s)
       const memCacheKey = `signals:${mode}`;
-      const cached = getCache(memCacheKey, 5000);
-      if (cached) {
-        logWithRequestId(reqId, 'signals', `cache_hit source=memory mode=${mode} ms=${Date.now() - t0}`);
-        return NextResponse.json(cached, { headers: { ...CACHE_HEADERS, 'x-source': 'cache' } });
+      if (isFirstPage) {
+        const cached = getCache(memCacheKey, 5000);
+        if (cached) {
+          logWithRequestId(reqId, 'signals', `cache_hit source=memory mode=${mode} ms=${Date.now() - t0}`);
+          return NextResponse.json(cached, { headers: { ...CACHE_HEADERS, 'x-source': 'cache' } });
+        }
       }
 
       // 4. Database query — mode-aware filtering applied inside getSignals()
-      const dbSignals = await getSignals(limit, mode);
+      // Fetch one extra to detect if more results exist beyond this page.
+      const dbSignals = await getSignals(limit + 1, mode, cursor);
 
       // Diagnostics: log table state for debugging
       let diagnostics: Record<string, unknown> | undefined;
@@ -130,20 +138,33 @@ export async function GET(req: NextRequest) {
       }
 
       if (dbSignals.length > 0) {
+        const hasMore = dbSignals.length > limit;
+        const pageSignals = hasMore ? dbSignals.slice(0, limit) : dbSignals;
         // Apply rank-score-based composition: significance-dominant ordering,
         // freshness decay, corroboration strength, dedup, and diversity guardrails.
-        const composedSignals = composeFeed(dbSignals, {
+        const composedSignals = composeFeed(pageSignals, {
           minSignificance: mode === 'standard' ? 30 : mode === 'premium' ? 50 : 0,
           debug,
         });
         const enrichedSignals = attachSignalExplanations(composedSignals);
-        const payload: Record<string, unknown> = { ok: true, source: 'db', mode, signals: enrichedSignals, count: enrichedSignals.length, requestId: reqId };
+        const payload: Record<string, unknown> = {
+          ok: true,
+          source: 'db',
+          mode,
+          signals: enrichedSignals,
+          count: enrichedSignals.length,
+          hasMore,
+          nextCursor: hasMore ? cursor + limit : null,
+          requestId: reqId,
+        };
         if (debug && diagnostics) payload.diagnostics = diagnostics;
-        // Only populate edge cache for the default mode (avoids edge cache thrash across modes).
-        if (mode === DEFAULT_SIGNAL_MODE) await setEdgeSignals(payload);
-        await redisSet(redisCacheKey, payload, TTL.SIGNALS);
-        setCache(memCacheKey, payload);
-        logWithRequestId(reqId, 'signals', `cache_miss source=db mode=${mode} signals=${dbSignals.length} ms=${Date.now() - t0}`);
+        // Only populate caches for the first page.
+        if (isFirstPage) {
+          if (mode === DEFAULT_SIGNAL_MODE) await setEdgeSignals(payload);
+          await redisSet(redisCacheKey, payload, TTL.SIGNALS);
+          setCache(memCacheKey, payload);
+        }
+        logWithRequestId(reqId, 'signals', `cache_miss source=db mode=${mode} signals=${pageSignals.length} hasMore=${hasMore} cursor=${cursor} ms=${Date.now() - t0}`);
         return NextResponse.json(payload, { headers: { ...CACHE_HEADERS, 'x-source': 'db', 'x-request-id': reqId } });
       }
 
@@ -156,6 +177,8 @@ export async function GET(req: NextRequest) {
           source: 'empty',
           signals: [],
           count: 0,
+          hasMore: false,
+          nextCursor: null,
           message: 'No signals ingested yet. Trigger /api/ingest to populate.',
           requestId: reqId,
           ...(diagnostics ? { diagnostics } : {}),

@@ -287,9 +287,11 @@ function engineTypeToCategory(type: string | null): string {
 export async function getSignals(
   limit = 50,
   mode: SignalMode = DEFAULT_SIGNAL_MODE,
+  offset = 0,
 ): Promise<Signal[]> {
   const config = getModeConfig(mode);
   const safeLimit = Math.min(Math.max(1, limit), config.defaultLimit);
+  const safeOffset = Math.max(0, offset);
 
   const hasContextTable = await tableExists('signal_contexts');
 
@@ -340,6 +342,7 @@ export async function getSignals(
           s.confidence_score DESC NULLS LAST,
           s.created_at DESC
         LIMIT ${safeLimit}
+        OFFSET ${safeOffset}
       `;
       return rows.map(rowToSignal);
     }
@@ -371,6 +374,7 @@ export async function getSignals(
         confidence_score DESC NULLS LAST,
         created_at DESC
       LIMIT ${safeLimit}
+      OFFSET ${safeOffset}
     `;
     return rows.map(rowToSignal);
   }
@@ -426,6 +430,7 @@ export async function getSignals(
         s.confidence_score DESC NULLS LAST,
         s.created_at DESC
       LIMIT ${safeLimit}
+      OFFSET ${safeOffset}
     `;
     return rows.map(rowToSignal);
   }
@@ -456,6 +461,7 @@ export async function getSignals(
       confidence_score DESC NULLS LAST,
       created_at DESC
     LIMIT ${safeLimit}
+    OFFSET ${safeOffset}
   `;
 
   return rows.map(rowToSignal);
@@ -2139,8 +2145,9 @@ function mapAlertRow(row: AlertRow): AlertRecord {
  *   - personal alerts where user_id matches
  * When `userId` is omitted, returns only platform alerts (user_id IS NULL).
  */
-export async function getAlerts(limit = 20, since?: string, userId?: string): Promise<AlertRecord[]> {
+export async function getAlerts(limit = 20, since?: string, userId?: string, offset = 0): Promise<AlertRecord[]> {
   if (!(await tableExists('alerts'))) return [];
+  const safeOffset = Math.max(0, offset);
 
   if (userId && since) {
     const rows = await dbQuery<AlertRow>`
@@ -2151,6 +2158,7 @@ export async function getAlerts(limit = 20, since?: string, userId?: string): Pr
         AND (user_id IS NULL OR user_id = ${userId})
       ORDER BY priority DESC, created_at DESC
       LIMIT ${limit}
+      OFFSET ${safeOffset}
     `;
     return rows.map(mapAlertRow);
   }
@@ -2163,6 +2171,7 @@ export async function getAlerts(limit = 20, since?: string, userId?: string): Pr
       WHERE (user_id IS NULL OR user_id = ${userId})
       ORDER BY priority DESC, created_at DESC
       LIMIT ${limit}
+      OFFSET ${safeOffset}
     `;
     return rows.map(mapAlertRow);
   }
@@ -2175,6 +2184,7 @@ export async function getAlerts(limit = 20, since?: string, userId?: string): Pr
       WHERE created_at > ${since} AND user_id IS NULL
       ORDER BY priority DESC, created_at DESC
       LIMIT ${limit}
+      OFFSET ${safeOffset}
     `;
     return rows.map(mapAlertRow);
   }
@@ -2186,6 +2196,7 @@ export async function getAlerts(limit = 20, since?: string, userId?: string): Pr
     WHERE user_id IS NULL
     ORDER BY priority DESC, created_at DESC
     LIMIT ${limit}
+    OFFSET ${safeOffset}
   `;
   return rows.map(mapAlertRow);
 }
